@@ -1,5 +1,7 @@
 Create a new application for playing a game online, called Governance
 
+## Application Overview
+
 Each user has a display name, which can be changed at any time from a profile page.
 
 A user can create Syndicates.
