@@ -75,18 +75,6 @@ export function GameDetailPage() {
               <CallQueuePanel gameId={gid} isGm={viewer.isGm} />
             </section>
 
-            {viewer.playerId && (
-              <section>
-                <h3>Your Minions</h3>
-                <MinionBuyPanel
-                  gameId={gid}
-                  playerId={viewer.playerId}
-                  gameState={game.state}
-                  noteCounts={noteCounts}
-                />
-              </section>
-            )}
-
             <section>
               <h3>POWER</h3>
               <PowerPanel
@@ -319,53 +307,59 @@ function RosterList({
     <div className="stack">
       {err && <div className="error-text">{err}</div>}
       {roster.map((p) => (
-        <div
-          key={p._id}
-          className="card row"
-          style={{ justifyContent: "space-between" }}
-        >
-          <div>
-            <div style={{ fontWeight: 600 }}>
-              {p.displayName}
-              {p.userId === viewer.userId && " (you)"}
-            </div>
-            <div className="muted row-wrap" style={{ fontSize: "0.85rem" }}>
-              {p.selectedSyndicate ? (
-                <>
+        <div key={p._id} className="card stack">
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontWeight: 600 }}>
+                {p.displayName}
+                {p.userId === viewer.userId && " (you)"}
+              </div>
+              <div className="muted row-wrap" style={{ fontSize: "0.85rem" }}>
+                {p.selectedSyndicate ? (
+                  <>
+                    <span>
+                      Syndicate: {p.selectedSyndicate.name} · Leader{" "}
+                      {p.selectedSyndicate.leader}
+                    </span>
+                    <NoteIcon
+                      gameId={gameId}
+                      target={{
+                        kind: "syndicate",
+                        syndicateId: p.selectedSyndicate._id,
+                      }}
+                      count={resolveNoteCount(noteCounts, {
+                        kind: "syndicate",
+                        syndicateId: p.selectedSyndicate._id,
+                      })}
+                      label={p.selectedSyndicate.name}
+                    />
+                  </>
+                ) : (
                   <span>
-                    Syndicate: {p.selectedSyndicate.name} · Leader{" "}
-                    {p.selectedSyndicate.leader}
+                    {gameState === "ready"
+                      ? "No Syndicate selected"
+                      : "No Syndicate"}
                   </span>
-                  <NoteIcon
-                    gameId={gameId}
-                    target={{
-                      kind: "syndicate",
-                      syndicateId: p.selectedSyndicate._id,
-                    }}
-                    count={resolveNoteCount(noteCounts, {
-                      kind: "syndicate",
-                      syndicateId: p.selectedSyndicate._id,
-                    })}
-                    label={p.selectedSyndicate.name}
-                  />
-                </>
-              ) : (
-                <span>
-                  {gameState === "ready"
-                    ? "No Syndicate selected"
-                    : "No Syndicate"}
-                </span>
-              )}
+                )}
+              </div>
             </div>
+            {viewer.isGm && gameState === "ready" && (
+              <button
+                type="button"
+                className="danger"
+                onClick={() => void handleRemove(p._id, p.displayName)}
+              >
+                Remove
+              </button>
+            )}
           </div>
-          {viewer.isGm && gameState === "ready" && (
-            <button
-              type="button"
-              className="danger"
-              onClick={() => void handleRemove(p._id, p.displayName)}
-            >
-              Remove
-            </button>
+          {gameState !== "ready" && p.selectedSyndicateId && (
+            <MinionBuyPanel
+              gameId={gameId}
+              playerId={p._id}
+              gameState={gameState}
+              noteCounts={noteCounts}
+            />
           )}
         </div>
       ))}
