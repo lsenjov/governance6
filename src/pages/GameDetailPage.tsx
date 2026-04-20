@@ -4,6 +4,8 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useElapsed, formatElapsed } from "../hooks/useElapsed";
+import { resolveNoteCount, useNotesCountMap } from "../hooks/useNotesCountMap";
+import { NoteIcon } from "../components/NoteIcon";
 
 type GameId = Id<"games">;
 type PlayerId = Id<"players">;
@@ -12,6 +14,7 @@ export function GameDetailPage() {
   const { gameId } = useParams<{ gameId: string }>();
   const gid = gameId as GameId | undefined;
   const view = useQuery(api.games.getGameView, gid ? { gameId: gid } : "skip");
+  const noteCounts = useNotesCountMap(gid);
 
   if (!gid) return <div>Missing game id.</div>;
   if (view === undefined) return <div className="muted">Loading…</div>;
@@ -29,6 +32,12 @@ export function GameDetailPage() {
         style={{ marginTop: "0.5rem", alignItems: "center" }}
       >
         <h2 style={{ marginRight: "auto" }}>{game.name ?? "Untitled game"}</h2>
+        <NoteIcon
+          gameId={gid}
+          target={{ kind: "game" }}
+          count={resolveNoteCount(noteCounts, { kind: "game" })}
+          label={game.name ?? "this game"}
+        />
         <span
           className={`badge ${
             game.state === "playing"
@@ -65,6 +74,7 @@ export function GameDetailPage() {
           gameState={game.state}
           viewer={viewer}
           roster={roster}
+          noteCounts={noteCounts}
         />
       </section>
 
@@ -107,16 +117,14 @@ export function GameDetailPage() {
                 gameId={gid}
                 playerId={viewer.playerId}
                 gameState={game.state}
+                noteCounts={noteCounts}
               />
             </section>
           )}
 
           <section style={{ marginTop: "1.5rem" }}>
             <h3>Call Queue</h3>
-            <CallQueuePanel
-              gameId={gid}
-              isGm={viewer.isGm}
-            />
+            <CallQueuePanel gameId={gid} isGm={viewer.isGm} />
           </section>
         </>
       )}
@@ -195,7 +203,11 @@ function GmControls({
       {gameState === "archived" && (
         <span className="muted">Game is archived.</span>
       )}
-      {err && <div className="error-text" style={{ flexBasis: "100%" }}>{err}</div>}
+      {err && (
+        <div className="error-text" style={{ flexBasis: "100%" }}>
+          {err}
+        </div>
+      )}
     </div>
   );
 }
@@ -265,6 +277,7 @@ function RosterList({
   gameState,
   viewer,
   roster,
+  noteCounts,
 }: {
   gameId: GameId;
   gameState: "ready" | "playing" | "archived";
@@ -275,8 +288,13 @@ function RosterList({
     displayName: string;
     power: number;
     selectedSyndicateId: Id<"syndicates"> | null;
-    selectedSyndicate: { _id: Id<"syndicates">; name: string; leader: string } | null;
+    selectedSyndicate: {
+      _id: Id<"syndicates">;
+      name: string;
+      leader: string;
+    } | null;
   }>;
+  noteCounts: ReturnType<typeof useNotesCountMap>;
 }) {
   const removePlayer = useMutation(api.games.removePlayer);
   const [err, setErr] = useState<string | null>(null);
@@ -309,12 +327,33 @@ function RosterList({
               {p.displayName}
               {p.userId === viewer.userId && " (you)"}
             </div>
-            <div className="muted" style={{ fontSize: "0.85rem" }}>
-              {p.selectedSyndicate
-                ? `Syndicate: ${p.selectedSyndicate.name} · Leader ${p.selectedSyndicate.leader}`
-                : gameState === "ready"
-                  ? "No Syndicate selected"
-                  : "No Syndicate"}
+            <div className="muted row-wrap" style={{ fontSize: "0.85rem" }}>
+              {p.selectedSyndicate ? (
+                <>
+                  <span>
+                    Syndicate: {p.selectedSyndicate.name} · Leader{" "}
+                    {p.selectedSyndicate.leader}
+                  </span>
+                  <NoteIcon
+                    gameId={gameId}
+                    target={{
+                      kind: "syndicate",
+                      syndicateId: p.selectedSyndicate._id,
+                    }}
+                    count={resolveNoteCount(noteCounts, {
+                      kind: "syndicate",
+                      syndicateId: p.selectedSyndicate._id,
+                    })}
+                    label={p.selectedSyndicate.name}
+                  />
+                </>
+              ) : (
+                <span>
+                  {gameState === "ready"
+                    ? "No Syndicate selected"
+                    : "No Syndicate"}
+                </span>
+              )}
             </div>
           </div>
           {viewer.isGm && gameState === "ready" && (
@@ -414,7 +453,12 @@ function PowerPanel({
   gameId: GameId;
   viewer: { userId: Id<"users">; isGm: boolean; playerId: PlayerId | null };
   gameState: "ready" | "playing" | "archived";
-  roster: Array<{ _id: PlayerId; userId: Id<"users">; displayName: string; power: number }>;
+  roster: Array<{
+    _id: PlayerId;
+    userId: Id<"users">;
+    displayName: string;
+    power: number;
+  }>;
 }) {
   const balances = useQuery(api.ledger.getPlayerBalances, { gameId });
 
@@ -476,9 +520,7 @@ function OwnLedger({ gameId }: { gameId: GameId }) {
       >
         {open ? "Hide" : "Show"} my ledger ({entries?.length ?? "…"})
       </button>
-      {open && (
-        <LedgerTable entries={entries ?? []} />
-      )}
+      {open && <LedgerTable entries={entries ?? []} />}
     </div>
   );
 }
@@ -500,9 +542,7 @@ function GmLedgerPanel({
           gameId={gameId}
           player={p}
           isExpanded={expanded === p._id}
-          onToggle={() =>
-            setExpanded((cur) => (cur === p._id ? null : p._id))
-          }
+          onToggle={() => setExpanded((cur) => (cur === p._id ? null : p._id))}
         />
       ))}
     </div>
@@ -593,7 +633,11 @@ function GmEditPowerForm({
       <button type="button" onClick={() => void submit()}>
         Apply
       </button>
-      {err && <div className="error-text" style={{ flexBasis: "100%" }}>{err}</div>}
+      {err && (
+        <div className="error-text" style={{ flexBasis: "100%" }}>
+          {err}
+        </div>
+      )}
     </div>
   );
 }
@@ -757,10 +801,12 @@ function MinionBuyPanel({
   gameId,
   playerId,
   gameState,
+  noteCounts,
 }: {
   gameId: GameId;
   playerId: PlayerId;
   gameState: "ready" | "playing" | "archived";
+  noteCounts: ReturnType<typeof useNotesCountMap>;
 }) {
   const data = useQuery(api.minionBuys.listForPlayer, { gameId, playerId });
   const buy = useMutation(api.minionBuys.buyMinion);
@@ -809,7 +855,10 @@ function MinionBuyPanel({
             <div style={{ fontWeight: 600 }}>
               {m.name}
               {m.accent && (
-                <span className="muted" style={{ marginLeft: "0.5rem", fontWeight: 400 }}>
+                <span
+                  className="muted"
+                  style={{ marginLeft: "0.5rem", fontWeight: 400 }}
+                >
                   — {m.accent}
                 </span>
               )}
@@ -834,15 +883,27 @@ function MinionBuyPanel({
             )}
           </div>
           <div className="row-wrap" style={{ alignItems: "center" }}>
-            {gameState === "playing" && !m.bought && data.isSelf && data.nextPrice !== null && (
-              <button
-                type="button"
-                onClick={() => void handleBuy(m._id)}
-                title={`Buy for ${data.nextPrice}`}
-              >
-                Buy ({data.nextPrice})
-              </button>
-            )}
+            <NoteIcon
+              gameId={gameId}
+              target={{ kind: "minion", minionId: m._id }}
+              count={resolveNoteCount(noteCounts, {
+                kind: "minion",
+                minionId: m._id,
+              })}
+              label={m.name}
+            />
+            {gameState === "playing" &&
+              !m.bought &&
+              data.isSelf &&
+              data.nextPrice !== null && (
+                <button
+                  type="button"
+                  onClick={() => void handleBuy(m._id)}
+                  title={`Buy for ${data.nextPrice}`}
+                >
+                  Buy ({data.nextPrice})
+                </button>
+              )}
             {gameState === "playing" && m.bought && data.isSelf && (
               <button
                 type="button"
@@ -860,13 +921,7 @@ function MinionBuyPanel({
   );
 }
 
-function CallQueuePanel({
-  gameId,
-  isGm,
-}: {
-  gameId: GameId;
-  isGm: boolean;
-}) {
+function CallQueuePanel({ gameId, isGm }: { gameId: GameId; isGm: boolean }) {
   const active = useQuery(api.calls.activeCalls, { gameId });
   const removed = useQuery(api.calls.recentlyRemovedCalls, { gameId });
   const removeCall = useMutation(api.calls.removeCall);
@@ -886,9 +941,7 @@ function CallQueuePanel({
     <div className="stack" aria-live="polite">
       {err && <div className="error-text">{err}</div>}
       {active === undefined && <div className="muted">Loading…</div>}
-      {active?.length === 0 && (
-        <div className="muted">Queue is empty.</div>
-      )}
+      {active?.length === 0 && <div className="muted">Queue is empty.</div>}
       <ol className="stack" style={{ paddingLeft: "1.2rem" }}>
         {active?.map((c) => (
           <li
@@ -922,7 +975,8 @@ function CallQueuePanel({
           className="secondary"
           onClick={() => setShowHistory((s) => !s)}
         >
-          {showHistory ? "Hide" : "Show"} recently removed ({removed?.length ?? 0})
+          {showHistory ? "Hide" : "Show"} recently removed (
+          {removed?.length ?? 0})
         </button>
         {showHistory && (
           <div className="stack" style={{ marginTop: "0.5rem" }}>

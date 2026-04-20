@@ -17,6 +17,7 @@ import type * as ledger from "../ledger.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as minionBuys from "../minionBuys.js";
 import type * as minions from "../minions.js";
+import type * as notes from "../notes.js";
 import type * as syndicates from "../syndicates.js";
 import type * as users from "../users.js";
 
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   minionBuys: typeof minionBuys;
   minions: typeof minions;
+  notes: typeof notes;
   syndicates: typeof syndicates;
   users: typeof users;
 }>;

@@ -128,4 +128,32 @@ export default defineSchema({
     .index("by_game_active_time", ["gameId", "isActive", "createdAt"])
     .index("by_game_removed_time", ["gameId", "removedAt"])
     .index("by_game_player_active", ["gameId", "playerId", "isActive"]),
+
+  // Notes — per-game textual annotations on the game, a syndicate, or a
+  // minion. Immutable once created. GM-only delete. Visibility: private
+  // (author + GM) or public (all participants).
+  notes: defineTable({
+    gameId: v.id("games"),
+    targetKind: v.union(
+      v.literal("game"),
+      v.literal("syndicate"),
+      v.literal("minion"),
+    ),
+    targetSyndicateId: v.optional(v.id("syndicates")),
+    targetMinionId: v.optional(v.id("minions")),
+    authorUserId: v.id("users"),
+    visibility: v.union(v.literal("private"), v.literal("public")),
+    body: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_game_kind_created", ["gameId", "targetKind", "createdAt"])
+    .index("by_game_syndicate_created", [
+      "gameId",
+      "targetSyndicateId",
+      "createdAt",
+    ])
+    .index("by_game_minion_created", ["gameId", "targetMinionId", "createdAt"])
+    .index("by_syndicate", ["targetSyndicateId"])
+    .index("by_minion", ["targetMinionId"])
+    .index("by_author_game", ["authorUserId", "gameId"]),
 });

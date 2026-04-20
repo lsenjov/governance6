@@ -16,10 +16,17 @@ const SYNDICATE_NAME_MAX = 120;
 const SYNDICATE_LEADER_MAX = 120;
 const SYNDICATE_DESC_MAX = 4000;
 
-function assertStringLen(field: string, value: string, min: number, max: number) {
+function assertStringLen(
+  field: string,
+  value: string,
+  min: number,
+  max: number,
+) {
   const trimmed = value.trim();
-  if (trimmed.length < min) throw new Error(`${field} must be at least ${min} characters.`);
-  if (trimmed.length > max) throw new Error(`${field} must be at most ${max} characters.`);
+  if (trimmed.length < min)
+    throw new Error(`${field} must be at least ${min} characters.`);
+  if (trimmed.length > max)
+    throw new Error(`${field} must be at most ${max} characters.`);
 }
 
 export const create = mutation({
@@ -33,7 +40,9 @@ export const create = mutation({
     assertStringLen("Name", args.name, 1, SYNDICATE_NAME_MAX);
     assertStringLen("Leader", args.leader, 1, SYNDICATE_LEADER_MAX);
     if (args.description.length > SYNDICATE_DESC_MAX) {
-      throw new Error(`Description must be at most ${SYNDICATE_DESC_MAX} characters.`);
+      throw new Error(
+        `Description must be at most ${SYNDICATE_DESC_MAX} characters.`,
+      );
     }
     return await ctx.db.insert("syndicates", {
       name: args.name.trim(),
@@ -55,7 +64,11 @@ export const update = mutation({
   },
   handler: async (ctx, args) => {
     await assertSyndicateEditable(ctx, args.syndicateId);
-    const patch: Partial<{ name: string; leader: string; description: string }> = {};
+    const patch: Partial<{
+      name: string;
+      leader: string;
+      description: string;
+    }> = {};
     if (args.name !== undefined) {
       assertStringLen("Name", args.name, 1, SYNDICATE_NAME_MAX);
       patch.name = args.name.trim();
@@ -66,7 +79,9 @@ export const update = mutation({
     }
     if (args.description !== undefined) {
       if (args.description.length > SYNDICATE_DESC_MAX) {
-        throw new Error(`Description must be at most ${SYNDICATE_DESC_MAX} characters.`);
+        throw new Error(
+          `Description must be at most ${SYNDICATE_DESC_MAX} characters.`,
+        );
       }
       patch.description = args.description;
     }
@@ -108,7 +123,7 @@ export const remove = mutation({
       .collect();
     for (const d of drawbacks) await ctx.db.delete(d._id);
 
-    // Delete all minions (also cascade gamePlayerMinions).
+    // Delete all minions (also cascade gamePlayerMinions and minion-target notes).
     const minions = await ctx.db
       .query("minions")
       .withIndex("by_syndicate", (q) => q.eq("syndicateId", args.syndicateId))
@@ -119,8 +134,22 @@ export const remove = mutation({
         .filter((q) => q.eq(q.field("minionId"), m._id))
         .collect();
       for (const gpm of gpms) await ctx.db.delete(gpm._id);
+      const minionNotes = await ctx.db
+        .query("notes")
+        .withIndex("by_minion", (q) => q.eq("targetMinionId", m._id))
+        .collect();
+      for (const n of minionNotes) await ctx.db.delete(n._id);
       await ctx.db.delete(m._id);
     }
+
+    // Cascade notes targeting this syndicate across every game.
+    const syndicateNotes = await ctx.db
+      .query("notes")
+      .withIndex("by_syndicate", (q) =>
+        q.eq("targetSyndicateId", args.syndicateId),
+      )
+      .collect();
+    for (const n of syndicateNotes) await ctx.db.delete(n._id);
 
     // Unselect from every `ready`-game Player that had this Syndicate.
     const referringPlayers = await ctx.db

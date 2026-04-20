@@ -1,7 +1,4 @@
-import {
-  type MutationCtx,
-  type QueryCtx,
-} from "../_generated/server";
+import { type MutationCtx, type QueryCtx } from "../_generated/server";
 import { type Doc, type Id } from "../_generated/dataModel";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
@@ -14,9 +11,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 
 export type Ctx = QueryCtx | MutationCtx;
 
-export async function getCurrentUser(
-  ctx: Ctx,
-): Promise<Doc<"users"> | null> {
+export async function getCurrentUser(ctx: Ctx): Promise<Doc<"users"> | null> {
   const userId = await getAuthUserId(ctx);
   if (!userId) return null;
   return await ctx.db.get(userId);
@@ -84,6 +79,37 @@ export async function getOptionalGamePlayer(
       q.eq("gameId", gameId).eq("userId", userId),
     )
     .unique();
+}
+
+/**
+ * Participant-level access: GM OR Player in the game. Used by features (e.g.
+ * notes) where both roles can create and view content, while non-participants
+ * must be rejected server-side (rule 24).
+ */
+export async function requireGameParticipant(
+  ctx: Ctx,
+  gameId: Id<"games">,
+): Promise<{
+  game: Doc<"games">;
+  userId: Id<"users">;
+  role: "gm" | "player";
+  player: Doc<"players"> | null;
+}> {
+  const userId = await requireUserId(ctx);
+  const game = await requireGame(ctx, gameId);
+  if (game.gmId === userId) {
+    return { game, userId, role: "gm", player: null };
+  }
+  const player = await ctx.db
+    .query("players")
+    .withIndex("by_game_user", (q) =>
+      q.eq("gameId", gameId).eq("userId", userId),
+    )
+    .unique();
+  if (!player) {
+    throw new Error("You are not a participant in this game.");
+  }
+  return { game, userId, role: "player", player };
 }
 
 export async function requireSyndicateOwner(

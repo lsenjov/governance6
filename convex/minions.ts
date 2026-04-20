@@ -24,7 +24,8 @@ function validateSkills(skills: string[]): string[] {
   const out: string[] = [];
   for (const s of skills) {
     const trimmed = s.trim();
-    if (trimmed.length < 1) throw new Error("Skill must be at least 1 character.");
+    if (trimmed.length < 1)
+      throw new Error("Skill must be at least 1 character.");
     if (trimmed.length > SKILL_MAX) {
       throw new Error(`Skill must be at most ${SKILL_MAX} characters.`);
     }
@@ -51,10 +52,14 @@ function validateAccent(accent: string | undefined): string | undefined {
   return t;
 }
 
-function validateDescription(description: string | undefined): string | undefined {
+function validateDescription(
+  description: string | undefined,
+): string | undefined {
   if (description === undefined) return undefined;
   if (description.length > DESCRIPTION_MAX) {
-    throw new Error(`Description must be at most ${DESCRIPTION_MAX} characters.`);
+    throw new Error(
+      `Description must be at most ${DESCRIPTION_MAX} characters.`,
+    );
   }
   return description;
 }
@@ -135,6 +140,13 @@ export const remove = mutation({
       .filter((q) => q.eq(q.field("minionId"), args.minionId))
       .collect();
     for (const gpm of gpms) await ctx.db.delete(gpm._id);
+
+    // Cascade notes targeting this minion across every game.
+    const minionNotes = await ctx.db
+      .query("notes")
+      .withIndex("by_minion", (q) => q.eq("targetMinionId", args.minionId))
+      .collect();
+    for (const n of minionNotes) await ctx.db.delete(n._id);
 
     await ctx.db.delete(args.minionId);
   },
