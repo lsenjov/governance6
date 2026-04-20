@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -94,9 +94,54 @@ function NotesPopover({
   const [visibility, setVisibility] = useState<"private" | "public">("private");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [placement, setPlacement] = useState<{
+    vertical: "below" | "above";
+    horizontal: "left" | "right";
+  }>({ vertical: "below", horizontal: "left" });
+
+  // Reposition the popover so it never overflows the viewport. Flips above
+  // when there isn't room below, and right-aligns to the anchor when there
+  // isn't room to extend rightward. Re-measures on resize, scroll, and
+  // whenever the popover's own size changes (e.g. notes loading in).
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current;
+    const popover = popoverRef.current;
+    if (!anchor || !popover) return;
+
+    const GAP = 6;
+    function reposition() {
+      if (!anchor || !popover) return;
+      const a = anchor.getBoundingClientRect();
+      const p = popover.getBoundingClientRect();
+      const vw = document.documentElement.clientWidth;
+      const vh = document.documentElement.clientHeight;
+
+      const fitsRight = a.left + p.width <= vw;
+      const fitsBelow = a.bottom + GAP + p.height <= vh;
+      const fitsAbove = a.top - GAP - p.height >= 0;
+
+      setPlacement({
+        horizontal: fitsRight ? "left" : "right",
+        // Only flip above if there's actually more room there.
+        vertical: !fitsBelow && fitsAbove ? "above" : "below",
+      });
+    }
+
+    reposition();
+
+    const ro = new ResizeObserver(reposition);
+    ro.observe(popover);
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [anchorRef]);
 
   // Close on Escape + click-outside.
-  const popoverRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -158,6 +203,12 @@ function NotesPopover({
       role="dialog"
       aria-label={`Notes for ${label}`}
       className="notes-popover"
+      style={{
+        top: placement.vertical === "below" ? "calc(100% + 6px)" : "auto",
+        bottom: placement.vertical === "above" ? "calc(100% + 6px)" : "auto",
+        left: placement.horizontal === "left" ? 0 : "auto",
+        right: placement.horizontal === "right" ? 0 : "auto",
+      }}
     >
       <div className="notes-popover-header">
         <strong>Notes</strong>
