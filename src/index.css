@@ -1,0 +1,263 @@
+:root {
+  --bg: #0f1115;
+  --bg-elevated: #191c24;
+  --bg-muted: #12151c;
+  --fg: #e6e6eb;
+  --fg-muted: #8d8fa0;
+  --border: #2a2e3a;
+  --accent: #7c5cff;
+  --accent-fg: #ffffff;
+  --danger: #e5484d;
+  --success: #3dd68c;
+  --warning: #ffb84d;
+
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+
+button.danger {
+  background: var(--danger);
+}
+
+input,
+textarea,
+select {
+  background: var(--bg-muted);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+textarea {
+  min-height: 4rem;
+  resize: vertical;
+}
+
+label {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--fg-muted);
+  margin-bottom: 0.25rem;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.top-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-links {
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+}
+
+.main-content {
+  flex: 1;
+  padding: 1.5rem;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.centered-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  color: var(--fg-muted);
+}
+
+.card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.card h2,
+.card h3 {
+  margin-top: 0;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.stack > * + * {
+  margin-top: 0.75rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.row-wrap {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.muted {
+  color: var(--fg-muted);
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+}
+
+.badge.accent {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.badge.warning {
+  background: var(--warning);
+  color: #000;
+  border-color: var(--warning);
+}
+
+.badge.success {
+  background: var(--success);
+  color: #000;
+  border-color: var(--success);
+}
+
+.error-text {
+  color: var(--danger);
+  font-size: 0.9rem;
+  margin: 0.5rem 0;
+}
+
+.success-text {
+  color: var(--success);
+  font-size: 0.9rem;
+  margin: 0.5rem 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  color: var(--fg-muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.sign-in-wrapper {
+  max-width: 400px;
+  margin: 4rem auto;
+  padding: 2rem;
+}
+
+.sign-in-wrapper h1 {
+  text-align: center;
+}
+
+.read-only-banner {
+  background: var(--warning);
+  color: #000;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}

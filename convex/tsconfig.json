@@ -1,0 +1,22 @@
+/* eslint-disable */
+/**
+ * Convex tsconfig. Convex functions live in the `convex/` directory.
+ */
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
+    "noEmit": true
+  },
+  "include": ["./**/*"],
+  "exclude": ["./_generated"]
+}
