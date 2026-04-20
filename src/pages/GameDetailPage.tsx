@@ -67,67 +67,69 @@ export function GameDetailPage() {
         />
       )}
 
-      <section style={{ marginTop: "1.5rem" }}>
-        <h3>Roster</h3>
-        <RosterList
-          gameId={gid}
-          gameState={game.state}
-          viewer={viewer}
-          roster={roster}
-          noteCounts={noteCounts}
-        />
-      </section>
-
-      {viewer.isGm && game.state === "ready" && (
-        <section style={{ marginTop: "1.5rem" }}>
-          <h3>Add Player</h3>
-          <AddPlayerForm gameId={gid} />
-        </section>
-      )}
-
-      {!viewer.isGm && viewer.playerId && game.state === "ready" && (
-        <section style={{ marginTop: "1.5rem" }}>
-          <h3>Your Syndicate</h3>
-          <SyndicateSelector
+      <div className="section-masonry" style={{ marginTop: "1.5rem" }}>
+        <section>
+          <h3>Roster</h3>
+          <RosterList
             gameId={gid}
-            currentSelection={
-              roster.find((p) => p._id === viewer.playerId)
-                ?.selectedSyndicateId ?? null
-            }
+            gameState={game.state}
+            viewer={viewer}
+            roster={roster}
+            noteCounts={noteCounts}
           />
         </section>
-      )}
 
-      {game.state !== "ready" && (
-        <>
-          <section style={{ marginTop: "1.5rem" }}>
-            <h3>POWER</h3>
-            <PowerPanel
+        {viewer.isGm && game.state === "ready" && (
+          <section>
+            <h3>Add Player</h3>
+            <AddPlayerForm gameId={gid} />
+          </section>
+        )}
+
+        {!viewer.isGm && viewer.playerId && game.state === "ready" && (
+          <section>
+            <h3>Your Syndicate</h3>
+            <SyndicateSelector
               gameId={gid}
-              viewer={viewer}
-              gameState={game.state}
-              roster={roster}
+              currentSelection={
+                roster.find((p) => p._id === viewer.playerId)
+                  ?.selectedSyndicateId ?? null
+              }
             />
           </section>
+        )}
 
-          {viewer.playerId && (
-            <section style={{ marginTop: "1.5rem" }}>
-              <h3>Your Minions</h3>
-              <MinionBuyPanel
+        {game.state !== "ready" && (
+          <>
+            <section>
+              <h3>POWER</h3>
+              <PowerPanel
                 gameId={gid}
-                playerId={viewer.playerId}
+                viewer={viewer}
                 gameState={game.state}
-                noteCounts={noteCounts}
+                roster={roster}
               />
             </section>
-          )}
 
-          <section style={{ marginTop: "1.5rem" }}>
-            <h3>Call Queue</h3>
-            <CallQueuePanel gameId={gid} isGm={viewer.isGm} />
-          </section>
-        </>
-      )}
+            {viewer.playerId && (
+              <section>
+                <h3>Your Minions</h3>
+                <MinionBuyPanel
+                  gameId={gid}
+                  playerId={viewer.playerId}
+                  gameState={game.state}
+                  noteCounts={noteCounts}
+                />
+              </section>
+            )}
+
+            <section>
+              <h3>Call Queue</h3>
+              <CallQueuePanel gameId={gid} isGm={viewer.isGm} />
+            </section>
+          </>
+        )}
+      </div>
     </div>
   );
 }

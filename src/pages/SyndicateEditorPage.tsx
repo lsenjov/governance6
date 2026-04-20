@@ -38,23 +38,25 @@ export function SyndicateEditorPage() {
 
       <SyndicateCore syndicate={data} canEdit={data.canEdit} isOwner={data.isOwner} />
 
-      <section style={{ marginTop: "1.5rem" }}>
-        <h3>Drawbacks ({data.drawbacks.length}/5)</h3>
-        <DrawbacksEditor
-          syndicateId={sid}
-          drawbacks={data.drawbacks}
-          canEdit={data.canEdit}
-        />
-      </section>
+      <div className="section-masonry" style={{ marginTop: "1.5rem" }}>
+        <section>
+          <h3>Drawbacks ({data.drawbacks.length}/5)</h3>
+          <DrawbacksEditor
+            syndicateId={sid}
+            drawbacks={data.drawbacks}
+            canEdit={data.canEdit}
+          />
+        </section>
 
-      <section style={{ marginTop: "1.5rem" }}>
-        <h3>Minions ({data.minions.length}/8)</h3>
-        <MinionsEditor
-          syndicateId={sid}
-          minions={data.minions}
-          canEdit={data.canEdit}
-        />
-      </section>
+        <section>
+          <h3>Minions ({data.minions.length}/8)</h3>
+          <MinionsEditor
+            syndicateId={sid}
+            minions={data.minions}
+            canEdit={data.canEdit}
+          />
+        </section>
+      </div>
     </div>
   );
 }

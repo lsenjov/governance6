@@ -135,6 +135,16 @@ label {
   margin: 0 auto;
 }
 
+/*
+ * At the 3-column section breakpoint, widen the main content area
+ * so three sections have room to sit side-by-side.
+ */
+@media (min-width: 1400px) {
+  .main-content {
+    max-width: 1600px;
+  }
+}
+
 .centered-loader {
   display: flex;
   align-items: center;
@@ -166,6 +176,48 @@ label {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
+}
+
+/*
+ * Responsive masonry layout for top-level <section> elements.
+ * Uses CSS multi-column layout so short sections no longer leave empty
+ * space beneath them next to taller siblings.
+ * Breakpoints: 1 column by default, 2 columns >= 900px, 3 columns >= 1400px.
+ *
+ * Note: CSS columns flow items top-to-bottom within each column before
+ * moving to the next column (column-first order).
+ */
+.section-masonry {
+  column-count: 1;
+  column-gap: 1.5rem;
+}
+
+@media (min-width: 900px) {
+  .section-masonry {
+    column-count: 2;
+  }
+}
+
+@media (min-width: 1400px) {
+  .section-masonry {
+    column-count: 3;
+  }
+}
+
+.section-masonry > section {
+  display: block;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  margin: 0 0 1.5rem 0;
+  min-width: 0;
+}
+
+.section-masonry > section:last-child {
+  margin-bottom: 0;
+}
+
+.section-masonry > section > :first-child {
+  margin-top: 0;
 }
 
 .stack > * + * {
