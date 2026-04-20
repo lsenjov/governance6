@@ -68,6 +68,37 @@ export function GameDetailPage() {
       )}
 
       <div className="section-masonry" style={{ marginTop: "1.5rem" }}>
+        {game.state !== "ready" && (
+          <>
+            <section>
+              <h3>Call Queue</h3>
+              <CallQueuePanel gameId={gid} isGm={viewer.isGm} />
+            </section>
+
+            {viewer.playerId && (
+              <section>
+                <h3>Your Minions</h3>
+                <MinionBuyPanel
+                  gameId={gid}
+                  playerId={viewer.playerId}
+                  gameState={game.state}
+                  noteCounts={noteCounts}
+                />
+              </section>
+            )}
+
+            <section>
+              <h3>POWER</h3>
+              <PowerPanel
+                gameId={gid}
+                viewer={viewer}
+                gameState={game.state}
+                roster={roster}
+              />
+            </section>
+          </>
+        )}
+
         <section>
           <h3>Roster</h3>
           <RosterList
@@ -97,37 +128,6 @@ export function GameDetailPage() {
               }
             />
           </section>
-        )}
-
-        {game.state !== "ready" && (
-          <>
-            <section>
-              <h3>POWER</h3>
-              <PowerPanel
-                gameId={gid}
-                viewer={viewer}
-                gameState={game.state}
-                roster={roster}
-              />
-            </section>
-
-            {viewer.playerId && (
-              <section>
-                <h3>Your Minions</h3>
-                <MinionBuyPanel
-                  gameId={gid}
-                  playerId={viewer.playerId}
-                  gameState={game.state}
-                  noteCounts={noteCounts}
-                />
-              </section>
-            )}
-
-            <section>
-              <h3>Call Queue</h3>
-              <CallQueuePanel gameId={gid} isGm={viewer.isGm} />
-            </section>
-          </>
         )}
       </div>
     </div>
