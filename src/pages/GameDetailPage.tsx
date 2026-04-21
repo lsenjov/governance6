@@ -72,7 +72,11 @@ export function GameDetailPage() {
           <>
             <section>
               <h3>Call Queue</h3>
-              <CallQueuePanel gameId={gid} isGm={viewer.isGm} />
+              <CallQueuePanel
+                gameId={gid}
+                isGm={viewer.isGm}
+                noteCounts={noteCounts}
+              />
             </section>
 
             <section>
@@ -919,7 +923,15 @@ function MinionBuyPanel({
   );
 }
 
-function CallQueuePanel({ gameId, isGm }: { gameId: GameId; isGm: boolean }) {
+function CallQueuePanel({
+  gameId,
+  isGm,
+  noteCounts,
+}: {
+  gameId: GameId;
+  isGm: boolean;
+  noteCounts: ReturnType<typeof useNotesCountMap>;
+}) {
   const active = useQuery(api.calls.activeCalls, { gameId });
   const removed = useQuery(api.calls.recentlyRemovedCalls, { gameId });
   const removeCall = useMutation(api.calls.removeCall);
@@ -948,9 +960,20 @@ function CallQueuePanel({ gameId, isGm }: { gameId: GameId; isGm: boolean }) {
             style={{ justifyContent: "space-between" }}
           >
             <div>
-              <strong>{c.playerName}</strong>
-              <span className="muted"> called </span>
-              <strong>{c.minionName}</strong>
+              <div className="row-wrap" style={{ alignItems: "center" }}>
+                <strong>{c.playerName}</strong>
+                <span className="muted"> called </span>
+                <strong>{c.minionName}</strong>
+                <NoteIcon
+                  gameId={gameId}
+                  target={{ kind: "minion", minionId: c.minionId }}
+                  count={resolveNoteCount(noteCounts, {
+                    kind: "minion",
+                    minionId: c.minionId,
+                  })}
+                  label={c.minionName}
+                />
+              </div>
               <div className="muted" style={{ fontSize: "0.8rem" }}>
                 {new Date(c.createdAt).toLocaleTimeString()}
               </div>
