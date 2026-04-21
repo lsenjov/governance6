@@ -23,7 +23,20 @@ export default defineSchema({
     image: v.optional(v.string()),
     // App-specific:
     displayName: v.optional(v.string()), // Rule 1
+    // Site admin flag. Manageable only directly via the Convex database
+    // (no in-app UI grants this). A site admin can manage the preset
+    // skill list used when authoring Minions.
+    isSiteAdmin: v.optional(v.boolean()),
   }).index("email", ["email"]),
+
+  // Preset skill catalogue. Used by the Minion editor's autocomplete.
+  // Writeable only by site admins; readable by any authenticated user.
+  // Users may still enter free-form skills that are not in this list.
+  presetSkills: defineTable({
+    name: v.string(),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_name", ["name"]),
 
   // Rule 2: Syndicate.
   syndicates: defineTable({
@@ -45,7 +58,9 @@ export default defineSchema({
     order: v.number(),
   }).index("by_syndicate", ["syndicateId"]),
 
-  // Rule 4: Minions (<=8 per Syndicate, 1-5 skills).
+  // Rule 4: Minions (<=8 per Syndicate, 1-5 skills). In addition, the
+  // union of skills across all Minions within a Syndicate is capped at
+  // 13 distinct skill names (case-insensitive).
   minions: defineTable({
     syndicateId: v.id("syndicates"),
     name: v.string(),

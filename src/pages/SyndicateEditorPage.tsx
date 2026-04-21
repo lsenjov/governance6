@@ -1,9 +1,26 @@
-import { useState } from "react";
+import { useState, useId } from "react";
 import type { FormEvent } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+
+/**
+ * Per-Syndicate cap on the union of skill names across every Minion.
+ * Must match `MAX_UNIQUE_SYNDICATE_SKILLS` in `convex/minions.ts`.
+ */
+const MAX_UNIQUE_SYNDICATE_SKILLS = 13;
+
+function uniqueSkillCount(skillLists: string[][]): number {
+  const seen = new Set<string>();
+  for (const list of skillLists) {
+    for (const s of list) {
+      const t = s.trim().toLowerCase();
+      if (t.length > 0) seen.add(t);
+    }
+  }
+  return seen.size;
+}
 
 export function SyndicateEditorPage() {
   const { syndicateId } = useParams<{ syndicateId: string }>();
@@ -318,10 +335,22 @@ function MinionsEditor({
   const create = useMutation(api.minions.create);
   const update = useMutation(api.minions.update);
   const remove = useMutation(api.minions.remove);
+  const presetSkills = useQuery(api.presetSkills.list);
   const [showForm, setShowForm] = useState(false);
+
+  const presetNames = presetSkills?.map((s) => s.name) ?? [];
+  const uniqueUsed = uniqueSkillCount(minions.map((m) => m.skills));
+  const overCap = uniqueUsed > MAX_UNIQUE_SYNDICATE_SKILLS;
 
   return (
     <div className="stack">
+      <div className="muted" style={{ fontSize: "0.9rem" }}>
+        Unique skills used across all Minions:{" "}
+        <strong style={{ color: overCap ? "var(--danger)" : undefined }}>
+          {uniqueUsed}
+        </strong>
+        /{MAX_UNIQUE_SYNDICATE_SKILLS}
+      </div>
       {minions.length === 0 && (
         <div className="muted">No Minions yet.</div>
       )}
@@ -330,6 +359,7 @@ function MinionsEditor({
           key={m._id}
           minion={m}
           canEdit={canEdit}
+          presetSkillNames={presetNames}
           onSave={(patch) => update({ minionId: m._id, ...patch })}
           onDelete={() => remove({ minionId: m._id })}
         />
@@ -342,6 +372,7 @@ function MinionsEditor({
             </button>
           ) : (
             <NewMinionForm
+              presetSkillNames={presetNames}
               onCancel={() => setShowForm(false)}
               onSubmit={async (data) => {
                 await create({ syndicateId, ...data });
@@ -358,6 +389,7 @@ function MinionsEditor({
 function NewMinionForm({
   onSubmit,
   onCancel,
+  presetSkillNames,
 }: {
   onSubmit: (data: {
     name: string;
@@ -366,6 +398,7 @@ function NewMinionForm({
     skills: string[];
   }) => Promise<void>;
   onCancel: () => void;
+  presetSkillNames: string[];
 }) {
   const [name, setName] = useState("");
   const [accent, setAccent] = useState("");
@@ -419,7 +452,11 @@ function NewMinionForm({
           style={{ width: "100%" }}
         />
       </div>
-      <SkillsField skills={skills} onChange={setSkills} />
+      <SkillsField
+        skills={skills}
+        onChange={setSkills}
+        presetSkillNames={presetSkillNames}
+      />
       {err && <div className="error-text">{err}</div>}
       <div className="row-wrap">
         <button type="submit">Create Minion</button>
@@ -436,6 +473,7 @@ function MinionRow({
   canEdit,
   onSave,
   onDelete,
+  presetSkillNames,
 }: {
   minion: MinionDoc;
   canEdit: boolean;
@@ -446,6 +484,7 @@ function MinionRow({
     skills: string[];
   }) => Promise<unknown>;
   onDelete: () => Promise<unknown>;
+  presetSkillNames: string[];
 }) {
   const [name, setName] = useState(minion.name);
   const [accent, setAccent] = useState(minion.accent ?? "");
@@ -506,6 +545,7 @@ function MinionRow({
         skills={skills}
         onChange={setSkills}
         disabled={!canEdit}
+        presetSkillNames={presetSkillNames}
       />
       {err && <div className="error-text">{err}</div>}
       {saved && <div className="success-text">Saved.</div>}
@@ -531,14 +571,26 @@ function SkillsField({
   skills,
   onChange,
   disabled,
+  presetSkillNames,
 }: {
   skills: string[];
   onChange: (next: string[]) => void;
   disabled?: boolean;
+  presetSkillNames: string[];
 }) {
+  // Stable id shared by all skill inputs in this instance so the datalist
+  // autocomplete is scoped to this form.
+  const listId = useId();
   return (
     <div>
       <label>Skills (1–5)</label>
+      {presetSkillNames.length > 0 && (
+        <datalist id={listId}>
+          {presetSkillNames.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
+      )}
       <div className="stack">
         {skills.map((s, i) => (
           <div key={i} className="row" style={{ gap: "0.5rem" }}>
@@ -551,6 +603,8 @@ function SkillsField({
               }}
               disabled={disabled}
               maxLength={120}
+              list={presetSkillNames.length > 0 ? listId : undefined}
+              placeholder="Skill name"
               style={{ flex: 1 }}
             />
             {!disabled && skills.length > 1 && (

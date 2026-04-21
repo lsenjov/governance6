@@ -7,6 +7,9 @@ import { assertSyndicateEditable, requireUserId } from "./lib/auth";
  *
  * Up to 8 per Syndicate. Mandatory name. Optional accent (<=40 chars).
  * Optional description. 1–5 skills (each a single non-empty string).
+ *
+ * Additional cap: the union of skill names across every Minion in a
+ * Syndicate is limited to 13 distinct names (case-insensitive).
  */
 
 const MAX_MINIONS = 8;
@@ -16,6 +19,21 @@ const NAME_MAX = 120;
 const ACCENT_MAX = 40;
 const DESCRIPTION_MAX = 2000;
 const SKILL_MAX = 120;
+const MAX_UNIQUE_SYNDICATE_SKILLS = 13;
+
+/**
+ * Count the distinct (case-insensitive) skill names used across a list of
+ * minion skill arrays, preserving the first-seen original casing.
+ */
+function uniqueSkillSet(skillLists: string[][]): Set<string> {
+  const seen = new Set<string>();
+  for (const list of skillLists) {
+    for (const s of list) {
+      seen.add(s.trim().toLowerCase());
+    }
+  }
+  return seen;
+}
 
 function validateSkills(skills: string[]): string[] {
   if (skills.length < MIN_SKILLS || skills.length > MAX_SKILLS) {
@@ -86,6 +104,15 @@ export const create = mutation({
     if (existing.length >= MAX_MINIONS) {
       throw new Error(`A Syndicate may have at most ${MAX_MINIONS} Minions.`);
     }
+
+    // Enforce the per-Syndicate 13-unique-skill cap across all Minions.
+    const merged = uniqueSkillSet([...existing.map((m) => m.skills), skills]);
+    if (merged.size > MAX_UNIQUE_SYNDICATE_SKILLS) {
+      throw new Error(
+        `A Syndicate may use at most ${MAX_UNIQUE_SYNDICATE_SKILLS} distinct skills across all its Minions.`,
+      );
+    }
+
     const maxOrder = existing.reduce((m, x) => Math.max(m, x.order), -1);
     return await ctx.db.insert("minions", {
       syndicateId: args.syndicateId,
@@ -121,7 +148,29 @@ export const update = mutation({
     if (args.accent !== undefined) patch.accent = validateAccent(args.accent);
     if (args.description !== undefined)
       patch.description = validateDescription(args.description);
-    if (args.skills !== undefined) patch.skills = validateSkills(args.skills);
+    if (args.skills !== undefined) {
+      const skills = validateSkills(args.skills);
+      // Recompute syndicate-wide unique skill count with this minion's
+      // skills replaced by the new list.
+      const siblings = await ctx.db
+        .query("minions")
+        .withIndex("by_syndicate", (q) =>
+          q.eq("syndicateId", minion.syndicateId),
+        )
+        .collect();
+      const merged = uniqueSkillSet([
+        ...siblings
+          .filter((m) => m._id !== args.minionId)
+          .map((m) => m.skills),
+        skills,
+      ]);
+      if (merged.size > MAX_UNIQUE_SYNDICATE_SKILLS) {
+        throw new Error(
+          `A Syndicate may use at most ${MAX_UNIQUE_SYNDICATE_SKILLS} distinct skills across all its Minions.`,
+        );
+      }
+      patch.skills = skills;
+    }
 
     await ctx.db.patch(args.minionId, patch);
   },

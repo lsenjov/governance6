@@ -29,6 +29,18 @@ export async function requireUserId(ctx: Ctx): Promise<Id<"users">> {
   return userId;
 }
 
+/**
+ * Site admins are set directly in the database (never via the app).
+ * They can manage the preset skill catalogue.
+ */
+export async function requireSiteAdmin(ctx: Ctx): Promise<Doc<"users">> {
+  const user = await requireUser(ctx);
+  if (!user.isSiteAdmin) {
+    throw new Error("Site admin privileges required.");
+  }
+  return user;
+}
+
 export async function requireGame(
   ctx: Ctx,
   gameId: Id<"games">,
