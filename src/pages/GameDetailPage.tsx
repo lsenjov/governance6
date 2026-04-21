@@ -353,14 +353,16 @@ function RosterList({
               </button>
             )}
           </div>
-          {gameState !== "ready" && p.selectedSyndicateId && (
-            <MinionBuyPanel
-              gameId={gameId}
-              playerId={p._id}
-              gameState={gameState}
-              noteCounts={noteCounts}
-            />
-          )}
+          {gameState !== "ready" &&
+            p.selectedSyndicateId &&
+            (viewer.isGm || p._id === viewer.playerId) && (
+              <MinionBuyPanel
+                gameId={gameId}
+                playerId={p._id}
+                gameState={gameState}
+                noteCounts={noteCounts}
+              />
+            )}
         </div>
       ))}
     </div>
