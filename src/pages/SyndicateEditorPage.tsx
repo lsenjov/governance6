@@ -55,7 +55,7 @@ export function SyndicateEditorPage() {
 
       <SyndicateCore syndicate={data} canEdit={data.canEdit} isOwner={data.isOwner} />
 
-      <div className="section-masonry" style={{ marginTop: "1.5rem" }}>
+      <div className="section-grid" style={{ marginTop: "1.5rem" }}>
         <section>
           <h3>Drawbacks ({data.drawbacks.length}/5)</h3>
           <DrawbacksEditor
@@ -232,28 +232,24 @@ function DrawbacksEditor({
         />
       ))}
       {canEdit && drawbacks.length < 5 && (
-        <form onSubmit={handleCreate} className="card stack">
-          <div className="row-wrap">
-            <div style={{ flex: 1 }}>
-              <label>Drawback name</label>
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                required
-                maxLength={120}
-                style={{ width: "100%" }}
-              />
-            </div>
-          </div>
-          <div>
-            <label>Description</label>
-            <textarea
-              value={newDesc}
-              onChange={(e) => setNewDesc(e.target.value)}
-              rows={2}
-              style={{ width: "100%" }}
-            />
-          </div>
+        <form onSubmit={handleCreate} className="card tight stack">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            required
+            maxLength={120}
+            aria-label="New drawback name"
+            placeholder="Drawback name"
+            style={{ width: "100%" }}
+          />
+          <textarea
+            value={newDesc}
+            onChange={(e) => setNewDesc(e.target.value)}
+            rows={2}
+            aria-label="New drawback description"
+            placeholder="Description"
+            style={{ width: "100%" }}
+          />
           {err && <div className="error-text">{err}</div>}
           <button type="submit">Add Drawback</button>
         </form>
@@ -287,12 +283,14 @@ function DrawbackRow({
   }
 
   return (
-    <div className="card stack">
+    <div className="card tight stack">
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}
         disabled={!canEdit}
         maxLength={120}
+        aria-label="Drawback name"
+        placeholder="Drawback name"
         style={{ width: "100%", fontWeight: 600 }}
       />
       <textarea
@@ -300,6 +298,8 @@ function DrawbackRow({
         onChange={(e) => setDescription(e.target.value)}
         rows={2}
         disabled={!canEdit}
+        aria-label="Drawback description"
+        placeholder="Description"
         style={{ width: "100%" }}
       />
       {err && <div className="error-text">{err}</div>}
@@ -422,36 +422,33 @@ function NewMinionForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="card stack">
+    <form onSubmit={handleSubmit} className="card tight stack">
       <h4 style={{ margin: 0 }}>New Minion</h4>
-      <div>
-        <label>Name *</label>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          maxLength={120}
-          style={{ width: "100%" }}
-        />
-      </div>
-      <div>
-        <label>Accent (optional, ≤40 chars)</label>
-        <input
-          value={accent}
-          onChange={(e) => setAccent(e.target.value)}
-          maxLength={40}
-          style={{ width: "100%" }}
-        />
-      </div>
-      <div>
-        <label>Description (optional)</label>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={2}
-          style={{ width: "100%" }}
-        />
-      </div>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        required
+        maxLength={120}
+        aria-label="Minion name"
+        placeholder="Name *"
+        style={{ width: "100%" }}
+      />
+      <input
+        value={accent}
+        onChange={(e) => setAccent(e.target.value)}
+        maxLength={40}
+        aria-label="Minion accent"
+        placeholder="Accent (optional, ≤40 chars)"
+        style={{ width: "100%" }}
+      />
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        rows={2}
+        aria-label="Minion description"
+        placeholder="Description (optional)"
+        style={{ width: "100%" }}
+      />
       <SkillsField
         skills={skills}
         onChange={setSkills}
@@ -510,37 +507,34 @@ function MinionRow({
   }
 
   return (
-    <div className="card stack">
-      <div>
-        <label>Name</label>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={!canEdit}
-          maxLength={120}
-          style={{ width: "100%", fontWeight: 600 }}
-        />
-      </div>
-      <div>
-        <label>Accent</label>
-        <input
-          value={accent}
-          onChange={(e) => setAccent(e.target.value)}
-          disabled={!canEdit}
-          maxLength={40}
-          style={{ width: "100%" }}
-        />
-      </div>
-      <div>
-        <label>Description</label>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          disabled={!canEdit}
-          rows={2}
-          style={{ width: "100%" }}
-        />
-      </div>
+    <div className="card tight stack">
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        disabled={!canEdit}
+        maxLength={120}
+        aria-label="Minion name"
+        placeholder="Name"
+        style={{ width: "100%", fontWeight: 600 }}
+      />
+      <input
+        value={accent}
+        onChange={(e) => setAccent(e.target.value)}
+        disabled={!canEdit}
+        maxLength={40}
+        aria-label="Minion accent"
+        placeholder="Accent"
+        style={{ width: "100%" }}
+      />
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        disabled={!canEdit}
+        rows={2}
+        aria-label="Minion description"
+        placeholder="Description"
+        style={{ width: "100%" }}
+      />
       <SkillsField
         skills={skills}
         onChange={setSkills}

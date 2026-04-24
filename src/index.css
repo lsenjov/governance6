@@ -11,6 +11,11 @@
   --success: #3dd68c;
   --warning: #ffb84d;
 
+  /* Layout offsets used by sticky HUD, right rail, and the mobile bottom strip. */
+  --hud-height: 3rem;
+  --rail-width: 22rem;
+  --bottom-strip-height: 3.25rem;
+
   font-family:
     system-ui,
     -apple-system,
@@ -136,12 +141,12 @@ label {
 }
 
 /*
- * At the 3-column section breakpoint, widen the main content area
- * so three sections have room to sit side-by-side.
+ * At the 2-pane game-shell breakpoint, widen the main content area
+ * so the roster and right rail have room to sit side-by-side.
  */
-@media (min-width: 1400px) {
+@media (min-width: 900px) {
   .main-content {
-    max-width: 1600px;
+    max-width: 1400px;
   }
 }
 
@@ -157,8 +162,26 @@ label {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 1rem 1.25rem;
-  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.card.tight {
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.card.flush {
+  margin-bottom: 0;
+}
+
+.row-divider {
+  padding: 0.4rem 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.row-divider:last-child {
+  border-bottom: none;
 }
 
 .card h2,
@@ -179,45 +202,145 @@ label {
 }
 
 /*
- * Responsive masonry layout for top-level <section> elements.
- * Uses CSS multi-column layout so short sections no longer leave empty
- * space beneath them next to taller siblings.
- * Breakpoints: 1 column by default, 2 columns >= 900px, 3 columns >= 1400px.
- *
- * Note: CSS columns flow items top-to-bottom within each column before
- * moving to the next column (column-first order).
+ * Two-column grid used by the Syndicate Editor to place Drawbacks and
+ * Minions side-by-side at wider viewports. Narrow viewports collapse to a
+ * single column.
  */
-.section-masonry {
-  column-count: 1;
-  column-gap: 1.5rem;
+.section-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  align-items: start;
 }
 
 @media (min-width: 900px) {
-  .section-masonry {
-    column-count: 2;
+  .section-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (min-width: 1400px) {
-  .section-masonry {
-    column-count: 3;
-  }
-}
-
-.section-masonry > section {
-  display: block;
-  break-inside: avoid;
-  page-break-inside: avoid;
-  margin: 0 0 1.5rem 0;
+.section-grid > section {
+  margin: 0;
   min-width: 0;
 }
 
-.section-masonry > section:last-child {
-  margin-bottom: 0;
+.section-grid > section > :first-child {
+  margin-top: 0;
 }
 
-.section-masonry > section > :first-child {
+/*
+ * Game Detail page shell: sticky HUD + two-pane body with a sticky right
+ * rail on wide viewports, and a mobile-only bottom summary strip below.
+ */
+.game-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.game-hud {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  min-height: var(--hud-height);
+}
+
+.game-hud .spacer {
+  flex: 1;
+}
+
+.game-hud h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.game-you-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.game-you-strip .spacer {
+  flex: 1;
+}
+
+.game-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--rail-width);
+  gap: 1rem;
+  align-items: start;
+}
+
+.game-grid.single-column {
+  grid-template-columns: 1fr;
+}
+
+.game-main {
+  min-width: 0;
+}
+
+.game-rail {
+  position: sticky;
+  top: calc(var(--hud-height) + 0.5rem);
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.game-rail > section {
+  margin: 0;
+}
+
+.game-rail > section > :first-child {
   margin-top: 0;
+}
+
+@media (max-width: 899px) {
+  .game-grid {
+    grid-template-columns: 1fr;
+  }
+  .game-rail {
+    position: static;
+  }
+}
+
+.game-bottom-strip {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  .game-bottom-strip {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    background: var(--bg-elevated);
+    border-top: 1px solid var(--border);
+    padding: 0.5rem 0.75rem;
+    gap: 0.75rem;
+    align-items: center;
+    justify-content: space-between;
+    min-height: var(--bottom-strip-height);
+  }
+  .main-content {
+    padding-bottom: calc(1.5rem + var(--bottom-strip-height));
+  }
 }
 
 .stack > * + * {
@@ -372,6 +495,109 @@ th {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+/*
+ * Generic action popover reused by inline form launchers (Transfer,
+ * Ledger) on the game screen. Same geometry as `.notes-popover` but with
+ * tighter internal padding since the contents are form rows, not a
+ * notes list.
+ */
+.action-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  width: min(24rem, 92vw);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.625rem 0.75rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.action-popover h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+/*
+ * Slide-over drawer used by the game log. Defaults to sliding in from
+ * the right; add `.drawer.bottom` for a bottom sheet on narrow viewports.
+ */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 39;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(28rem, 100vw);
+  background: var(--bg-elevated);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 0.75rem 1rem;
+  gap: 0.75rem;
+}
+
+.drawer.bottom {
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  max-height: 70vh;
+  border-left: none;
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+
+.drawer-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+/*
+ * POWER standings horizontal-bar list (right rail).
+ */
+.power-bar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 7rem) 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.3rem 0.25rem;
+}
+
+.power-bar-track {
+  background: var(--bg-muted);
+  border-radius: 4px;
+  height: 0.6rem;
+  overflow: hidden;
+}
+
+.power-bar-fill {
+  background: var(--accent);
+  height: 100%;
 }
 
 .notes-popover-header {
