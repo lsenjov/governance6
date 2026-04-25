@@ -42,7 +42,7 @@ export default function App() {
       <Authenticated>
         <div className="app-shell">
           <TopNav />
-          <main className="main-content">
+          <main className="main-content bulletin">
             <Routes>
               <Route path="/" element={<Navigate to="/games" replace />} />
               <Route path="/profile" element={<ProfilePage />} />
