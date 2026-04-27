@@ -130,18 +130,25 @@ rail itself isn't rendered then — `src/pages/GameDetailPage.tsx:74-103`).
       return `null` rather than partial data, so the UI can render the
       empty state safely.
 
-- [ ] Task 4. Add backend tests in a new `convex/calls.test.ts` (or
-      reuse the existing one if present) covering:
+- [ ] Task 4. Add backend tests in a new `convex/calls.test.ts`
+      covering:
       - returns `null` when queue is empty,
       - returns the FIFO **head** when multiple calls exist (verify by
         creating two calls in order),
+      - after `removeCall` on the head, the query returns the **next**
+        head (exercises the verification criterion that the section
+        re-populates with the new head),
       - includes minion `skills`/`accent`/`description` and the
         syndicate's drawbacks (sorted by `order`),
-      - throws for non-GM participants and for non-participants,
-      - is unaffected by removed (soft-deleted) calls (i.e. `isActive
-        = false` rows are skipped).
+      - throws for non-GM participants and for non-participants.
       Follow the existing patterns in `convex/notes.test.ts:111-573` and
       `convex/calls`-adjacent test fixtures.
+
+      Note: defensive-null tests for missing minion/syndicate are
+      omitted because once a game enters `playing` state, syndicates
+      lock and their minions cannot be deleted, so the missing-join
+      branch (Task 3) is purely defence-in-depth and not reachable
+      via the supported game lifecycle.
 
 ### Frontend: extract reusable inline note components
 
@@ -153,7 +160,15 @@ rail itself isn't rendered then — `src/pages/GameDetailPage.tsx:74-103`).
         existing item layout from `NoteIcon.tsx:229-269`.
       - `NoteCreateForm`: takes `gameId` + `target: NoteTarget` and
         renders the existing `<form>` from `NoteIcon.tsx:271-315`,
-        including visibility toggle and immutability footer.
+        including visibility toggle and immutability footer. Use
+        `React.useId()` to generate unique ids for the textarea and
+        visibility checkbox (and matching `htmlFor`) so multiple
+        instances on the page (popover + rail) don't collide on the
+        currently-hardcoded `note-body` / `note-visibility` ids
+        (`NoteIcon.tsx:282, 298`).
+      Also export the existing `NoteTarget` type (`NoteIcon.tsx:6-9`)
+      and the `buildListArgs` helper (`NoteIcon.tsx:320`) so the rail
+      can construct list-query args identically.
       The popover continues to use these components internally so we
       keep one source of truth. Rationale: the rail must render the
       same author/visibility/delete affordances inline as the popover
@@ -167,9 +182,11 @@ rail itself isn't rendered then — `src/pages/GameDetailPage.tsx:74-103`).
 
 - [ ] Task 7. Create a new `CurrentCallRail` component in
       `src/pages/GameDetailPage.tsx` (co-located beside `CallQueueRail`,
-      `PowerStandingsRail`). Props: `{ gameId, viewerIsGm,
-      noteCounts? }`. Skips the underlying query with `"skip"` when
-      `!viewerIsGm` so non-GMs never subscribe.
+      `PowerStandingsRail`). Props: `{ gameId, isGm, noteCounts? }`
+      — match the existing `CallQueueRail` prop name (`isGm`,
+      `GameDetailPage.tsx:107-109`) for consistency. Skips the
+      underlying query with `"skip"` when `!isGm` so non-GMs never
+      subscribe.
 
 - [ ] Task 8. Inside `CurrentCallRail`, subscribe to
       `api.calls.getCurrentCallDetails` (Task 1) and the existing
@@ -186,9 +203,10 @@ rail itself isn't rendered then — `src/pages/GameDetailPage.tsx:74-103`).
          language from the existing minion buy panel
          (`GameDetailPage.tsx:1202-1232`) and `SelectedSyndicateDetails`
          (`GameDetailPage.tsx:1900-1933`) for consistency.
-      3. **Syndicate**: name + "Leader …" muted line. Optional `Link`
-         to the syndicate editor mirrors
-         `GameDetailPage.tsx:1939-1941` but is purely informational.
+      3. **Syndicate**: name + "Leader …" muted line. No link to the
+         syndicate editor — the GM may not have permission to open a
+         player-owned, non-shared syndicate, and the section is
+         informational, not navigational.
       4. **Drawbacks**: list in the same shape as
          `SelectedSyndicateDetails` (`GameDetailPage.tsx:1872-1888`):
          bold name + muted description.
@@ -212,14 +230,15 @@ rail itself isn't rendered then — `src/pages/GameDetailPage.tsx:74-103`).
 
 - [ ] Task 11. Insert the `<section><h3>Current Call</h3>{...}</section>`
       block in the rail JSX **above** the existing Call Queue section
-      at `GameDetailPage.tsx:104-112`, gated by `viewer.isGm`. The
-      existing rail order (Call Queue → POWER Standings) is preserved
-      below it.
+      at `GameDetailPage.tsx:104-112`, gated by `viewer.isGm` and
+      passing `isGm={viewer.isGm}` to `CurrentCallRail`. The existing
+      rail order (Call Queue → POWER Standings) is preserved below it.
 
 - [ ] Task 12. Mirror the new section inside the mobile bottom drawer
-      at `GameDetailPage.tsx:1988-2012`, again gated on `viewer.isGm`,
-      so GM mobile users get the same workflow. Place it as the first
-      `<section>` inside the drawer.
+      at `GameDetailPage.tsx:1988-2012`, again gated on `viewer.isGm`
+      and passing `isGm={viewer.isGm}`, so GM mobile users get the
+      same workflow. Place it as the first `<section>` inside the
+      drawer.
 
 ### Styling / UX consistency
 
@@ -250,10 +269,11 @@ rail itself isn't rendered then — `src/pages/GameDetailPage.tsx:74-103`).
   at the very top of the right rail, above the existing Call Queue.
 - A Player viewing the same game does **not** see the section, and no
   query for `getCurrentCallDetails` is issued from their client.
-- In the `ready` and `archived` states the rail behaviour is unchanged
-  (rail hidden in `ready`; in `archived` the section renders read-only
-  data and the "post note" form is still functional because notes are
-  game-scoped, not state-locked — confirm against `notes.ts` behaviour).
+- In the `ready` and `archived` states the rail behaviour is unchanged:
+  the rail is hidden in `ready`, and `archived` games can never have
+  an active call (Calls require `game.state === "playing"`,
+  `convex/calls.ts:26-28`), so the section shows "No active call."
+  there.
 - When the queue is empty the section shows "No active call."
 - When a player adds or replaces their call, the section updates
   automatically (Convex live query) to reflect the new head.
