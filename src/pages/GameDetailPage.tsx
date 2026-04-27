@@ -108,6 +108,7 @@ export function GameDetailPage() {
                 gameId={gid}
                 isGm={viewer.isGm}
                 noteCounts={noteCounts}
+                hideManagementControls={hideManagementControls}
               />
             </section>
             <section>
@@ -123,7 +124,11 @@ export function GameDetailPage() {
         )}
 
         <div className="game-main">
-          <CurrentCallSection gameId={gid} viewerIsGm={viewer.isGm} />
+          <CurrentCallSection
+            gameId={gid}
+            viewerIsGm={viewer.isGm}
+            hideManagementControls={hideManagementControls}
+          />
 
           <section>
             <h3 style={{ marginTop: 0 }}>Roster</h3>
@@ -134,6 +139,7 @@ export function GameDetailPage() {
               roster={roster}
               powerByPlayer={powerByPlayer}
               noteCounts={noteCounts}
+              hideManagementControls={hideManagementControls}
             />
           </section>
 
@@ -197,6 +203,7 @@ export function GameDetailPage() {
           viewer={viewer}
           roster={roster}
           powerByPlayer={powerByPlayer}
+          hideManagementControls={hideManagementControls}
         />
       )}
     </div>
@@ -286,6 +293,7 @@ function GameHud({
           target={{ kind: "game" }}
           count={gameNoteCount}
           label={gameName}
+          hideManagementControls={hideManagementControls}
         />
         <button
           type="button"
@@ -933,6 +941,7 @@ function RosterList({
   roster,
   powerByPlayer,
   noteCounts,
+  hideManagementControls,
 }: {
   gameId: GameId;
   gameState: GameState;
@@ -940,6 +949,7 @@ function RosterList({
   roster: RosterEntry[];
   powerByPlayer: Map<PlayerId, number>;
   noteCounts: ReturnType<typeof useNotesCountMap>;
+  hideManagementControls: boolean;
 }) {
   const livePlayerIds = useMemo(() => roster.map((p) => p._id), [roster]);
   const { isExpanded, toggle } = useRosterExpandedSet(
@@ -966,6 +976,7 @@ function RosterList({
           expanded={isExpanded(p._id)}
           onToggle={() => toggle(p._id)}
           isSelf={p._id === viewer.playerId}
+          hideManagementControls={hideManagementControls}
         />
       ))}
     </div>
@@ -982,6 +993,7 @@ function RosterRow({
   expanded,
   onToggle,
   isSelf,
+  hideManagementControls,
 }: {
   gameId: GameId;
   gameState: GameState;
@@ -992,6 +1004,7 @@ function RosterRow({
   expanded: boolean;
   onToggle: () => void;
   isSelf: boolean;
+  hideManagementControls: boolean;
 }) {
   const removePlayer = useMutation(api.games.removePlayer);
   const [err, setErr] = useState<string | null>(null);
@@ -1079,6 +1092,7 @@ function RosterRow({
                     syndicateId: player.selectedSyndicate._id,
                   })}
                   label={player.selectedSyndicate.name}
+                  hideManagementControls={hideManagementControls}
                 />
               </span>
             </>
@@ -1116,6 +1130,7 @@ function RosterRow({
             playerId={player._id}
             gameState={gameState}
             noteCounts={noteCounts}
+            hideManagementControls={hideManagementControls}
           />
         </div>
       )}
@@ -1144,11 +1159,13 @@ function MinionBuyPanel({
   playerId,
   gameState,
   noteCounts,
+  hideManagementControls,
 }: {
   gameId: GameId;
   playerId: PlayerId;
   gameState: GameState;
   noteCounts: ReturnType<typeof useNotesCountMap>;
+  hideManagementControls: boolean;
 }) {
   const data = useQuery(api.minionBuys.listForPlayer, { gameId, playerId });
   const buy = useMutation(api.minionBuys.buyMinion);
@@ -1245,6 +1262,7 @@ function MinionBuyPanel({
                   minionId: m._id,
                 })}
                 label={m.name}
+                hideManagementControls={hideManagementControls}
               />
               {gameState === "playing" &&
                 !m.bought &&
@@ -1386,10 +1404,12 @@ function CallQueueRail({
   gameId,
   isGm,
   noteCounts,
+  hideManagementControls,
 }: {
   gameId: GameId;
   isGm: boolean;
   noteCounts: ReturnType<typeof useNotesCountMap>;
+  hideManagementControls: boolean;
 }) {
   const active = useQuery(api.calls.activeCalls, { gameId });
   const removeCall = useMutation(api.calls.removeCall);
@@ -1439,6 +1459,7 @@ function CallQueueRail({
                       minionId: c.minionId,
                     })}
                     label={c.minionName}
+                    hideManagementControls={hideManagementControls}
                   />
                   {isGm && (
                     <button
@@ -1955,11 +1976,13 @@ function BottomStrip({
   viewer,
   roster,
   powerByPlayer,
+  hideManagementControls,
 }: {
   gameId: GameId;
   viewer: Viewer;
   roster: RosterEntry[];
   powerByPlayer: Map<PlayerId, number>;
+  hideManagementControls: boolean;
 }) {
   const active = useQuery(api.calls.activeCalls, { gameId });
   const noteCounts = useNotesCountMap(gameId);
@@ -1999,6 +2022,7 @@ function BottomStrip({
               gameId={gameId}
               isGm={viewer.isGm}
               noteCounts={noteCounts}
+              hideManagementControls={hideManagementControls}
             />
           </section>
           <section>
@@ -2033,9 +2057,11 @@ function BottomStrip({
 function CurrentCallSection({
   gameId,
   viewerIsGm,
+  hideManagementControls,
 }: {
   gameId: GameId;
   viewerIsGm: boolean;
+  hideManagementControls: boolean;
 }) {
   // Skip both subscriptions for non-GMs — defence in depth alongside the
   // server-side `requireGameGm` in `getCurrentCallDetails`.
@@ -2134,6 +2160,7 @@ function CurrentCallSection({
               target={{ kind: "minion", minionId: data.minion._id }}
               count={notes?.length ?? 0}
               label={data.minion.name}
+              hideManagementControls={hideManagementControls}
             />
             <button
               type="button"
@@ -2237,7 +2264,11 @@ function CurrentCallSection({
                 {visibleNotes !== undefined && ` (${visibleNotes.length})`}
               </h4>
               {noteErr && <div className="error-text">{noteErr}</div>}
-              <NoteList notes={visibleNotes} onDelete={handleDeleteNote} />
+              <NoteList
+                notes={visibleNotes}
+                onDelete={handleDeleteNote}
+                hideManagementControls={hideManagementControls}
+              />
               {olderCount > 0 && (
                 <div
                   className="muted"

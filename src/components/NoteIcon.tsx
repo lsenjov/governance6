@@ -33,13 +33,26 @@ type NoteIconProps = {
   target: NoteTarget;
   count: number;
   label: string; // Accessible label describing what the icon annotates.
+  /**
+   * When `true`, the GM-only "Delete" button on each listed note is
+   * suppressed. Mirrors the per-game "Hide management controls" toggle
+   * so the GM can demo the popover without exposing destructive
+   * affordances. Defaults to `false`.
+   */
+  hideManagementControls?: boolean;
 };
 
 /**
  * Small speech-bubble button that toggles a NotesPopover for a given target.
  * Designed to sit inline next to a title/row.
  */
-export function NoteIcon({ gameId, target, count, label }: NoteIconProps) {
+export function NoteIcon({
+  gameId,
+  target,
+  count,
+  label,
+  hideManagementControls = false,
+}: NoteIconProps) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement | null>(null);
 
@@ -66,6 +79,7 @@ export function NoteIcon({ gameId, target, count, label }: NoteIconProps) {
           label={label}
           onClose={() => setOpen(false)}
           anchorRef={anchorRef}
+          hideManagementControls={hideManagementControls}
         />
       )}
     </div>
@@ -96,6 +110,7 @@ type PopoverProps = {
   label: string;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLDivElement | null>;
+  hideManagementControls?: boolean;
 };
 
 function NotesPopover({
@@ -104,6 +119,7 @@ function NotesPopover({
   label,
   onClose,
   anchorRef,
+  hideManagementControls = false,
 }: PopoverProps) {
   const queryArgs = buildListArgs(gameId, target);
   const notes = useQuery(api.notes.listNotesForTarget, queryArgs);
@@ -216,7 +232,11 @@ function NotesPopover({
       </div>
 
       <div className="notes-popover-list">
-        <NoteList notes={notes} onDelete={handleDelete} />
+        <NoteList
+          notes={notes}
+          onDelete={handleDelete}
+          hideManagementControls={hideManagementControls}
+        />
       </div>
 
       {err && <div className="error-text">{err}</div>}
@@ -238,9 +258,16 @@ function NotesPopover({
 export function NoteList({
   notes,
   onDelete,
+  hideManagementControls = false,
 }: {
   notes: NoteListItem[] | undefined;
   onDelete: (noteId: Id<"notes">) => void | Promise<void>;
+  /**
+   * When `true`, hides the "Delete" button on each listed note. Used by
+   * the per-game "Hide management controls" toggle so GMs can show the
+   * notes UI without exposing destructive affordances.
+   */
+  hideManagementControls?: boolean;
 }) {
   if (notes === undefined) {
     return <div className="muted">Loading…</div>;
@@ -267,7 +294,7 @@ export function NoteList({
             >
               {new Date(n.createdAt).toLocaleString()}
             </span>
-            {n.canDelete && (
+            {n.canDelete && !hideManagementControls && (
               <button
                 type="button"
                 className="danger"
