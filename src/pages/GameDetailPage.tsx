@@ -231,6 +231,7 @@ function GameHud({
   gameNoteCount: number;
 }) {
   const [logOpen, setLogOpen] = useState(false);
+  const [gmToolsOpen, setGmToolsOpen] = useState(false);
   return (
     <>
       <header className="game-hud">
@@ -258,11 +259,13 @@ function GameHud({
         )}
         <span className="spacer" />
         {viewerIsGm && (
-          <GmControlsInline
-            gameId={gameId}
-            gameState={gameState}
-            rosterSize={rosterSize}
-          />
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setGmToolsOpen(true)}
+          >
+            GM Tools
+          </button>
         )}
         <NoteIcon
           gameId={gameId}
@@ -281,6 +284,14 @@ function GameHud({
       {logOpen && (
         <GameLogDrawer gameId={gameId} onClose={() => setLogOpen(false)} />
       )}
+      {viewerIsGm && gmToolsOpen && (
+        <GmToolsDrawer
+          gameId={gameId}
+          gameState={gameState}
+          rosterSize={rosterSize}
+          onClose={() => setGmToolsOpen(false)}
+        />
+      )}
     </>
   );
 }
@@ -297,7 +308,40 @@ function ElapsedInline({ startedAt }: { startedAt: number }) {
   );
 }
 
-function GmControlsInline({
+// ───────────────────────────────────────────────────────────────────────────
+// GM Tools drawer
+//
+// A sectioned drawer for rarely-used GM utilities. Each tool occupies its
+// own <section> so future additions are purely additive and don't require
+// restructuring the layout.
+// ───────────────────────────────────────────────────────────────────────────
+
+function GmToolsDrawer({
+  gameId,
+  gameState,
+  rosterSize,
+  onClose,
+}: {
+  gameId: GameId;
+  gameState: GameState;
+  rosterSize: number;
+  onClose: () => void;
+}) {
+  return (
+    <Drawer onClose={onClose} title="GM Tools">
+      <section>
+        <h4 style={{ margin: "0 0 0.5rem 0" }}>Game state</h4>
+        <GameStateTransitionControls
+          gameId={gameId}
+          gameState={gameState}
+          rosterSize={rosterSize}
+        />
+      </section>
+    </Drawer>
+  );
+}
+
+function GameStateTransitionControls({
   gameId,
   gameState,
   rosterSize,
@@ -308,24 +352,34 @@ function GmControlsInline({
 }) {
   const transition = useMutation(api.games.transitionState);
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  async function go(target: "playing" | "archived") {
+  async function go(target: "playing" | "archived", confirmMessage: string) {
+    if (!window.confirm(confirmMessage)) return;
     setErr(null);
+    setBusy(true);
     try {
       await transition({ gameId, target });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Transition failed.");
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
-    <>
+    <div className="stack">
       {gameState === "ready" && (
-        <>
+        <div className="row-wrap" style={{ gap: "0.5rem" }}>
           <button
             type="button"
-            onClick={() => void go("playing")}
-            disabled={rosterSize === 0}
+            onClick={() =>
+              void go(
+                "playing",
+                "Start the game now? Players will no longer be able to change their Syndicate selection.",
+              )
+            }
+            disabled={busy || rosterSize === 0}
             title={
               rosterSize === 0 ? "Add at least one Player first." : undefined
             }
@@ -335,26 +389,35 @@ function GmControlsInline({
           <button
             type="button"
             className="secondary"
-            onClick={() => void go("archived")}
+            onClick={() => void go("archived", "Archive this game?")}
+            disabled={busy}
           >
             Archive
           </button>
-        </>
+        </div>
       )}
       {gameState === "playing" && (
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => void go("archived")}
-        >
-          Archive
-        </button>
+        <div className="row-wrap" style={{ gap: "0.5rem" }}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() =>
+              void go(
+                "archived",
+                "Archive this game? It will become read-only.",
+              )
+            }
+            disabled={busy}
+          >
+            Archive
+          </button>
+        </div>
       )}
       {gameState === "archived" && (
-        <span className="muted">Game is archived.</span>
+        <div className="muted">Game is archived.</div>
       )}
-      {err && <span className="error-text">{err}</span>}
-    </>
+      {err && <div className="error-text">{err}</div>}
+    </div>
   );
 }
 
