@@ -19,6 +19,7 @@ import type * as minionBuys from "../minionBuys.js";
 import type * as minions from "../minions.js";
 import type * as notes from "../notes.js";
 import type * as presetSkills from "../presetSkills.js";
+import type * as publicBids from "../publicBids.js";
 import type * as syndicates from "../syndicates.js";
 import type * as treasonGrants from "../treasonGrants.js";
 import type * as users from "../users.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   minions: typeof minions;
   notes: typeof notes;
   presetSkills: typeof presetSkills;
+  publicBids: typeof publicBids;
   syndicates: typeof syndicates;
   treasonGrants: typeof treasonGrants;
   users: typeof users;

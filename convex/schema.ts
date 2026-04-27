@@ -98,10 +98,14 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_selected_syndicate", ["selectedSyndicateId"]),
 
-  // Rules 18, 19 + Rule 26 (Treason Grants): append-only ledger.
+  // Rules 18, 19 + Rule 26 (Treason Grants) + Rule 27 (Public Bids):
+  // append-only ledger.
   // The `treason_grant` source is added by the Treason Grants feature
   // (`plans/2026-04-27-treason-grants-v1.md`) to keep grant payouts
   // distinguishable from arbitrary GM bank actions.
+  // The `bid` source is added by the Public Bids feature
+  // (`plans/2026-04-27-public-bids-v1.md`) to keep public-bid
+  // settlements distinguishable from arbitrary GM bank actions.
   powerLedgerEntries: defineTable({
     gameId: v.id("games"),
     playerId: v.id("players"),
@@ -114,6 +118,7 @@ export default defineSchema({
       v.literal("bank_out"),
       v.literal("minion_buy"),
       v.literal("treason_grant"),
+      v.literal("bid"),
     ),
     counterpartyPlayerId: v.optional(v.id("players")),
     createdByUserId: v.id("users"),
@@ -198,4 +203,62 @@ export default defineSchema({
     .index("by_game", ["gameId"])
     .index("by_game_keywordLower", ["gameId", "keywordLower"])
     .index("by_game_owner", ["gameId", "ownerPlayerId"]),
+
+  // Rule 27: Public Bids — per-game GM-driven ceremony. The GM opens a
+  // bid round; every Player simultaneously submits a non-negative
+  // integer POWER amount; non-zero amounts must be unique within the
+  // round; on close, every non-zero bid is paid to the bank atomically
+  // (one ledger entry per bidder, source `"bid"`).
+  // See `plans/2026-04-27-public-bids-v1.md`.
+  bidRounds: defineTable({
+    gameId: v.id("games"),
+    status: v.union(
+      v.literal("open"),
+      v.literal("closed"),
+      v.literal("archived"),
+    ),
+    // Trimmed at insert time, ≤120 chars; absent ↔ "Public bid".
+    label: v.optional(v.string()),
+    createdAt: v.number(),
+    createdByUserId: v.id("users"),
+    // Set on `open → closed`. Remains undefined for `open → archived`
+    // (cancellation), preserving the audit signature.
+    closedAt: v.optional(v.number()),
+    closedByUserId: v.optional(v.id("users")),
+    archivedAt: v.optional(v.number()),
+    archivedByUserId: v.optional(v.id("users")),
+  })
+    // Used to assert at-most-one-non-archived-round and to fetch the
+    // current active round in O(1).
+    .index("by_game_status", ["gameId", "status"])
+    // Used by the Game Log drawer's history list (most recent N
+    // archived rounds, ordered desc).
+    .index("by_game_archivedAt", ["gameId", "archivedAt"]),
+
+  // Rule 27: per-Player bid rows attached to a `bidRounds` row. One
+  // row per (round, player). `amount === 0` is a valid "explicit opt-
+  // out" bid distinct from "not yet bid" (no row). Non-zero amounts
+  // are unique within a round, enforced by an index-backed `.unique()`
+  // lookup at mutation time (Convex has no schema-level unique
+  // constraint). See `plans/2026-04-27-public-bids-v1.md`.
+  bids: defineTable({
+    roundId: v.id("bidRounds"),
+    // Denormalised from the parent round for cheap per-game scoping;
+    // matches the pattern in `notes`, `calls`, `treasonGrants`.
+    gameId: v.id("games"),
+    playerId: v.id("players"),
+    // Non-negative integer; validated at mutation time.
+    amount: v.number(),
+    updatedAt: v.number(),
+    // Always the Player's user id. The GM cannot place bids
+    // (`requireGamePlayer` rejects them).
+    updatedByUserId: v.id("users"),
+  })
+    // Used to load every bid in the round for visibility + settlement.
+    .index("by_round", ["roundId"])
+    // Used by `placeBid` to upsert the caller's existing bid via
+    // `.unique()`.
+    .index("by_round_player", ["roundId", "playerId"])
+    // Used by the uniqueness `.unique()` lookup in `placeBid`.
+    .index("by_round_amount", ["roundId", "amount"]),
 });

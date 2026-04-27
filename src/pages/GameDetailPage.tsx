@@ -107,6 +107,12 @@ export function GameDetailPage() {
             />
           </section>
 
+          <PublicBidSection
+            gameId={gid}
+            gameState={gameState}
+            viewerIsGm={viewer.isGm}
+          />
+
           <TreasonGrantsSection
             gameId={gid}
             gameState={gameState}
@@ -624,10 +630,11 @@ function Drawer({
 /**
  * Game log drawer.
  *
- * Currently renders only "Recently removed calls". The layout is
- * deliberately section-based so future event sources (ledger events,
- * state transitions, ...) can be appended as additional sections without
- * re-architecting.
+ * Section-based: each event source lives in its own section so the
+ * layout extends without re-architecting.
+ *   - Recently removed calls
+ *   - Past Public Bids (Rule 27, only rendered if the game has any
+ *     archived bid rounds)
  */
 function GameLogDrawer({
   gameId,
@@ -637,6 +644,9 @@ function GameLogDrawer({
   onClose: () => void;
 }) {
   const removed = useQuery(api.calls.recentlyRemovedCalls, { gameId });
+  const archivedBids = useQuery(api.publicBids.listArchivedBidRounds, {
+    gameId,
+  });
   return (
     <Drawer onClose={onClose} title="Game Log">
       <section>
@@ -660,7 +670,143 @@ function GameLogDrawer({
           ))}
         </div>
       </section>
+      {archivedBids && archivedBids.length > 0 && (
+        <section style={{ marginTop: "1rem" }}>
+          <h4 style={{ margin: "0 0 0.5rem 0" }}>Past Public Bids</h4>
+          <ArchivedBidsList rows={archivedBids} />
+        </section>
+      )}
     </Drawer>
+  );
+}
+
+type ArchivedBidsListRow = {
+  _id: Id<"bidRounds">;
+  label: string | undefined;
+  createdAt: number;
+  closedAt: number | null;
+  archivedAt: number;
+  wasSettled: boolean;
+  bidCount: number;
+  totalPaid: number;
+};
+
+function ArchivedBidsList({ rows }: { rows: ArchivedBidsListRow[] }) {
+  const [expanded, setExpanded] = useState<Id<"bidRounds"> | null>(null);
+  return (
+    <div>
+      {rows.map((r) => {
+        const isOpen = expanded === r._id;
+        const label = r.label && r.label.length > 0 ? r.label : "Public bid";
+        return (
+          <div key={r._id} className="row-divider">
+            <div
+              className="row"
+              role="button"
+              tabIndex={0}
+              onClick={() => setExpanded(isOpen ? null : r._id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setExpanded(isOpen ? null : r._id);
+                }
+              }}
+              style={{
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "0.5rem",
+                cursor: "pointer",
+              }}
+              aria-expanded={isOpen}
+            >
+              <span className="row-wrap" style={{ gap: "0.5rem", minWidth: 0 }}>
+                <span aria-hidden="true" style={{ color: "var(--fg-muted)" }}>
+                  {isOpen ? "▾" : "▸"}
+                </span>
+                <strong>{label}</strong>
+                <span
+                  className={`badge ${r.wasSettled ? "" : "danger"}`}
+                  style={{ fontSize: "0.7rem" }}
+                >
+                  {r.wasSettled ? "Settled" : "Cancelled"}
+                </span>
+              </span>
+              <span className="row-wrap" style={{ gap: "0.5rem" }}>
+                {r.wasSettled && (
+                  <span style={{ fontSize: "0.85rem" }}>
+                    <strong>{r.totalPaid}</strong>
+                    <span
+                      className="muted"
+                      style={{ fontSize: "0.8rem" }}
+                    >
+                      {" "}
+                      POWER · {r.bidCount} bidder
+                      {r.bidCount === 1 ? "" : "s"}
+                    </span>
+                  </span>
+                )}
+                {!r.wasSettled && (
+                  <span className="muted" style={{ fontSize: "0.85rem" }}>
+                    {r.bidCount} bid{r.bidCount === 1 ? "" : "s"}
+                  </span>
+                )}
+                <span className="muted" style={{ fontSize: "0.8rem" }}>
+                  {new Date(r.archivedAt).toLocaleTimeString()}
+                </span>
+              </span>
+            </div>
+            {isOpen && (
+              <div style={{ marginTop: "0.4rem", marginLeft: "1rem" }}>
+                <ArchivedBidExpansion roundId={r._id} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ArchivedBidExpansion({ roundId }: { roundId: Id<"bidRounds"> }) {
+  const data = useQuery(api.publicBids.getRoundBids, { roundId });
+  if (data === undefined) return <div className="muted">Loading…</div>;
+  if (data === null) return <div className="muted">Round not found.</div>;
+  if (data.bids.length === 0) {
+    return <div className="muted">No bids were placed.</div>;
+  }
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Bidder</th>
+          <th style={{ textAlign: "right" }}>Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {data.bids.map((b) => (
+          <tr key={b._id}>
+            <td>
+              {b.displayName}
+              {b.isMine && (
+                <span className="muted" style={{ fontSize: "0.75rem" }}>
+                  {" "}
+                  (you)
+                </span>
+              )}
+            </td>
+            <td
+              style={{
+                textAlign: "right",
+                fontFamily: "var(--font-mono)",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              <strong>{b.amount}</strong>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -2223,6 +2369,479 @@ function GrantEditor({
           Cancel
         </button>
       </div>
+    </form>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Public Bids (Rule 27)
+// ───────────────────────────────────────────────────────────────────────────
+
+type ActiveBidRound = {
+  _id: Id<"bidRounds">;
+  status: "open" | "closed";
+  label: string | undefined;
+  createdAt: number;
+  createdByUserId: Id<"users">;
+  closedAt: number | null;
+  closedByUserId: Id<"users"> | null;
+};
+
+type ActiveBidRow = {
+  _id: Id<"bids">;
+  playerId: PlayerId;
+  displayName: string;
+  amount: number;
+  updatedAt: number;
+  isMine: boolean;
+};
+
+type PendingBidder = {
+  playerId: PlayerId;
+  displayName: string;
+};
+
+type ActiveBidView = {
+  round: ActiveBidRound | null;
+  bids: ActiveBidRow[];
+  pending: PendingBidder[];
+  viewerRole: "gm" | "player";
+  viewerPlayerId: PlayerId | null;
+};
+
+function PublicBidSection({
+  gameId,
+  gameState,
+  viewerIsGm,
+}: {
+  gameId: GameId;
+  gameState: GameState;
+  viewerIsGm: boolean;
+}) {
+  // Hidden in `ready` and `archived` (Decisions 4, 17). Subscribe
+  // unconditionally so hook order is stable; skip the query when the
+  // panel is hidden.
+  const hidden = gameState !== "playing";
+  const data = useQuery(
+    api.publicBids.getActiveBidRound,
+    hidden ? "skip" : { gameId },
+  ) as ActiveBidView | undefined;
+  if (hidden) return null;
+
+  return (
+    <section>
+      <div
+        className="row"
+        style={{ alignItems: "center", justifyContent: "space-between" }}
+      >
+        <h3 style={{ marginTop: 0 }}>Public Bid</h3>
+      </div>
+      {data === undefined ? (
+        <div className="muted">Loading…</div>
+      ) : data.round === null ? (
+        viewerIsGm ? (
+          <NewBidRoundForm gameId={gameId} />
+        ) : (
+          <div className="muted">No public bid in progress.</div>
+        )
+      ) : (
+        <ActiveBidPanel data={data} viewerIsGm={viewerIsGm} />
+      )}
+    </section>
+  );
+}
+
+function NewBidRoundForm({ gameId }: { gameId: GameId }) {
+  const start = useMutation(api.publicBids.startBidRound);
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setErr(null);
+    setBusy(true);
+    try {
+      await start({
+        gameId,
+        label: label.trim().length > 0 ? label : undefined,
+      });
+      setLabel("");
+      setOpen(false);
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Start failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div>
+        <button type="button" onClick={() => setOpen(true)}>
+          Start public bid
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="card stack"
+      style={{ marginBottom: "0.5rem" }}
+    >
+      <input
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        placeholder="Label (optional, ≤120 chars)"
+        aria-label="Bid round label"
+        maxLength={120}
+        style={{ width: "100%" }}
+      />
+      {err && <div className="error-text">{err}</div>}
+      <div className="row" style={{ gap: "0.5rem" }}>
+        <button type="submit" disabled={busy}>
+          {busy ? "Starting…" : "Start"}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => {
+            setOpen(false);
+            setLabel("");
+            setErr(null);
+          }}
+          disabled={busy}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ActiveBidPanel({
+  data,
+  viewerIsGm,
+}: {
+  data: ActiveBidView;
+  viewerIsGm: boolean;
+}) {
+  const round = data.round!;
+  const close = useMutation(api.publicBids.closeBidRound);
+  const archive = useMutation(api.publicBids.archiveBidRound);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const isOpen = round.status === "open";
+
+  const label = round.label && round.label.length > 0 ? round.label : "Public bid";
+
+  async function handleClose() {
+    if (
+      !window.confirm(
+        "Close the bid? Each non-zero bidder will pay their bid to the bank. POWER may go negative. This cannot be undone.",
+      )
+    )
+      return;
+    setErr(null);
+    setBusy(true);
+    try {
+      await close({ roundId: round._id });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Close failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (
+      !window.confirm(
+        "Cancel the bid? No POWER will be taken. The round will be archived.",
+      )
+    )
+      return;
+    setErr(null);
+    setBusy(true);
+    try {
+      await archive({ roundId: round._id });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Cancel failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleArchive() {
+    if (
+      !window.confirm(
+        "Archive this bid? It will be hidden from the main panel and remain visible in the Game Log.",
+      )
+    )
+      return;
+    setErr(null);
+    setBusy(true);
+    try {
+      await archive({ roundId: round._id });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Archive failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const nonZeroCount = data.bids.filter((b) => b.amount > 0).length;
+  const totalPaid = data.bids.reduce(
+    (s, b) => s + (b.amount > 0 ? b.amount : 0),
+    0,
+  );
+
+  return (
+    <div className="card stack">
+      <div
+        className="row-wrap"
+        style={{ alignItems: "center", justifyContent: "space-between" }}
+      >
+        <span className="row-wrap" style={{ alignItems: "center", gap: "0.5rem" }}>
+          <strong>{label}</strong>
+          {!isOpen && (
+            <span className="badge success" style={{ fontSize: "0.7rem" }}>
+              Closed
+            </span>
+          )}
+          {isOpen ? (
+            <BidElapsed startedAt={round.createdAt} />
+          ) : (
+            <span className="muted" style={{ fontSize: "0.85rem" }}>
+              {round.closedAt !== null && (
+                <>Closed {new Date(round.closedAt).toLocaleTimeString()}</>
+              )}
+            </span>
+          )}
+        </span>
+        {viewerIsGm && (
+          <span className="row-wrap" style={{ gap: "0.4rem" }}>
+            {isOpen && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void handleClose()}
+                  disabled={busy}
+                >
+                  {busy ? "…" : "Close (collect)"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => void handleCancel()}
+                  disabled={busy}
+                >
+                  Cancel (no payment)
+                </button>
+              </>
+            )}
+            {!isOpen && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void handleArchive()}
+                disabled={busy}
+              >
+                Archive
+              </button>
+            )}
+          </span>
+        )}
+      </div>
+      {err && <div className="error-text">{err}</div>}
+
+      <BidTable bids={data.bids} isOpen={isOpen} />
+
+      {data.pending.length > 0 && (
+        <div>
+          <div
+            className="muted"
+            style={{ fontSize: "0.8rem", marginBottom: "0.25rem" }}
+          >
+            {isOpen ? "Not yet bid" : "Did not bid"}
+          </div>
+          <div
+            className="row-wrap"
+            style={{ gap: "0.4rem" }}
+          >
+            {data.pending.map((p) => (
+              <span
+                key={p.playerId}
+                className="badge"
+                style={{ fontSize: "0.75rem" }}
+              >
+                {p.displayName}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!isOpen && (
+        <div className="muted" style={{ fontSize: "0.85rem" }}>
+          ∑ <strong>{totalPaid}</strong> POWER paid to bank by{" "}
+          <strong>{nonZeroCount}</strong> bidder
+          {nonZeroCount === 1 ? "" : "s"}.
+        </div>
+      )}
+
+      {isOpen && data.viewerRole === "player" && data.viewerPlayerId && (
+        <BidInputForm
+          roundId={round._id}
+          currentBid={
+            data.bids.find((b) => b.playerId === data.viewerPlayerId)?.amount ??
+            null
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+function BidElapsed({ startedAt }: { startedAt: number }) {
+  const ms = useElapsed(startedAt);
+  return (
+    <span className="muted" style={{ fontSize: "0.85rem" }}>
+      Open for <strong>{formatElapsed(ms)}</strong>
+    </span>
+  );
+}
+
+function BidTable({
+  bids,
+  isOpen,
+}: {
+  bids: ActiveBidRow[];
+  isOpen: boolean;
+}) {
+  if (bids.length === 0) {
+    return (
+      <div className="muted">
+        {isOpen ? "No bids yet." : "No bids were placed."}
+      </div>
+    );
+  }
+  return (
+    <div>
+      {bids.map((b) => (
+        <div
+          key={b._id}
+          className="row-divider"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "0.5rem",
+            // Subtle highlight for the calling player's row using the
+            // verified `--bg-muted` theme variable (THEME.md palette).
+            background: b.isMine ? "var(--bg-muted)" : undefined,
+            padding: b.isMine ? "0.25rem 0.5rem" : undefined,
+          }}
+        >
+          <span style={{ minWidth: 0 }}>
+            <strong>{b.displayName}</strong>
+            {b.isMine && (
+              <span className="muted" style={{ fontSize: "0.85rem" }}>
+                {" "}
+                (you)
+              </span>
+            )}
+          </span>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            <strong>{b.amount}</strong>
+            <span className="muted" style={{ fontSize: "0.85rem" }}>
+              {" "}
+              POWER
+            </span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BidInputForm({
+  roundId,
+  currentBid,
+}: {
+  roundId: Id<"bidRounds">;
+  currentBid: number | null;
+}) {
+  const place = useMutation(api.publicBids.placeBid);
+  const [value, setValue] = useState<string>(
+    currentBid === null ? "" : String(currentBid),
+  );
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // Re-sync the input when the server-side value changes underneath us
+  // (e.g. another tab updated). Track the last value we observed.
+  const lastSeen = useRef<number | null>(currentBid);
+  useEffect(() => {
+    if (currentBid !== lastSeen.current) {
+      lastSeen.current = currentBid;
+      setValue(currentBid === null ? "" : String(currentBid));
+    }
+  }, [currentBid]);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setErr(null);
+    const n = Number(value);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+      setErr("Bid must be a non-negative integer.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await place({ roundId, amount: n });
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Submit failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="row-wrap"
+      style={{ alignItems: "center", gap: "0.5rem" }}
+    >
+      <label
+        className="muted"
+        style={{ fontSize: "0.8rem", letterSpacing: "0.08em" }}
+      >
+        Your bid
+      </label>
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="0"
+        aria-label="Your bid amount"
+        inputMode="numeric"
+        style={{ width: "6rem" }}
+      />
+      <button type="submit" disabled={busy}>
+        {busy ? "Submitting…" : "Submit"}
+      </button>
+      {err && (
+        <div className="error-text" style={{ flexBasis: "100%" }}>
+          {err}
+        </div>
+      )}
     </form>
   );
 }

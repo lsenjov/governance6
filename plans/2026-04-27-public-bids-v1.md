@@ -62,9 +62,9 @@ These decisions resolve the ambiguities in the task description and lock the fea
 
 ### Phase 1 — Schema
 
-- [ ] Task 1. Extend the `powerLedgerEntries.source` validator in `convex/schema.ts:110-117` with a new literal `v.literal("bid")`. Update the inline rule pointer comment block (`convex/schema.ts:101-104`) to also reference this plan and Rule 27. Rationale: Decision 13; mirrors the Treason Grants schema-extension pattern.
-- [ ] Task 2. Update the `LedgerSource` TypeScript union in `convex/ledger.ts:21-27` to include `"bid"` so the type-level enum matches the schema. Rationale: prevents drift between runtime values and types; mirrors `convex/ledger.ts` Treason Grants update.
-- [ ] Task 3. Add a new `bidRounds` table to `convex/schema.ts` with fields:
+- [x] Task 1. Extend the `powerLedgerEntries.source` validator in `convex/schema.ts:110-117` with a new literal `v.literal("bid")`. Update the inline rule pointer comment block (`convex/schema.ts:101-104`) to also reference this plan and Rule 27. Rationale: Decision 13; mirrors the Treason Grants schema-extension pattern.
+- [x] Task 2. Update the `LedgerSource` TypeScript union in `convex/ledger.ts:21-27` to include `"bid"` so the type-level enum matches the schema. Rationale: prevents drift between runtime values and types; mirrors `convex/ledger.ts` Treason Grants update.
+- [x] Task 3. Add a new `bidRounds` table to `convex/schema.ts` with fields:
   - `gameId: v.id("games")`,
   - `status: v.union(v.literal("open"), v.literal("closed"), v.literal("archived"))`,
   - `label: v.optional(v.string())` (trimmed at insert time, ≤120 chars; absent ↔ "Public bid"),
@@ -79,7 +79,7 @@ These decisions resolve the ambiguities in the task description and lock the fea
   - `by_game_archivedAt` on `["gameId", "archivedAt"]` — used by the Game Log drawer's history list (most recent N archived rounds, ordered desc).
   Inline rule comment: reference Rule 27 and this plan, mirroring the comment block above `treasonGrants` at `convex/schema.ts:179-183`.
   Rationale: Decisions 1, 4 (at-most-one-non-archived-round), 5 (timestamps), 16 (history surface).
-- [ ] Task 4. Add a new `bids` table to `convex/schema.ts` with fields:
+- [x] Task 4. Add a new `bids` table to `convex/schema.ts` with fields:
   - `roundId: v.id("bidRounds")`,
   - `gameId: v.id("games")` (denormalised for cheap per-game scoping; matches `notes`/`calls`/`treasonGrants` pattern),
   - `playerId: v.id("players")`,
@@ -95,21 +95,21 @@ These decisions resolve the ambiguities in the task description and lock the fea
 
 ### Phase 2 — Backend module: `convex/publicBids.ts`
 
-- [ ] Task 5. Create `convex/publicBids.ts` following the conventions of `convex/treasonGrants.ts`: top-level rule comment referencing this plan and Rule 27, named private helpers, explicit `Doc<>`/`Id<>` types, no implicit `any`, validators on every public function. Rationale: stylistic consistency with the rest of `convex/`.
-- [ ] Task 6. Add a private helper `assertGameLive(ctx, gameId)` that calls `requireGame` and asserts `game.state === "playing"`. Returns the loaded game doc. Used by `startBidRound`, `placeBid`, and `closeBidRound`. **Not** used by `archiveBidRound` (Decision 4 allows archive in `archived` games). Rationale: Decision 4 chokepoint; Rule 10 lifecycle.
-- [ ] Task 7. Add two private helpers, both **auth-agnostic** (the caller mutation enforces role separately):
+- [x] Task 5. Create `convex/publicBids.ts` following the conventions of `convex/treasonGrants.ts`: top-level rule comment referencing this plan and Rule 27, named private helpers, explicit `Doc<>`/`Id<>` types, no implicit `any`, validators on every public function. Rationale: stylistic consistency with the rest of `convex/`.
+- [x] Task 6. Add a private helper `assertGameLive(ctx, gameId)` that calls `requireGame` and asserts `game.state === "playing"`. Returns the loaded game doc. Used by `startBidRound`, `placeBid`, and `closeBidRound`. **Not** used by `archiveBidRound` (Decision 4 allows archive in `archived` games). Rationale: Decision 4 chokepoint; Rule 10 lifecycle.
+- [x] Task 7. Add two private helpers, both **auth-agnostic** (the caller mutation enforces role separately):
   - `requireOpenRound(ctx, roundId)` — loads the round, asserts `status === "open"`, asserts the parent game is `"playing"`. Returns `{ round, game }`. Used by `placeBid` and `closeBidRound`.
   - `requireUnarchivedRound(ctx, roundId)` — loads the round, asserts `status !== "archived"`. Does **not** assert game state (archive is allowed even when the game is archived per Decision 4). Returns `{ round, game }`. Used by `archiveBidRound`.
   Rationale: each mutation has subtly different lifecycle requirements; centralising prevents drift while making the difference explicit. Auth (`requireGameGm` / `requireGamePlayer`) lives in the caller, not the helper.
-- [ ] Task 8. Add a private helper `validateBidAmount(amount)` that asserts `Number.isFinite(amount) && Number.isInteger(amount) && amount >= 0 && amount <= 100`. Returns `amount`. Throws plain Error with a user-readable message on failure (the message must include the cap value so the UI can surface it directly). Rationale: Decision 6; defensive against client-side bypass per Rule 24.
-- [ ] Task 9. Implement `startBidRound({ gameId, label? })` mutation:
+- [x] Task 8. Add a private helper `validateBidAmount(amount)` that asserts `Number.isFinite(amount) && Number.isInteger(amount) && amount >= 0 && amount <= 100`. Returns `amount`. Throws plain Error with a user-readable message on failure (the message must include the cap value so the UI can surface it directly). Rationale: Decision 6; defensive against client-side bypass per Rule 24.
+- [x] Task 9. Implement `startBidRound({ gameId, label? })` mutation:
   1. `requireGameGm(ctx, gameId)` (`convex/lib/auth.ts:53-63`).
   2. Assert `game.state === "playing"` (Decision 4).
   3. Use `by_game_status` index to look up any existing **non-archived** round (status `"open"` or `"closed"`) in this game. Two reads (one per status) and a `.first()` on each is fine; alternatively scan `by_game_status` for `gameId` and reject if any row has `status !== "archived"`. If one exists, throw `"A public bid round is already active in this game. Archive it before starting another."` (Decision 4).
   4. If `label` is provided, **trim it** and assert `1 ≤ length ≤ 120`; otherwise store `undefined`. The trimmed value is the canonical stored value (Decision 15).
   5. Insert a `bidRounds` row with `status: "open"`, `createdAt: Date.now()`, `createdByUserId: gmId`. Return the new `Id<"bidRounds">`.
   Rationale: Decisions 2, 3, 4, 15.
-- [ ] Task 10. Implement `placeBid({ roundId, amount })` mutation:
+- [x] Task 10. Implement `placeBid({ roundId, amount })` mutation:
   1. Load round via `requireOpenRound`.
   2. `requireGamePlayer(ctx, round.gameId)` — caller must be a Player (this also rejects the GM by Rule 11).
   3. Validate amount (Task 8).
@@ -119,7 +119,7 @@ These decisions resolve the ambiguities in the task description and lock the fea
   7. If existing bid with the same `amount`: no-op (Decision 9).
   8. If existing bid with a different `amount`: `ctx.db.patch(existingBid._id, { amount, updatedAt, updatedByUserId })`.
   Rationale: Decisions 6, 7, 9, 10; idempotent re-submit.
-- [ ] Task 11. Implement `closeBidRound({ roundId })` mutation (settle with payment; `open → closed`):
+- [x] Task 11. Implement `closeBidRound({ roundId })` mutation (settle with payment; `open → closed`):
   1. Load round via `requireOpenRound`; `requireGameGm(ctx, round.gameId)`.
   2. Read every bid in the round via `by_round` index.
   3. For each bid with `amount > 0`, in the same transaction:
@@ -128,13 +128,13 @@ These decisions resolve the ambiguities in the task description and lock the fea
      - Patch the player row: `power: player.power - bid.amount` (Rule 25).
   4. Patch the round to `status: "closed"`, `closedAt: now`, `closedByUserId: gmId`. Do **not** set `archivedAt`.
   Rationale: Decision 11; Rule 25 reconciliation invariant; transactional all-or-nothing settlement; the round remains visible in the main panel until archived.
-- [ ] Task 12. Implement `archiveBidRound({ roundId })` mutation (no POWER moves; `open → archived` cancels, `closed → archived` hides):
+- [x] Task 12. Implement `archiveBidRound({ roundId })` mutation (no POWER moves; `open → archived` cancels, `closed → archived` hides):
   1. Load round via `requireUnarchivedRound`; `requireGameGm(ctx, round.gameId)`.
   2. **No game-state gate**: archive is allowed in `playing` and `archived` games (Decision 4) so the GM can clean up rounds even after archiving the game.
   3. Patch round to `status: "archived"`, `archivedAt: now`, `archivedByUserId: gmId`. **No ledger entries written.** Do **not** touch `closedAt` — its presence/absence is the audit signature for whether the round was settled before archive (Decision 5).
   4. Bid rows are preserved as historical record (Decision 12, 16).
   Rationale: Decision 12; unifies the cancel and archive escape hatches into one mutation parameterised by the source state.
-- [ ] Task 13. Implement `getActiveBidRound({ gameId })` query (participant-scoped):
+- [x] Task 13. Implement `getActiveBidRound({ gameId })` query (participant-scoped):
   1. `requireGameParticipant(ctx, gameId)` (`convex/lib/auth.ts:101-125`).
   2. Use `by_game_status` to find a round with status `"open"`. If absent, look for `"closed"`. Returns `null` if neither exists. (Decision 4 guarantees at most one row across both statuses.)
   3. If a round exists, fetch all bids via `by_round`; bulk-resolve `playerId → user.displayName` using the same hydration pattern as `convex/ledger.ts:235-256` and `convex/treasonGrants.ts:371-386` (one read per unique player).
@@ -159,13 +159,13 @@ These decisions resolve the ambiguities in the task description and lock the fea
      }
      ```
   Rationale: Decision 14; one bulk subscription so the panel re-renders reactively on any bid update **and** when the round transitions to `closed` (the same query feeds the post-settlement results view). Comment in the query explicitly notes the visibility model is intentional (every participant sees every other participant's amount, including after close).
-- [ ] Task 14. Implement `listArchivedBidRounds({ gameId, limit? })` query (participant-scoped, drives the Game Log drawer's "Past Public Bids" section):
+- [x] Task 14. Implement `listArchivedBidRounds({ gameId, limit? })` query (participant-scoped, drives the Game Log drawer's "Past Public Bids" section):
   1. `requireGameParticipant(ctx, gameId)`.
   2. Use `by_game_archivedAt` index, `.order("desc")`, `.take(limit ?? 20)`. Only archived rounds are returned (the index is keyed on `archivedAt`, which is `undefined` until archive).
   3. For each round, attach a count of bids and the total POWER paid out (computed from bids with `amount > 0`). For rounds where `closedAt === undefined` (i.e. cancelled before settlement), `totalPaid` is `0` and the row is flagged `wasSettled: false`.
   4. Return shape per row: `{ _id, label, createdAt, closedAt, archivedAt, wasSettled, bidCount, totalPaid }`.
   Rationale: Decisions 12, 16; lightweight history surface — no full bid hydration to keep the payload small. Drilldown is via Task 15.
-- [ ] Task 15. Implement `getRoundBids({ roundId })` query (participant-scoped, drills into a historical or active round):
+- [x] Task 15. Implement `getRoundBids({ roundId })` query (participant-scoped, drills into a historical or active round):
   1. Load the round; `requireGameParticipant(ctx, round.gameId)`.
   2. Hydrate bids exactly as in Task 13 step 3.
   3. Return `{ round, bids }` where `round` includes `status`, `label`, `createdAt`, `closedAt`, `archivedAt`.
@@ -173,8 +173,8 @@ These decisions resolve the ambiguities in the task description and lock the fea
 
 ### Phase 3 — Frontend: `GameDetailPage` integration
 
-- [ ] Task 16. Add a new `<PublicBidSection>` invocation to the main column of `GameDetailPage` (`src/pages/GameDetailPage.tsx:96-129`), above the `<TreasonGrantsSection>` so it sits where the action is. Render it for the GM in `playing` state and for Players in `playing` state. Hidden in `ready` and `archived` (game-state). Rationale: Decisions 4, 17.
-- [ ] Task 17. Build the `PublicBidSection` component:
+- [x] Task 16. Add a new `<PublicBidSection>` invocation to the main column of `GameDetailPage` (`src/pages/GameDetailPage.tsx:96-129`), above the `<TreasonGrantsSection>` so it sits where the action is. Render it for the GM in `playing` state and for Players in `playing` state. Hidden in `ready` and `archived` (game-state). Rationale: Decisions 4, 17.
+- [x] Task 17. Build the `PublicBidSection` component:
   - Subscribe to `api.publicBids.getActiveBidRound`.
   - **No active round**:
     - GM view: a "Start public bid" button + an optional label input that opens an inline form (matches `NewGrantForm` aesthetic at `src/pages/GameDetailPage.tsx:1836-1938`).
@@ -190,21 +190,21 @@ These decisions resolve the ambiguities in the task description and lock the fea
     - The "Not yet bid" list is rendered as `Did not bid` for clarity.
     - A summary line: `∑ {totalPaid} POWER paid to bank by {nonZeroBidderCount} bidder(s)`.
   Rationale: Decisions 11, 14, 17; matches the look and feel of existing in-game panels and surfaces the post-settlement state without forcing the GM to navigate away.
-- [ ] Task 18. Wire mutation callbacks:
+- [x] Task 18. Wire mutation callbacks:
   - GM **Start**: `useMutation(api.publicBids.startBidRound)` with the optional label.
   - GM **Close (collect)** (open only): `useMutation(api.publicBids.closeBidRound)` after `window.confirm("Close the bid? Each non-zero bidder will pay their bid to the bank. POWER may go negative. This cannot be undone.")`. Disable while in flight.
   - GM **Cancel (no payment)** (open only): `useMutation(api.publicBids.archiveBidRound)` after `window.confirm("Cancel the bid? No POWER will be taken. The round will be archived.")`. The same `archiveBidRound` mutation is used — the server distinguishes by the round's source `status`.
   - GM **Archive** (closed only): `useMutation(api.publicBids.archiveBidRound)` after `window.confirm("Archive this bid? It will be hidden from the main panel and remain visible in the Game Log.")`.
   - Player **Submit**: `useMutation(api.publicBids.placeBid)`. Surface the server-side uniqueness error inline using the existing `error-text` styling (`src/pages/GameDetailPage.tsx:836`). Disable while in flight.
   Rationale: defence-in-depth confirmation copy; identical UX to the Treason Grants `Take`/`Delete`/`Clear owner` confirmations (`src/pages/GameDetailPage.tsx:1959-2000`). One mutation (`archiveBidRound`) backs both cancel and archive; the user-facing copy distinguishes them.
-- [ ] Task 19. Extend the **`GameLogDrawer`** at `src/pages/GameDetailPage.tsx:632-665` with a new section **"Past Public Bids"** appended below the existing "Recently removed calls" section (matching the section-based layout the drawer was designed for; see the comment at lines 627-630):
+- [x] Task 19. Extend the **`GameLogDrawer`** at `src/pages/GameDetailPage.tsx:632-665` with a new section **"Past Public Bids"** appended below the existing "Recently removed calls" section (matching the section-based layout the drawer was designed for; see the comment at lines 627-630):
   - Subscribe to `api.publicBids.listArchivedBidRounds` (default `limit: 20`).
   - Render `Loading…` / `No archived bids.` empty states matching the call section's style.
   - Each row shows the label (or "Public bid"), a status hint (`Settled` if `wasSettled`, otherwise `Cancelled`), `archivedAt` rendered with `toLocaleTimeString()` (matching line 657), the bidder count, and the total POWER paid (only for settled rows).
   - Clicking a row toggles an inline expansion that lazy-loads via `api.publicBids.getRoundBids` and renders the per-bid table inside the drawer. Collapse on second click.
   - Hidden when there are no archived rounds (the section header is omitted, not just empty — keep the drawer visually tight).
   Rationale: Decision 16; the drawer is the canonical historical event surface and the comment block at `src/pages/GameDetailPage.tsx:625-631` explicitly anticipates additional sections.
-- [ ] Task 20. Visual treatment for the bid panel:
+- [x] Task 20. Visual treatment for the bid panel:
   - Reuse the `card` and `row-divider` classes already used by the Treason Grants and Roster panels for visual continuity.
   - Show the calling Player's row with a subtle highlight. Pick **one** of: an existing utility class already used on `GameDetailPage` for self-rows (search for `isSelf` styling around `src/pages/GameDetailPage.tsx:710-770`) or a single inline `style` derived from a CSS variable that is **verified to exist** in `src/index.css` / `THEME.md` before landing the change. Do not ship a conditional `if available` style.
   - Render amount as `<strong>{amount}</strong> POWER`, matching the rest of the page.
@@ -213,21 +213,21 @@ These decisions resolve the ambiguities in the task description and lock the fea
 
 ### Phase 4 — Tests (`convex/publicBids.test.ts`)
 
-- [ ] Task 21. Add `convex/publicBids.test.ts` mirroring the structure of `convex/treasonGrants.test.ts`. Use `convex-test` with `vitest` and `@edge-runtime/vm` per the project's test conventions (`convex/_generated/ai/guidelines.md` § Testing).
-- [ ] Task 22. **Start round**: GM can start in `playing`; non-GM (Player or non-participant) cannot; starting in `ready` rejected; starting while `game.state` is `archived` rejected; starting a second round while one is `open` rejected; starting a second round while one is `closed` (not yet archived) rejected; starting a second round after the previous round was archived **succeeds**; label trimming and length cap exercised.
-- [ ] Task 23. **Place bid**: Player can place 0 / positive / re-submit same / change amount / change to 0 (withdraw); two players bidding the same `>0` amount → second is rejected; two players both bidding 0 → both succeed; non-participant rejected; GM placing a bid rejected (no `players` row → `requireGamePlayer` throws); placing a bid in a `closed` or `archived` round rejected; placing while game is `archived` rejected. Negative and non-integer amounts rejected.
-- [ ] Task 24. **Close round (settle)**: GM closes a round with three bidders (amounts `7`, `3`, `0`); assert exactly two ledger entries written (`source: "bid"`, deltas `-7` and `-3`), the `0` bidder gets no ledger entry, every Player's `players.power` matches `sum(ledger.delta where playerId = X)` (Rule 25 reconciliation). Reason field carries the round label when present, falls back to `"Public bid"` otherwise. Round status flips to `"closed"`; `closedAt` set; `archivedAt` remains `undefined`. Subsequent close/place rejected; archive **succeeds** (and is the only forward transition).
-- [ ] Task 25. **Archive from open (cancel)**: GM archives an open round directly; status flips to `"archived"`; `archivedAt` set; `closedAt` **remains undefined** (cancellation audit signature per Decision 5); **no ledger entries written**; players' `power` unchanged; subsequent place/close/archive rejected. A new round can then be started.
-- [ ] Task 26. **Archive from closed (hide)**: GM closes a round (settlement happens), then archives it; status flips to `"archived"`; `closedAt` is preserved (settled audit signature); no additional ledger entries written; players' `power` unchanged from the close step. A new round can then be started.
-- [ ] Task 27. **Archive in archived game**: GM archives the game (game `playing → archived`) while a `closed` round is still active in the panel; GM can still call `archiveBidRound` and the call succeeds (Decision 4). The same is true for `open → archived` if the round was somehow left open at game-archive time.
-- [ ] Task 28. **Negative POWER on close**: a Player with `power = 2` bids `5`; close succeeds; their `power` becomes `-3`; ledger reconciliation still holds. Rationale: Rule 17 (no floor) is intentional and must be exercised.
-- [ ] Task 29. **Visibility (active)**: `getActiveBidRound` returns the same shape to GM and Players; non-participant rejected outright; pending list correctly excludes players who have placed any bid (including `0`). For a `closed` round, `getActiveBidRound` still returns the round with `status: "closed"` and the bid list — the panel renders the result snapshot.
-- [ ] Task 30. **Visibility (archived)**: `getActiveBidRound` returns `null` after archive (the round vanishes from the main panel for everyone, including the GM). `listArchivedBidRounds` returns the same archived round, sorted desc by `archivedAt`; the cancelled-vs-settled distinction is reflected in `wasSettled` and `totalPaid`. `getRoundBids` rehydrates display names correctly for any archived round.
-- [ ] Task 31. **Race on uniqueness (sequential)**: with one `placeBid` already committed at `amount=5`, a second player's `placeBid` at `amount=5` is rejected with the uniqueness error. (Note: `convex-test` does not model OCC retries, so this is a sequential test of the in-transaction check; production OCC behaviour is implied by the same code path. This subsumes the original race-condition smoke test.)
+- [x] Task 21. Add `convex/publicBids.test.ts` mirroring the structure of `convex/treasonGrants.test.ts`. Use `convex-test` with `vitest` and `@edge-runtime/vm` per the project's test conventions (`convex/_generated/ai/guidelines.md` § Testing).
+- [x] Task 22. **Start round**: GM can start in `playing`; non-GM (Player or non-participant) cannot; starting in `ready` rejected; starting while `game.state` is `archived` rejected; starting a second round while one is `open` rejected; starting a second round while one is `closed` (not yet archived) rejected; starting a second round after the previous round was archived **succeeds**; label trimming and length cap exercised.
+- [x] Task 23. **Place bid**: Player can place 0 / positive / re-submit same / change amount / change to 0 (withdraw); two players bidding the same `>0` amount → second is rejected; two players both bidding 0 → both succeed; non-participant rejected; GM placing a bid rejected (no `players` row → `requireGamePlayer` throws); placing a bid in a `closed` or `archived` round rejected; placing while game is `archived` rejected. Negative and non-integer amounts rejected.
+- [x] Task 24. **Close round (settle)**: GM closes a round with three bidders (amounts `7`, `3`, `0`); assert exactly two ledger entries written (`source: "bid"`, deltas `-7` and `-3`), the `0` bidder gets no ledger entry, every Player's `players.power` matches `sum(ledger.delta where playerId = X)` (Rule 25 reconciliation). Reason field carries the round label when present, falls back to `"Public bid"` otherwise. Round status flips to `"closed"`; `closedAt` set; `archivedAt` remains `undefined`. Subsequent close/place rejected; archive **succeeds** (and is the only forward transition).
+- [x] Task 25. **Archive from open (cancel)**: GM archives an open round directly; status flips to `"archived"`; `archivedAt` set; `closedAt` **remains undefined** (cancellation audit signature per Decision 5); **no ledger entries written**; players' `power` unchanged; subsequent place/close/archive rejected. A new round can then be started.
+- [x] Task 26. **Archive from closed (hide)**: GM closes a round (settlement happens), then archives it; status flips to `"archived"`; `closedAt` is preserved (settled audit signature); no additional ledger entries written; players' `power` unchanged from the close step. A new round can then be started.
+- [x] Task 27. **Archive in archived game**: GM archives the game (game `playing → archived`) while a `closed` round is still active in the panel; GM can still call `archiveBidRound` and the call succeeds (Decision 4). The same is true for `open → archived` if the round was somehow left open at game-archive time.
+- [x] Task 28. **Negative POWER on close**: a Player with `power = 2` bids `5`; close succeeds; their `power` becomes `-3`; ledger reconciliation still holds. Rationale: Rule 17 (no floor) is intentional and must be exercised.
+- [x] Task 29. **Visibility (active)**: `getActiveBidRound` returns the same shape to GM and Players; non-participant rejected outright; pending list correctly excludes players who have placed any bid (including `0`). For a `closed` round, `getActiveBidRound` still returns the round with `status: "closed"` and the bid list — the panel renders the result snapshot.
+- [x] Task 30. **Visibility (archived)**: `getActiveBidRound` returns `null` after archive (the round vanishes from the main panel for everyone, including the GM). `listArchivedBidRounds` returns the same archived round, sorted desc by `archivedAt`; the cancelled-vs-settled distinction is reflected in `wasSettled` and `totalPaid`. `getRoundBids` rehydrates display names correctly for any archived round.
+- [x] Task 31. **Race on uniqueness (sequential)**: with one `placeBid` already committed at `amount=5`, a second player's `placeBid` at `amount=5` is rejected with the uniqueness error. (Note: `convex-test` does not model OCC retries, so this is a sequential test of the in-transaction check; production OCC behaviour is implied by the same code path. This subsumes the original race-condition smoke test.)
 
 ### Phase 5 — Documentation
 
-- [ ] Task 32. Add **Rule 27 — Public Bids** to `plans/2026-04-20-init-v4.md` under "Confirmed Rules", succinctly restating the three-stage lifecycle (open → closed → archived; open → archived as cancellation), the uniqueness rule, the public-visibility model, and the `"bid"` ledger source. Cross-reference this plan file. Note that Rule 19's `source` enum is now also extended with `"bid"`. Rationale: keep the rule numbers as the canonical authority — this is the same pattern Treason Grants used (Rule 26).
+- [x] Task 32. Add **Rule 27 — Public Bids** to `plans/2026-04-20-init-v4.md` under "Confirmed Rules", succinctly restating the three-stage lifecycle (open → closed → archived; open → archived as cancellation), the uniqueness rule, the public-visibility model, and the `"bid"` ledger source. Cross-reference this plan file. Note that Rule 19's `source` enum is now also extended with `"bid"`. Rationale: keep the rule numbers as the canonical authority — this is the same pattern Treason Grants used (Rule 26).
 
 ## Verification Criteria
 
@@ -296,4 +296,4 @@ These decisions resolve the ambiguities in the task description and lock the fea
 
 ## Status
 
-Not Started.
+Done.
