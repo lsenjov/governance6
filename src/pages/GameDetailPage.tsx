@@ -94,6 +94,28 @@ export function GameDetailPage() {
       )}
 
       <div className={`game-grid${showRail ? "" : " single-column"}`}>
+        {showRail && (
+          <aside className="game-rail" aria-label="Game summary rail">
+            <section>
+              <h3>Call Queue</h3>
+              <CallQueueRail
+                gameId={gid}
+                isGm={viewer.isGm}
+                noteCounts={noteCounts}
+              />
+            </section>
+            <section>
+              <h3>POWER Standings</h3>
+              <PowerStandingsRail
+                viewer={viewer}
+                roster={roster}
+                powerByPlayer={powerByPlayer}
+                balancesLoading={balances === undefined}
+              />
+            </section>
+          </aside>
+        )}
+
         <div className="game-main">
           <section>
             <h3 style={{ marginTop: 0 }}>Roster</h3>
@@ -157,28 +179,6 @@ export function GameDetailPage() {
             </section>
           )}
         </div>
-
-        {showRail && (
-          <aside className="game-rail" aria-label="Game summary rail">
-            <section>
-              <h3>Call Queue</h3>
-              <CallQueueRail
-                gameId={gid}
-                isGm={viewer.isGm}
-                noteCounts={noteCounts}
-              />
-            </section>
-            <section>
-              <h3>POWER Standings</h3>
-              <PowerStandingsRail
-                viewer={viewer}
-                roster={roster}
-                powerByPlayer={powerByPlayer}
-                balancesLoading={balances === undefined}
-              />
-            </section>
-          </aside>
-        )}
       </div>
 
       {showYouStrip && (

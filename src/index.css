@@ -438,7 +438,7 @@ label {
 
 .game-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--rail-width);
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
 }
@@ -487,8 +487,8 @@ label {
   .game-rail {
     position: static;
   }
-  /* Caution-tape divider above the right rail on mobile. */
-  .game-rail::before {
+  /* Caution-tape divider between the (now-top) left rail and main on mobile. */
+  .game-rail::after {
     content: "";
     display: block;
     height: 8px;
