@@ -2427,6 +2427,11 @@ function PublicBidSection({
     hidden ? "skip" : { gameId },
   ) as ActiveBidView | undefined;
   if (hidden) return null;
+  // Players only see the section when a round actually exists. The
+  // GM always sees it (so they can start a round).
+  if (!viewerIsGm && (data === undefined || data.round === null)) {
+    return null;
+  }
 
   return (
     <section>
@@ -2439,11 +2444,7 @@ function PublicBidSection({
       {data === undefined ? (
         <div className="muted">Loading…</div>
       ) : data.round === null ? (
-        viewerIsGm ? (
-          <NewBidRoundForm gameId={gameId} />
-        ) : (
-          <div className="muted">No public bid in progress.</div>
-        )
+        <NewBidRoundForm gameId={gameId} />
       ) : (
         <ActiveBidPanel data={data} viewerIsGm={viewerIsGm} />
       )}
