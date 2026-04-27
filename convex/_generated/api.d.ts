@@ -12,6 +12,7 @@ import type * as auth from "../auth.js";
 import type * as calls from "../calls.js";
 import type * as drawbacks from "../drawbacks.js";
 import type * as games from "../games.js";
+import type * as goals from "../goals.js";
 import type * as http from "../http.js";
 import type * as ledger from "../ledger.js";
 import type * as lib_auth from "../lib/auth.js";
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   calls: typeof calls;
   drawbacks: typeof drawbacks;
   games: typeof games;
+  goals: typeof goals;
   http: typeof http;
   ledger: typeof ledger;
   "lib/auth": typeof lib_auth;

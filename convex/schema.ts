@@ -235,6 +235,50 @@ export default defineSchema({
     // archived rounds, ordered desc).
     .index("by_game_archivedAt", ["gameId", "archivedAt"]),
 
+  // Rule 28: Goals — per-game GM-authored bundles of
+  // (keyword, description, type, fromPlayerId?, toPlayerId?, carrot?, stick?).
+  // The GM authors and curates the list; only the GM may set, change, or
+  // clear `fromPlayerId` (no Player-driven self-claim flow in v1). The
+  // current `fromPlayerId` (when set) may assign `toPlayerId` once,
+  // while `toPlayerId === undefined` and the game is not `archived`;
+  // afterwards only the GM may change it. Both `fromPlayerId` and
+  // `toPlayerId` are optional — a Goal can exist with neither, only
+  // from, only to, or both. Description visibility is gated on the
+  // viewer's identity (GM, current from, or current to); to everyone
+  // else it is redacted server-side.
+  // Carrot / stick are descriptive labels; v1 writes NO ledger entries
+  // for goals (the GM applies POWER changes via the standard rule-20
+  // flow). See `plans/2026-04-27-2026-04-27-goals-v2.md`.
+  goals: defineTable({
+    gameId: v.id("games"),
+    keyword: v.string(),
+    // Lowercased, trimmed form of `keyword` used to enforce
+    // case-insensitive uniqueness within a game (Convex has no schema-
+    // level unique constraint).
+    keywordLower: v.string(),
+    description: v.string(),
+    type: v.union(
+      v.literal("regular"),
+      v.literal("shared"),
+      v.literal("competitive"),
+    ),
+    // Both player refs are optional (v2 design — see the plan).
+    fromPlayerId: v.optional(v.id("players")),
+    toPlayerId: v.optional(v.id("players")),
+    // Non-negative integer when present (≥0, ≤1000). Undefined ↔ "no
+    // carrot". `0` is permitted but rendered identically to undefined.
+    carrot: v.optional(v.number()),
+    // Non-positive integer when present (≤0, ≥-1000). Symmetric to
+    // `carrot`.
+    stick: v.optional(v.number()),
+    createdAt: v.number(),
+    createdByUserId: v.id("users"),
+  })
+    .index("by_game", ["gameId"])
+    .index("by_game_keywordLower", ["gameId", "keywordLower"])
+    .index("by_game_from", ["gameId", "fromPlayerId"])
+    .index("by_game_to", ["gameId", "toPlayerId"]),
+
   // Rule 27: per-Player bid rows attached to a `bidRounds` row. One
   // row per (round, player). `amount === 0` is a valid "explicit opt-
   // out" bid distinct from "not yet bid" (no row). Non-zero amounts

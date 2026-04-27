@@ -119,6 +119,13 @@ export function GameDetailPage() {
             viewerIsGm={viewer.isGm}
           />
 
+          <GoalsSection
+            gameId={gid}
+            gameState={gameState}
+            viewerIsGm={viewer.isGm}
+            viewerPlayerId={viewer.playerId}
+          />
+
           {viewer.isGm && gameState === "ready" && (
             <section>
               <h3>Add Player</h3>
@@ -2843,6 +2850,902 @@ function BidInputForm({
           {err}
         </div>
       )}
+    </form>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Goals (Rule 28)
+// ───────────────────────────────────────────────────────────────────────────
+
+type GoalType = "regular" | "shared" | "competitive";
+
+type GoalRow = {
+  _id: Id<"goals">;
+  keyword: string;
+  type: GoalType;
+  description: string | null;
+  fromPlayerId: Id<"players"> | null;
+  fromDisplayName: string | null;
+  toPlayerId: Id<"players"> | null;
+  toDisplayName: string | null;
+  carrot: number | null;
+  stick: number | null;
+  createdAt: number;
+  isFromMe: boolean;
+  isToMe: boolean;
+  canAssignFromPlayer: boolean;
+  canAssignToPlayer: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+};
+
+type GoalsEligiblePlayer = {
+  _id: PlayerId;
+  displayName: string;
+};
+
+function formatGoalKeyword(keyword: string, type: GoalType): string {
+  switch (type) {
+    case "regular":
+      return keyword;
+    case "shared":
+      return `${keyword} (S)`;
+    case "competitive":
+      return `${keyword} (C)`;
+  }
+}
+
+/**
+ * "C/-S" shorthand. `0` is treated identically to "absent" for display
+ * purposes so a stored zero never renders as a meaningful 0/0 badge.
+ */
+function formatCarrotStick(
+  carrot: number | null | undefined,
+  stick: number | null | undefined,
+): string {
+  const c = carrot != null && carrot !== 0 ? carrot : null;
+  const s = stick != null && stick !== 0 ? stick : null;
+  if (c === null && s === null) return "---";
+  if (c !== null && s !== null) return `${c}/${s}`;
+  if (c !== null) return String(c);
+  return String(s);
+}
+
+function GoalsSection({
+  gameId,
+  gameState,
+  viewerIsGm,
+  viewerPlayerId,
+}: {
+  gameId: GameId;
+  gameState: GameState;
+  viewerIsGm: boolean;
+  viewerPlayerId: PlayerId | null;
+}) {
+  const hidden = !viewerIsGm && gameState === "ready";
+  const data = useQuery(
+    api.goals.listGoalsForGame,
+    hidden ? "skip" : { gameId },
+  );
+  if (hidden) return null;
+  const writable = viewerIsGm && gameState !== "archived";
+
+  return (
+    <section>
+      <div
+        className="row"
+        style={{ alignItems: "center", justifyContent: "space-between" }}
+      >
+        <h3 style={{ marginTop: 0 }}>Goals</h3>
+        <span className="muted" style={{ fontSize: "0.85rem" }}>
+          {data ? `${data.goals.length} total` : ""}
+        </span>
+      </div>
+      {writable && data && (
+        <NewGoalForm
+          gameId={gameId}
+          eligiblePlayers={data.eligiblePlayers}
+        />
+      )}
+      {data === undefined ? (
+        <div className="muted">Loading…</div>
+      ) : data.goals.length === 0 ? (
+        <div className="muted">
+          {viewerIsGm
+            ? "No goals yet. Author a goal to set expectations."
+            : "No goals on the table."}
+        </div>
+      ) : (
+        <div className="card" style={{ padding: "0.25rem 0.5rem" }}>
+          {data.goals.map((g) => (
+            <GoalRowView
+              key={g._id}
+              goal={g}
+              viewerIsGm={viewerIsGm}
+              viewerPlayerId={viewerPlayerId}
+              eligiblePlayers={data.eligiblePlayers}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function NewGoalForm({
+  gameId,
+  eligiblePlayers,
+}: {
+  gameId: GameId;
+  eligiblePlayers: GoalsEligiblePlayer[];
+}) {
+  const create = useMutation(api.goals.createGoal);
+  const [open, setOpen] = useState(false);
+  const [keyword, setKeyword] = useState("");
+  const [type, setType] = useState<GoalType>("regular");
+  const [fromId, setFromId] = useState<string>("");
+  const [toId, setToId] = useState<string>("");
+  const [carrot, setCarrot] = useState("");
+  const [stick, setStick] = useState("");
+  const [description, setDescription] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  function reset() {
+    setKeyword("");
+    setType("regular");
+    setFromId("");
+    setToId("");
+    setCarrot("");
+    setStick("");
+    setDescription("");
+    setErr(null);
+  }
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setErr(null);
+
+    let carrotN: number | undefined;
+    if (carrot.trim() !== "") {
+      const n = Number(carrot);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+        setErr("Carrot must be a non-negative integer.");
+        return;
+      }
+      carrotN = n;
+    }
+    let stickN: number | undefined;
+    if (stick.trim() !== "") {
+      const n = Number(stick);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n > 0) {
+        setErr("Stick must be a non-positive integer.");
+        return;
+      }
+      stickN = n;
+    }
+    if (fromId !== "" && toId !== "" && fromId === toId) {
+      setErr("from-player and to-player must be different Players.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await create({
+        gameId,
+        keyword,
+        description,
+        type,
+        fromPlayerId: fromId === "" ? undefined : (fromId as PlayerId),
+        toPlayerId: toId === "" ? undefined : (toId as PlayerId),
+        carrot: carrotN,
+        stick: stickN,
+      });
+      reset();
+      setOpen(false);
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Create failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div style={{ marginBottom: "0.5rem" }}>
+        <button type="button" onClick={() => setOpen(true)}>
+          + New Goal
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="card stack"
+      style={{ marginBottom: "0.5rem" }}
+    >
+      <div className="row-wrap" style={{ gap: "0.5rem" }}>
+        <input
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          placeholder="Keyword (1–40 chars)"
+          aria-label="Keyword"
+          maxLength={40}
+          style={{ flex: 1, minWidth: "10rem" }}
+        />
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value as GoalType)}
+          aria-label="Type"
+        >
+          <option value="regular">Regular</option>
+          <option value="shared">Shared</option>
+          <option value="competitive">Competitive</option>
+        </select>
+      </div>
+      <div className="row-wrap" style={{ gap: "0.5rem" }}>
+        <label
+          className="row"
+          style={{ gap: "0.25rem", alignItems: "center" }}
+        >
+          <span className="muted" style={{ fontSize: "0.8rem" }}>
+            From
+          </span>
+          <select
+            value={fromId}
+            onChange={(e) => setFromId(e.target.value)}
+            aria-label="From player"
+          >
+            <option value="">Unassigned</option>
+            {eligiblePlayers.map((p) => (
+              <option key={p._id} value={p._id} disabled={p._id === toId}>
+                {p.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label
+          className="row"
+          style={{ gap: "0.25rem", alignItems: "center" }}
+        >
+          <span className="muted" style={{ fontSize: "0.8rem" }}>
+            To
+          </span>
+          <select
+            value={toId}
+            onChange={(e) => setToId(e.target.value)}
+            aria-label="To player"
+          >
+            <option value="">Unassigned</option>
+            {eligiblePlayers.map((p) => (
+              <option
+                key={p._id}
+                value={p._id}
+                disabled={p._id === fromId}
+              >
+                {p.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <input
+          type="number"
+          value={carrot}
+          onChange={(e) => setCarrot(e.target.value)}
+          placeholder="Carrot"
+          aria-label="Carrot"
+          min={0}
+          max={1000}
+          step={1}
+          style={{ width: "6rem" }}
+        />
+        <input
+          type="number"
+          value={stick}
+          onChange={(e) => setStick(e.target.value)}
+          placeholder="Stick"
+          aria-label="Stick"
+          min={-1000}
+          max={0}
+          step={1}
+          style={{ width: "6rem" }}
+        />
+      </div>
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Description (visible only to GM, from-player, and to-player)"
+        aria-label="Description"
+        rows={3}
+        maxLength={2000}
+        style={{ width: "100%", resize: "vertical" }}
+      />
+      {err && <div className="error-text">{err}</div>}
+      <div className="row" style={{ gap: "0.5rem" }}>
+        <button type="submit" disabled={busy}>
+          {busy ? "Creating…" : "Create"}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => {
+            reset();
+            setOpen(false);
+          }}
+          disabled={busy}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function GoalRowView({
+  goal,
+  viewerIsGm,
+  viewerPlayerId,
+  eligiblePlayers,
+}: {
+  goal: GoalRow;
+  viewerIsGm: boolean;
+  viewerPlayerId: PlayerId | null;
+  eligiblePlayers: GoalsEligiblePlayer[];
+}) {
+  const remove = useMutation(api.goals.deleteGoal);
+  const [editing, setEditing] = useState(false);
+  const [assigning, setAssigning] = useState<"from" | "to" | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // Keep the props available for future per-viewer affordances without
+  // tripping the no-unused-vars lint.
+  void viewerPlayerId;
+  void viewerIsGm;
+
+  async function handleDelete() {
+    if (
+      !window.confirm(
+        `Delete goal '${goal.keyword}'? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setErr(null);
+    setBusy(true);
+    try {
+      await remove({ goalId: goal._id });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Delete failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const cs = formatCarrotStick(goal.carrot, goal.stick);
+
+  return (
+    <div className="row-divider">
+      <div
+        className="row-wrap"
+        style={{
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "0.5rem",
+        }}
+      >
+        <span
+          className="row-wrap"
+          style={{ alignItems: "center", gap: "0.5rem", minWidth: 0 }}
+        >
+          <strong>{formatGoalKeyword(goal.keyword, goal.type)}</strong>
+          <span
+            className="badge accent"
+            style={{ fontSize: "0.75rem" }}
+            title="Carrot / Stick"
+          >
+            {cs}
+          </span>
+          <span
+            className={goal.fromDisplayName ? "badge" : "muted"}
+            style={{ fontSize: "0.75rem" }}
+          >
+            From: {goal.fromDisplayName ?? "Unassigned"}
+          </span>
+          <span
+            className={goal.toDisplayName ? "badge" : "muted"}
+            style={{ fontSize: "0.75rem" }}
+          >
+            To: {goal.toDisplayName ?? "Unassigned"}
+          </span>
+          {goal.isFromMe && (
+            <span className="badge success" style={{ fontSize: "0.7rem" }}>
+              From you
+            </span>
+          )}
+          {goal.isToMe && (
+            <span className="badge success" style={{ fontSize: "0.7rem" }}>
+              To you
+            </span>
+          )}
+          {goal.description === null && (
+            <span
+              className="badge"
+              style={{ fontSize: "0.7rem", letterSpacing: "0.05em" }}
+              title="Only the GM, from-player, and to-player can read the description."
+            >
+              REDACTED
+            </span>
+          )}
+        </span>
+        <span className="row-wrap" style={{ gap: "0.4rem" }}>
+          {goal.canAssignFromPlayer && assigning === null && (
+            <button
+              type="button"
+              onClick={() => setAssigning("from")}
+              disabled={busy}
+              style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
+            >
+              Assign from…
+            </button>
+          )}
+          {goal.canAssignToPlayer && assigning === null && (
+            <button
+              type="button"
+              onClick={() => setAssigning("to")}
+              disabled={busy}
+              style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
+            >
+              Assign to…
+            </button>
+          )}
+          {goal.canEdit && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setEditing((v) => !v)}
+              disabled={busy}
+              style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
+            >
+              {editing ? "Cancel" : "Edit"}
+            </button>
+          )}
+          {goal.canDelete && (
+            <button
+              type="button"
+              className="danger"
+              onClick={() => void handleDelete()}
+              disabled={busy}
+              style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
+            >
+              Delete
+            </button>
+          )}
+        </span>
+      </div>
+      {err && <div className="error-text">{err}</div>}
+      {assigning === "from" && goal.canAssignFromPlayer && (
+        <AssignFromPlayerForm
+          goal={goal}
+          eligiblePlayers={eligiblePlayers}
+          onDone={() => setAssigning(null)}
+        />
+      )}
+      {assigning === "to" && goal.canAssignToPlayer && (
+        <AssignToPlayerForm
+          goal={goal}
+          eligiblePlayers={eligiblePlayers}
+          onDone={() => setAssigning(null)}
+        />
+      )}
+      {editing && goal.canEdit && (
+        <GoalEditor
+          goal={goal}
+          eligiblePlayers={eligiblePlayers}
+          onDone={() => {
+            setEditing(false);
+            setErr(null);
+          }}
+        />
+      )}
+      {goal.description !== null && goal.description.length > 0 && (
+        <div style={{ marginTop: "0.25rem" }}>
+          <p
+            style={{
+              whiteSpace: "pre-wrap",
+              margin: 0,
+              fontSize: "0.9rem",
+            }}
+          >
+            {goal.description}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssignToPlayerForm({
+  goal,
+  eligiblePlayers,
+  onDone,
+}: {
+  goal: GoalRow;
+  eligiblePlayers: GoalsEligiblePlayer[];
+  onDone: () => void;
+}) {
+  const assign = useMutation(api.goals.assignToPlayer);
+  const [toId, setToId] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // Exclude the from-player from the eligible options (when set).
+  const options = eligiblePlayers.filter((p) => p._id !== goal.fromPlayerId);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setErr(null);
+    if (toId === "") {
+      setErr("Pick a Player to assign.");
+      return;
+    }
+    const target = options.find((p) => p._id === toId);
+    if (
+      !window.confirm(
+        `Assign goal '${goal.keyword}' to ${target?.displayName ?? "this player"}?`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await assign({ goalId: goal._id, toPlayerId: toId as PlayerId });
+      onDone();
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Assign failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="stack"
+      style={{
+        marginTop: "0.5rem",
+        paddingTop: "0.5rem",
+        borderTop: "1px dashed var(--border)",
+      }}
+    >
+      <div className="row-wrap" style={{ gap: "0.5rem" }}>
+        <select
+          value={toId}
+          onChange={(e) => setToId(e.target.value)}
+          aria-label="Assign to player"
+        >
+          <option value="">Pick a player…</option>
+          {options.map((p) => (
+            <option key={p._id} value={p._id}>
+              {p.displayName}
+            </option>
+          ))}
+        </select>
+        <button type="submit" disabled={busy}>
+          {busy ? "Assigning…" : "Assign"}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={onDone}
+          disabled={busy}
+        >
+          Cancel
+        </button>
+      </div>
+      {err && <div className="error-text">{err}</div>}
+    </form>
+  );
+}
+
+function AssignFromPlayerForm({
+  goal,
+  eligiblePlayers,
+  onDone,
+}: {
+  goal: GoalRow;
+  eligiblePlayers: GoalsEligiblePlayer[];
+  onDone: () => void;
+}) {
+  const assign = useMutation(api.goals.assignFromPlayer);
+  const [fromId, setFromId] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // Exclude the existing to-player from the eligible options (when set),
+  // since `from !== to` is enforced server-side.
+  const options = eligiblePlayers.filter((p) => p._id !== goal.toPlayerId);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setErr(null);
+    if (fromId === "") {
+      setErr("Pick a Player to give this Goal to.");
+      return;
+    }
+    const target = options.find((p) => p._id === fromId);
+    if (
+      !window.confirm(
+        `Give goal '${goal.keyword}' to ${target?.displayName ?? "this player"} as the from-player?`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await assign({ goalId: goal._id, fromPlayerId: fromId as PlayerId });
+      onDone();
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Assign failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="stack"
+      style={{
+        marginTop: "0.5rem",
+        paddingTop: "0.5rem",
+        borderTop: "1px dashed var(--border)",
+      }}
+    >
+      <div className="row-wrap" style={{ gap: "0.5rem" }}>
+        <select
+          value={fromId}
+          onChange={(e) => setFromId(e.target.value)}
+          aria-label="Assign from player"
+        >
+          <option value="">Pick a player…</option>
+          {options.map((p) => (
+            <option key={p._id} value={p._id}>
+              {p.displayName}
+            </option>
+          ))}
+        </select>
+        <button type="submit" disabled={busy}>
+          {busy ? "Assigning…" : "Assign"}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={onDone}
+          disabled={busy}
+        >
+          Cancel
+        </button>
+      </div>
+      {err && <div className="error-text">{err}</div>}
+    </form>
+  );
+}
+
+function GoalEditor({
+  goal,
+  eligiblePlayers,
+  onDone,
+}: {
+  goal: GoalRow;
+  eligiblePlayers: GoalsEligiblePlayer[];
+  onDone: () => void;
+}) {
+  const update = useMutation(api.goals.updateGoal);
+  const [keyword, setKeyword] = useState(goal.keyword);
+  const [type, setType] = useState<GoalType>(goal.type);
+  const [fromId, setFromId] = useState<string>(goal.fromPlayerId ?? "");
+  const [toId, setToId] = useState<string>(goal.toPlayerId ?? "");
+  const [carrot, setCarrot] = useState(
+    goal.carrot != null ? String(goal.carrot) : "",
+  );
+  const [stick, setStick] = useState(
+    goal.stick != null ? String(goal.stick) : "",
+  );
+  const [description, setDescription] = useState(goal.description ?? "");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setErr(null);
+
+    type Patch = {
+      goalId: Id<"goals">;
+      keyword?: string;
+      description?: string;
+      type?: GoalType;
+      fromPlayerId?: PlayerId | null;
+      toPlayerId?: PlayerId | null;
+      carrot?: number | null;
+      stick?: number | null;
+    };
+    const patch: Patch = { goalId: goal._id };
+
+    if (keyword.trim() !== goal.keyword) patch.keyword = keyword;
+    if (description !== (goal.description ?? "")) {
+      patch.description = description;
+    }
+    if (type !== goal.type) patch.type = type;
+
+    const currentFrom = goal.fromPlayerId ?? "";
+    if (fromId !== currentFrom) {
+      patch.fromPlayerId = fromId === "" ? null : (fromId as PlayerId);
+    }
+    const currentTo = goal.toPlayerId ?? "";
+    if (toId !== currentTo) {
+      patch.toPlayerId = toId === "" ? null : (toId as PlayerId);
+    }
+
+    const currentCarrot = goal.carrot != null ? String(goal.carrot) : "";
+    if (carrot !== currentCarrot) {
+      if (carrot.trim() === "") {
+        patch.carrot = null;
+      } else {
+        const n = Number(carrot);
+        if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+          setErr("Carrot must be a non-negative integer.");
+          return;
+        }
+        patch.carrot = n;
+      }
+    }
+    const currentStick = goal.stick != null ? String(goal.stick) : "";
+    if (stick !== currentStick) {
+      if (stick.trim() === "") {
+        patch.stick = null;
+      } else {
+        const n = Number(stick);
+        if (!Number.isFinite(n) || !Number.isInteger(n) || n > 0) {
+          setErr("Stick must be a non-positive integer.");
+          return;
+        }
+        patch.stick = n;
+      }
+    }
+
+    setBusy(true);
+    try {
+      await update(patch);
+      onDone();
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Update failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="stack"
+      style={{
+        marginTop: "0.5rem",
+        paddingTop: "0.5rem",
+        borderTop: "1px dashed var(--border)",
+      }}
+    >
+      <div className="row-wrap" style={{ gap: "0.5rem" }}>
+        <input
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          aria-label="Keyword"
+          maxLength={40}
+          style={{ flex: 1, minWidth: "10rem" }}
+        />
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value as GoalType)}
+          aria-label="Type"
+        >
+          <option value="regular">Regular</option>
+          <option value="shared">Shared</option>
+          <option value="competitive">Competitive</option>
+        </select>
+      </div>
+      <div className="row-wrap" style={{ gap: "0.5rem" }}>
+        <label
+          className="row"
+          style={{ gap: "0.25rem", alignItems: "center" }}
+        >
+          <span className="muted" style={{ fontSize: "0.8rem" }}>
+            From
+          </span>
+          <select
+            value={fromId}
+            onChange={(e) => setFromId(e.target.value)}
+            aria-label="From player"
+          >
+            <option value="">Unassigned</option>
+            {eligiblePlayers.map((p) => (
+              <option key={p._id} value={p._id} disabled={p._id === toId}>
+                {p.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label
+          className="row"
+          style={{ gap: "0.25rem", alignItems: "center" }}
+        >
+          <span className="muted" style={{ fontSize: "0.8rem" }}>
+            To
+          </span>
+          <select
+            value={toId}
+            onChange={(e) => setToId(e.target.value)}
+            aria-label="To player"
+          >
+            <option value="">Unassigned</option>
+            {eligiblePlayers.map((p) => (
+              <option
+                key={p._id}
+                value={p._id}
+                disabled={p._id === fromId}
+              >
+                {p.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <input
+          type="number"
+          value={carrot}
+          onChange={(e) => setCarrot(e.target.value)}
+          placeholder="Carrot"
+          aria-label="Carrot"
+          min={0}
+          max={1000}
+          step={1}
+          style={{ width: "6rem" }}
+        />
+        <input
+          type="number"
+          value={stick}
+          onChange={(e) => setStick(e.target.value)}
+          placeholder="Stick"
+          aria-label="Stick"
+          min={-1000}
+          max={0}
+          step={1}
+          style={{ width: "6rem" }}
+        />
+      </div>
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        aria-label="Description"
+        rows={3}
+        maxLength={2000}
+        style={{ width: "100%", resize: "vertical" }}
+      />
+      {err && <div className="error-text">{err}</div>}
+      <div className="row" style={{ gap: "0.5rem" }}>
+        <button type="submit" disabled={busy}>
+          {busy ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={onDone}
+          disabled={busy}
+        >
+          Cancel
+        </button>
+      </div>
     </form>
   );
 }
