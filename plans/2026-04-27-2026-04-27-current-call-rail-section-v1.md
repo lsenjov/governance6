@@ -107,7 +107,7 @@ horizontal real estate for a side-by-side context-and-notes layout.
 
 ### Backend: GM-only "current call details" query
 
-- [ ] Task 1. Add a new query `getCurrentCallDetails` to
+- [x] Task 1. Add a new query `getCurrentCallDetails` to
       `convex/calls.ts` that takes `{ gameId }` and runs `requireGameGm`
       to enforce GM-only access (Rule 24, server-side regardless of UI).
       Return shape:
@@ -142,7 +142,7 @@ horizontal real estate for a side-by-side context-and-notes layout.
       Returning `null` when the queue is empty keeps the contract
       explicit and avoids ambiguous "stub" data on the client.
 
-- [ ] Task 2. Implement the query body by reading the head of the FIFO
+- [x] Task 2. Implement the query body by reading the head of the FIFO
       with the existing index `by_game_active_time` and `take(1)`,
       mirroring `activeCalls` (`convex/calls.ts:114-120`) so ordering
       stays consistent. Resolve the player → user (display name fall-
@@ -150,12 +150,12 @@ horizontal real estate for a side-by-side context-and-notes layout.
       syndicate, and its drawbacks (sorted by `order` ascending,
       matching `drawbacks.listForSyndicate`).
 
-- [ ] Task 3. Defensive nulls: if the head call's `minionId` no longer
+- [x] Task 3. Defensive nulls: if the head call's `minionId` no longer
       resolves (e.g. minion deletion cascade) or the syndicate is gone,
       return `null` rather than partial data, so the UI can render the
       empty state safely.
 
-- [ ] Task 4. Add backend tests in a new `convex/calls.test.ts`
+- [x] Task 4. Add backend tests in a new `convex/calls.test.ts`
       covering:
       - returns `null` when queue is empty,
       - returns the FIFO **head** when multiple calls exist (verify by
@@ -177,7 +177,7 @@ horizontal real estate for a side-by-side context-and-notes layout.
 
 ### Frontend: extract reusable inline note components
 
-- [ ] Task 5. Refactor `src/components/NoteIcon.tsx` to extract two
+- [x] Task 5. Refactor `src/components/NoteIcon.tsx` to extract two
       layout-agnostic exports without changing the popover's external
       behaviour:
       - `NoteList`: takes `notes` (array result type from
@@ -199,13 +199,13 @@ horizontal real estate for a side-by-side context-and-notes layout.
       the same author/visibility/delete affordances inline as the
       popover does in a floating panel.
 
-- [ ] Task 6. Update `NoteIcon.tsx`'s popover to consume the extracted
+- [x] Task 6. Update `NoteIcon.tsx`'s popover to consume the extracted
       components, keeping the public `NoteIcon` props identical so no
       callers change.
 
 ### Frontend: render the main-column section
 
-- [ ] Task 7. Create a new `CurrentCallSection` component in
+- [x] Task 7. Create a new `CurrentCallSection` component in
       `src/pages/GameDetailPage.tsx`, co-located beside the other
       main-column section components (e.g. near `PublicBidSection`,
       `TreasonGrantsSection`). Props: `{ gameId, viewerIsGm }` —
@@ -215,7 +215,7 @@ horizontal real estate for a side-by-side context-and-notes layout.
       `!viewerIsGm`, and skips its underlying queries with `"skip"`
       when `!viewerIsGm` so non-GMs never subscribe.
 
-- [ ] Task 8. Inside `CurrentCallSection`, subscribe to
+- [x] Task 8. Inside `CurrentCallSection`, subscribe to
       `api.calls.getCurrentCallDetails` (Task 1) and the existing
       `api.notes.listNotesForTarget` for the head call's minion (skipped
       until the call resolves). Layout:
@@ -268,16 +268,16 @@ horizontal real estate for a side-by-side context-and-notes layout.
       `row`, `row-wrap`, `row-divider`, `badge`, `muted`, `stack`,
       `error-text`, `section-grid`. No new global CSS.
 
-- [ ] Task 9. Empty state: when `getCurrentCallDetails` returns `null`,
+- [x] Task 9. Empty state: when `getCurrentCallDetails` returns `null`,
       render the `<section>` with the `<h3>` heading and a single
       muted line: "No active call." (no two-column body). The section
       stays present so the GM knows it exists.
 
-- [ ] Task 10. Loading state: while `getCurrentCallDetails` is
+- [x] Task 10. Loading state: while `getCurrentCallDetails` is
       `undefined`, render the section with a muted "Loading…"
       placeholder; do not flash the empty state.
 
-- [ ] Task 11. Insert `<CurrentCallSection gameId={gid}
+- [x] Task 11. Insert `<CurrentCallSection gameId={gid}
       viewerIsGm={viewer.isGm} />` as the **first child** of
       `<div className="game-main">` at `GameDetailPage.tsx:125`,
       **above** the existing `Roster` `<section>`. The component
@@ -290,7 +290,7 @@ horizontal real estate for a side-by-side context-and-notes layout.
       renders; the section will display "No active call." there
       because no calls can exist (`convex/calls.ts:26-28`).
 
-- [ ] Task 12. (No mobile-drawer change.) The mobile bottom drawer
+- [x] Task 12. (No mobile-drawer change.) The mobile bottom drawer
       (`GameDetailPage.tsx:1988-2012`) only mirrors the **left rail**
       (Call Queue + POWER Standings). Because `CurrentCallSection`
       lives in `game-main`, on narrow viewports it already stacks in
@@ -300,7 +300,7 @@ horizontal real estate for a side-by-side context-and-notes layout.
 
 ### Styling / UX consistency
 
-- [ ] Task 13. Reuse existing utility classes only — `card`,
+- [x] Task 13. Reuse existing utility classes only — `card`,
       `card tight`, `row`, `row-wrap`, `row-divider`, `badge`,
       `muted`, `stack`, `error-text`, `section-grid`. Do not
       introduce new global CSS unless a clear need emerges; the main
@@ -309,7 +309,7 @@ horizontal real estate for a side-by-side context-and-notes layout.
       (`src/index.css:339-359`) provides the responsive two-column
       behaviour for free.
 
-- [ ] Task 14. Make sure long minion descriptions and note bodies wrap
+- [x] Task 14. Make sure long minion descriptions and note bodies wrap
       with `white-space: pre-wrap` (already used elsewhere) so the
       section doesn't horizontally overflow on narrow viewports, and
       verify the `section-grid` collapse at 900px reflows cleanly
@@ -317,11 +317,11 @@ horizontal real estate for a side-by-side context-and-notes layout.
 
 ### Tests
 
-- [ ] Task 15. Backend tests as specified in Task 4. Co-locate with
+- [x] Task 15. Backend tests as specified in Task 4. Co-locate with
       existing `convex/*.test.ts` patterns and use the same fixtures
       helpers used by `convex/notes.test.ts`.
 
-- [ ] Task 16. (Optional but recommended) A targeted UI smoke check via
+- [x] Task 16. (Optional but recommended) A targeted UI smoke check via
       the existing test setup if the project has one — otherwise rely
       on backend coverage plus manual verification per the verification
       criteria below.

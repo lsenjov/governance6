@@ -14,7 +14,7 @@ import { useElapsed, formatElapsed } from "../hooks/useElapsed";
 import { resolveNoteCount, useNotesCountMap } from "../hooks/useNotesCountMap";
 import { useRosterExpandedSet } from "../hooks/useRosterExpandedSet";
 import { useHideManagementControls } from "../hooks/useHideManagementControls";
-import { NoteIcon } from "../components/NoteIcon";
+import { NoteIcon, NoteList, NoteCreateForm, buildListArgs } from "../components/NoteIcon";
 
 type GameId = Id<"games">;
 type PlayerId = Id<"players">;
@@ -123,6 +123,8 @@ export function GameDetailPage() {
         )}
 
         <div className="game-main">
+          <CurrentCallSection gameId={gid} viewerIsGm={viewer.isGm} />
+
           <section>
             <h3 style={{ marginTop: 0 }}>Roster</h3>
             <RosterList
@@ -2011,6 +2013,252 @@ function BottomStrip({
         </Drawer>
       )}
     </>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Current Call (Rule 22) — GM-only deep-dive on the FIFO head
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * GM-only section that pins the head of the call queue at the top of the
+ * game-main column with all the context the GM needs to resolve it: the
+ * caller, the called minion (accent, description, skills), the minion's
+ * owning syndicate + drawbacks, the latest 5 notes on that minion, and an
+ * inline create-note form. Returns `null` for non-GMs (and never
+ * subscribes to the underlying queries) so Players issue zero extra
+ * requests. The empty state ("No active call.") still renders for the GM
+ * so the section's presence is discoverable.
+ */
+function CurrentCallSection({
+  gameId,
+  viewerIsGm,
+}: {
+  gameId: GameId;
+  viewerIsGm: boolean;
+}) {
+  // Skip both subscriptions for non-GMs — defence in depth alongside the
+  // server-side `requireGameGm` in `getCurrentCallDetails`.
+  const data = useQuery(
+    api.calls.getCurrentCallDetails,
+    viewerIsGm ? { gameId } : "skip",
+  );
+  const removeCall = useMutation(api.calls.removeCall);
+  const deleteNote = useMutation(api.notes.deleteNote);
+
+  const minionId = data ? data.minion._id : null;
+  const noteListArgs = useMemo(() => {
+    if (!minionId) return null;
+    return buildListArgs(gameId, { kind: "minion", minionId });
+  }, [gameId, minionId]);
+  const notes = useQuery(
+    api.notes.listNotesForTarget,
+    noteListArgs ?? "skip",
+  );
+
+  const [removeErr, setRemoveErr] = useState<string | null>(null);
+  const [noteErr, setNoteErr] = useState<string | null>(null);
+
+  if (!viewerIsGm) return null;
+
+  async function handleRemoveCall(callId: Id<"calls">) {
+    setRemoveErr(null);
+    try {
+      await removeCall({ callId });
+    } catch (e) {
+      setRemoveErr(e instanceof Error ? e.message : "Remove failed.");
+    }
+  }
+
+  async function handleDeleteNote(noteId: Id<"notes">) {
+    if (!window.confirm("Delete this note? This cannot be undone.")) return;
+    setNoteErr(null);
+    try {
+      await deleteNote({ noteId });
+    } catch (e) {
+      setNoteErr(e instanceof Error ? e.message : "Failed to delete note.");
+    }
+  }
+
+  // Loading: don't flash empty state.
+  if (data === undefined) {
+    return (
+      <section>
+        <h3 style={{ marginTop: 0 }}>Current Call</h3>
+        <div className="muted">Loading…</div>
+      </section>
+    );
+  }
+
+  // Empty: queue empty (or defensive null for missing joins).
+  if (data === null) {
+    return (
+      <section>
+        <h3 style={{ marginTop: 0 }}>Current Call</h3>
+        <div className="muted">No active call.</div>
+      </section>
+    );
+  }
+
+  const visibleNotes = notes ? notes.slice(0, 5) : undefined;
+  const olderCount = notes ? Math.max(0, notes.length - 5) : 0;
+
+  return (
+    <section>
+      <h3 style={{ marginTop: 0 }}>Current Call</h3>
+
+      {/* Header row: caller → minion + time + Remove button */}
+      <div className="card tight" style={{ marginBottom: "0.75rem" }}>
+        {removeErr && <div className="error-text">{removeErr}</div>}
+        <div
+          className="row"
+          style={{
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "0.5rem",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <strong>{data.call.playerName}</strong>
+            <span className="muted"> → </span>
+            <strong>{data.minion.name}</strong>
+            <span className="muted" style={{ fontSize: "0.85rem" }}>
+              {" · "}
+              {new Date(data.call.createdAt).toLocaleTimeString()}
+            </span>
+          </div>
+          <span className="row" style={{ gap: "0.5rem" }}>
+            <NoteIcon
+              gameId={gameId}
+              target={{ kind: "minion", minionId: data.minion._id }}
+              count={notes?.length ?? 0}
+              label={data.minion.name}
+            />
+            <button
+              type="button"
+              className="danger"
+              onClick={() => void handleRemoveCall(data.call._id)}
+              aria-label="Remove call"
+            >
+              Remove call
+            </button>
+          </span>
+        </div>
+      </div>
+
+      {/* Two-column body: Context (left) | Notes (right). Collapses to one
+          column under 900px via the existing `section-grid` rule. */}
+      <div className="section-grid">
+        {/* Context column */}
+        <section>
+          <div className="card tight stack">
+            <div>
+              <div className="row-wrap" style={{ alignItems: "baseline" }}>
+                <strong>{data.minion.name}</strong>
+                {data.minion.accent && (
+                  <span className="muted" style={{ fontSize: "0.85rem" }}>
+                    {data.minion.accent}
+                  </span>
+                )}
+              </div>
+              {data.minion.description &&
+                data.minion.description.trim().length > 0 && (
+                  <div
+                    style={{
+                      whiteSpace: "pre-wrap",
+                      marginTop: "0.25rem",
+                      fontSize: "0.95rem",
+                    }}
+                  >
+                    {data.minion.description}
+                  </div>
+                )}
+              {data.minion.skills.length > 0 && (
+                <div
+                  className="row-wrap"
+                  style={{ gap: "0.25rem", marginTop: "0.5rem" }}
+                >
+                  {data.minion.skills.map((s, i) => (
+                    <span key={`${s}-${i}`} className="badge">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h4 style={{ margin: "0 0 0.25rem 0" }}>Syndicate</h4>
+              <div>
+                <strong>{data.syndicate.name}</strong>
+              </div>
+              <div className="muted" style={{ fontSize: "0.9rem" }}>
+                Leader {data.syndicate.leader}
+              </div>
+            </div>
+
+            <div>
+              <h4 style={{ margin: "0 0 0.25rem 0" }}>
+                Drawbacks ({data.syndicate.drawbacks.length})
+              </h4>
+              {data.syndicate.drawbacks.length === 0 ? (
+                <div className="muted">No drawbacks.</div>
+              ) : (
+                <div className="stack">
+                  {data.syndicate.drawbacks.map((d) => (
+                    <div key={d._id} className="row-divider">
+                      <div style={{ fontWeight: 600 }}>{d.name}</div>
+                      {d.description.trim().length > 0 && (
+                        <div
+                          className="muted"
+                          style={{
+                            fontSize: "0.9rem",
+                            whiteSpace: "pre-wrap",
+                          }}
+                        >
+                          {d.description}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Notes column */}
+        <section>
+          <div className="card tight stack">
+            <div>
+              <h4 style={{ margin: "0 0 0.5rem 0" }}>
+                Latest notes
+                {visibleNotes !== undefined && ` (${visibleNotes.length})`}
+              </h4>
+              {noteErr && <div className="error-text">{noteErr}</div>}
+              <NoteList notes={visibleNotes} onDelete={handleDeleteNote} />
+              {olderCount > 0 && (
+                <div
+                  className="muted"
+                  style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}
+                >
+                  +{olderCount} older
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h4 style={{ margin: "0 0 0.5rem 0" }}>Add a note</h4>
+              <NoteCreateForm
+                gameId={gameId}
+                target={{ kind: "minion", minionId: data.minion._id }}
+              />
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
   );
 }
 

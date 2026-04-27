@@ -138,6 +138,78 @@ export const activeCalls = query({
 });
 
 /**
+ * GM-only deep-dive on the head of the FIFO call queue.
+ *
+ * Returns `null` when the queue is empty, when the head call's minion has
+ * been removed, or when the minion's owning syndicate is missing. The
+ * defensive nulls keep the rendering contract simple: the UI just shows
+ * the empty state in those cases. A successful result joins the call,
+ * the called minion (with skills/accent/description), the minion's owning
+ * syndicate, and that syndicate's drawbacks (sorted by `order` ascending,
+ * matching `drawbacks.listForSyndicate`).
+ */
+export const getCurrentCallDetails = query({
+  args: { gameId: v.id("games") },
+  handler: async (ctx, args) => {
+    // GM-only — Rule 24, enforced server-side regardless of UI.
+    await requireGameGm(ctx, args.gameId);
+
+    // FIFO head: oldest active call, mirroring `activeCalls`'s ordering.
+    const head = await ctx.db
+      .query("calls")
+      .withIndex("by_game_active_time", (q) =>
+        q.eq("gameId", args.gameId).eq("isActive", true),
+      )
+      .order("asc")
+      .take(1);
+    if (head.length === 0) return null;
+    const call = head[0];
+
+    const minion = await ctx.db.get(call.minionId);
+    if (!minion) return null;
+
+    const syndicate = await ctx.db.get(minion.syndicateId);
+    if (!syndicate) return null;
+
+    const player = await ctx.db.get(call.playerId);
+    const user = player ? await ctx.db.get(player.userId) : null;
+    const playerName = user?.displayName ?? user?.email ?? "Unknown";
+
+    const drawbackRows = await ctx.db
+      .query("drawbacks")
+      .withIndex("by_syndicate", (q) => q.eq("syndicateId", syndicate._id))
+      .collect();
+    drawbackRows.sort((a, b) => a.order - b.order);
+
+    return {
+      call: {
+        _id: call._id,
+        createdAt: call.createdAt,
+        playerId: call.playerId,
+        playerName,
+      },
+      minion: {
+        _id: minion._id,
+        name: minion.name,
+        accent: minion.accent ?? null,
+        description: minion.description ?? null,
+        skills: minion.skills,
+      },
+      syndicate: {
+        _id: syndicate._id,
+        name: syndicate.name,
+        leader: syndicate.leader,
+        drawbacks: drawbackRows.map((d) => ({
+          _id: d._id,
+          name: d.name,
+          description: d.description,
+        })),
+      },
+    };
+  },
+});
+
+/**
  * Recently removed Calls — up to 10, ordered by `removedAt` descending.
  */
 export const recentlyRemovedCalls = query({

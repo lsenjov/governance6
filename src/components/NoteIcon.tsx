@@ -1,12 +1,32 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
-type NoteTarget =
+/**
+ * Discriminated target for any note-bearing entity in a game.
+ * Re-exported so call-sites outside the popover (e.g. the Current Call
+ * section in the game detail page) can construct it.
+ */
+export type NoteTarget =
   | { kind: "game" }
   | { kind: "syndicate"; syndicateId: Id<"syndicates"> }
   | { kind: "minion"; minionId: Id<"minions"> };
+
+/**
+ * Result-shape for a single note as returned by `api.notes.listNotesForTarget`.
+ * Kept narrow so consumers can pass the array directly into `<NoteList>`.
+ */
+export type NoteListItem = {
+  _id: Id<"notes">;
+  createdAt: number;
+  body: string;
+  visibility: "private" | "public";
+  authorUserId: Id<"users">;
+  authorDisplayName: string;
+  isMine: boolean;
+  canDelete: boolean;
+};
 
 type NoteIconProps = {
   gameId: Id<"games">;
@@ -87,13 +107,9 @@ function NotesPopover({
 }: PopoverProps) {
   const queryArgs = buildListArgs(gameId, target);
   const notes = useQuery(api.notes.listNotesForTarget, queryArgs);
-  const create = useMutation(api.notes.createNote);
   const remove = useMutation(api.notes.deleteNote);
 
-  const [body, setBody] = useState("");
-  const [visibility, setVisibility] = useState<"private" | "public">("private");
   const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [placement, setPlacement] = useState<{
     vertical: "below" | "above";
     horizontal: "left" | "right";
@@ -160,33 +176,6 @@ function NotesPopover({
     };
   }, [onClose, anchorRef]);
 
-  async function submit() {
-    setErr(null);
-    const trimmed = body.trim();
-    if (trimmed.length === 0) {
-      setErr("Note body cannot be empty.");
-      return;
-    }
-    setBusy(true);
-    try {
-      await create({
-        gameId,
-        targetKind: target.kind,
-        targetSyndicateId:
-          target.kind === "syndicate" ? target.syndicateId : undefined,
-        targetMinionId: target.kind === "minion" ? target.minionId : undefined,
-        body: trimmed,
-        visibility,
-      });
-      setBody("");
-      setVisibility("private");
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to post note.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handleDelete(noteId: Id<"notes">) {
     if (!window.confirm("Delete this note? This cannot be undone.")) return;
     setErr(null);
@@ -227,97 +216,188 @@ function NotesPopover({
       </div>
 
       <div className="notes-popover-list">
-        {notes === undefined && <div className="muted">Loading…</div>}
-        {notes && notes.length === 0 && (
-          <div className="muted">No notes yet.</div>
-        )}
-        {notes?.map((n) => (
-          <div key={n._id} className="note-item">
-            <div className="note-item-meta">
-              <strong>{n.authorDisplayName}</strong>
-              {n.isMine && <span className="muted"> (you)</span>}
-              <span
-                className={`badge ${n.visibility === "public" ? "accent" : ""}`}
-                style={{ marginLeft: "0.5rem" }}
-              >
-                {n.visibility}
-              </span>
-              <span
-                className="muted"
-                style={{ marginLeft: "0.5rem", fontSize: "0.8rem" }}
-              >
-                {new Date(n.createdAt).toLocaleString()}
-              </span>
-              {n.canDelete && (
-                <button
-                  type="button"
-                  className="danger"
-                  onClick={() => void handleDelete(n._id)}
-                  style={{
-                    marginLeft: "auto",
-                    padding: "0.125rem 0.5rem",
-                    fontSize: "0.8rem",
-                  }}
-                >
-                  Delete
-                </button>
-              )}
-            </div>
-            <div className="note-item-body">{n.body}</div>
-          </div>
-        ))}
+        <NoteList notes={notes} onDelete={handleDelete} />
       </div>
 
-      <form
-        className="notes-popover-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit();
-        }}
-      >
-        <label htmlFor="note-body" style={{ marginBottom: "0.25rem" }}>
-          New note
-        </label>
-        <textarea
-          id="note-body"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          maxLength={2000}
-          rows={3}
-          placeholder="Add a note (immutable once posted)…"
-        />
-        <div
-          className="row"
-          style={{ justifyContent: "space-between", marginTop: "0.5rem" }}
-        >
-          <label
-            htmlFor="note-visibility"
-            style={{ margin: 0, display: "flex", gap: "0.25rem" }}
-          >
-            <input
-              id="note-visibility"
-              type="checkbox"
-              checked={visibility === "public"}
-              onChange={(e) =>
-                setVisibility(e.target.checked ? "public" : "private")
-              }
-            />
-            <span style={{ color: "var(--fg)" }}>Public</span>
-          </label>
-          <button type="submit" disabled={busy || body.trim().length === 0}>
-            {busy ? "Posting…" : "Post"}
-          </button>
-        </div>
-        {err && <div className="error-text">{err}</div>}
-        <div className="muted" style={{ fontSize: "0.75rem" }}>
-          Notes cannot be edited. Only the GM can delete notes.
-        </div>
-      </form>
+      {err && <div className="error-text">{err}</div>}
+
+      <NoteCreateForm gameId={gameId} target={target} className="notes-popover-form" />
     </div>
   );
 }
 
-function buildListArgs(gameId: Id<"games">, target: NoteTarget) {
+/**
+ * Layout-agnostic list of notes. Identical visual treatment as the popover
+ * version, but rendered wherever the caller drops it (no positioning).
+ *
+ * Pass `notes={undefined}` while the underlying query is loading; the
+ * component will render a "Loading…" placeholder and avoid flashing the
+ * empty state. `onDelete` is called only when `note.canDelete` is true; the
+ * caller is responsible for confirming + invoking the delete mutation.
+ */
+export function NoteList({
+  notes,
+  onDelete,
+}: {
+  notes: NoteListItem[] | undefined;
+  onDelete: (noteId: Id<"notes">) => void | Promise<void>;
+}) {
+  if (notes === undefined) {
+    return <div className="muted">Loading…</div>;
+  }
+  if (notes.length === 0) {
+    return <div className="muted">No notes yet.</div>;
+  }
+  return (
+    <>
+      {notes.map((n) => (
+        <div key={n._id} className="note-item">
+          <div className="note-item-meta">
+            <strong>{n.authorDisplayName}</strong>
+            {n.isMine && <span className="muted"> (you)</span>}
+            <span
+              className={`badge ${n.visibility === "public" ? "accent" : ""}`}
+              style={{ marginLeft: "0.5rem" }}
+            >
+              {n.visibility}
+            </span>
+            <span
+              className="muted"
+              style={{ marginLeft: "0.5rem", fontSize: "0.8rem" }}
+            >
+              {new Date(n.createdAt).toLocaleString()}
+            </span>
+            {n.canDelete && (
+              <button
+                type="button"
+                className="danger"
+                onClick={() => void onDelete(n._id)}
+                style={{
+                  marginLeft: "auto",
+                  padding: "0.125rem 0.5rem",
+                  fontSize: "0.8rem",
+                }}
+              >
+                Delete
+              </button>
+            )}
+          </div>
+          <div className="note-item-body">{n.body}</div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Layout-agnostic create form. Self-contained: owns its body + visibility
+ * state, posts to `api.notes.createNote`, and resets on success. Uses
+ * `useId()` for textarea + visibility ids so multiple instances on the
+ * page (popover + Current Call section) never collide.
+ *
+ * Defaults visibility to `private`, matching the popover's behaviour.
+ */
+export function NoteCreateForm({
+  gameId,
+  target,
+  className,
+}: {
+  gameId: Id<"games">;
+  target: NoteTarget;
+  className?: string;
+}) {
+  const create = useMutation(api.notes.createNote);
+  const [body, setBody] = useState("");
+  const [visibility, setVisibility] = useState<"private" | "public">("private");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const reactId = useId();
+  const bodyId = `note-body-${reactId}`;
+  const visibilityId = `note-visibility-${reactId}`;
+
+  async function submit() {
+    setErr(null);
+    const trimmed = body.trim();
+    if (trimmed.length === 0) {
+      setErr("Note body cannot be empty.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await create({
+        gameId,
+        targetKind: target.kind,
+        targetSyndicateId:
+          target.kind === "syndicate" ? target.syndicateId : undefined,
+        targetMinionId: target.kind === "minion" ? target.minionId : undefined,
+        body: trimmed,
+        visibility,
+      });
+      setBody("");
+      setVisibility("private");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to post note.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      className={className}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <label htmlFor={bodyId} style={{ marginBottom: "0.25rem" }}>
+        New note
+      </label>
+      <textarea
+        id={bodyId}
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        maxLength={2000}
+        rows={3}
+        placeholder="Add a note (immutable once posted)…"
+      />
+      <div
+        className="row"
+        style={{ justifyContent: "space-between", marginTop: "0.5rem" }}
+      >
+        <label
+          htmlFor={visibilityId}
+          style={{ margin: 0, display: "flex", gap: "0.25rem" }}
+        >
+          <input
+            id={visibilityId}
+            type="checkbox"
+            checked={visibility === "public"}
+            onChange={(e) =>
+              setVisibility(e.target.checked ? "public" : "private")
+            }
+          />
+          <span style={{ color: "var(--fg)" }}>Public</span>
+        </label>
+        <button type="submit" disabled={busy || body.trim().length === 0}>
+          {busy ? "Posting…" : "Post"}
+        </button>
+      </div>
+      {err && <div className="error-text">{err}</div>}
+      <div className="muted" style={{ fontSize: "0.75rem" }}>
+        Notes cannot be edited. Only the GM can delete notes.
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Build the args object for `api.notes.listNotesForTarget` from a
+ * `NoteTarget`. Re-exported so callers outside the popover construct
+ * list-query args identically.
+ */
+export function buildListArgs(gameId: Id<"games">, target: NoteTarget) {
   if (target.kind === "game") {
     return { gameId, targetKind: "game" as const };
   }
