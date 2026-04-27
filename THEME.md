@@ -199,6 +199,49 @@ When adding new components or reviewing changes, confirm:
 
 ## Out of scope
 
-- Custom illustrations / wood-cut iconography (separate art pass).
-- Light/dark switch — brutalism is light by default; a "blackout"
-  inversion is a future variant.
+These items would extend the look but are deliberately not part of the
+shipped theme. They are documented so future contributors know they
+were considered and rejected (or deferred), not forgotten.
+
+### Custom illustrations / wood-cut iconography
+
+The aesthetic — civic notice, union poster, 1970s tram-stop ordinance
+— invites engraved or woodcut-style imagery (heavy-line figures,
+hatched fills, official seals). The current theme does **none** of
+this; it relies entirely on typography, rules, stripes, and the mint
+accent. Adding illustrations would require:
+
+- A consistent illustration pass (one artist, one stroke weight, one
+  hatching density) — not ad-hoc icons pulled from a library.
+- New asset-handling decisions (inline SVG vs. sprite, color tokens
+  vs. baked-in black, accent recoloring).
+- Style rules for *where* illustrations are allowed (empty states,
+  card headers, drawbacks) so they don't drift into ornament.
+
+Until a dedicated art pass happens, components ship with type +
+geometry only. Lucide-style line icons or emoji are **not** an
+acceptable substitute — they would dilute the look.
+
+### Light/dark switch ("blackout" variant)
+
+The theme is light-only by design. The palette assumes a newsprint
+off-white page (`--bg: #f4f1ea`) with void-black ink and a single
+mint accent; the contrast math, the hard 2px borders, and the
+caution-tape stripes are all tuned for that surface. There is no
+`prefers-color-scheme` handling and no theme toggle.
+
+A "blackout" inversion (black page, off-white type, mint accent
+unchanged) is plausible as a future variant but would require:
+
+- A parallel set of palette tokens, scoped under a `[data-theme]`
+  attribute or a media query.
+- Re-checking every hard shadow — `4px 4px 0 #0a0a0a` disappears on
+  a black page and would need to flip to off-white.
+- Re-checking the diagonal-stripe empty states and caution-tape
+  borders, which currently bake `var(--border)` into
+  `repeating-linear-gradient` calls.
+- A toggle UI and persistence, which the app does not currently
+  have.
+
+Treat any "make it dark" request as a project of its own, not a
+five-minute swap.
