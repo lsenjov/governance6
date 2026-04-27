@@ -107,6 +107,12 @@ export function GameDetailPage() {
             />
           </section>
 
+          <TreasonGrantsSection
+            gameId={gid}
+            gameState={gameState}
+            viewerIsGm={viewer.isGm}
+          />
+
           {viewer.isGm && gameState === "ready" && (
             <section>
               <h3>Add Player</h3>
@@ -1611,5 +1617,474 @@ function BottomStrip({
         </Drawer>
       )}
     </>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Treason Grants (Rule 26)
+// ───────────────────────────────────────────────────────────────────────────
+
+type GrantRow = {
+  _id: Id<"treasonGrants">;
+  keyword: string;
+  power: number;
+  description: string | null;
+  ownerPlayerId: Id<"players"> | null;
+  ownerDisplayName: string | null;
+  takenAt: number | null;
+  createdAt: number;
+  isMine: boolean;
+  canTake: boolean;
+  canEditPower: boolean;
+};
+
+function TreasonGrantsSection({
+  gameId,
+  gameState,
+  viewerIsGm,
+}: {
+  gameId: GameId;
+  gameState: GameState;
+  viewerIsGm: boolean;
+}) {
+  // Players never see Grants while the game is still being assembled.
+  // GMs always see the panel so they can author grants pre-game.
+  // Subscribe unconditionally so hook order is stable; skip the query
+  // when the panel is hidden so we don't load data we won't render.
+  const hidden = !viewerIsGm && gameState === "ready";
+  const data = useQuery(
+    api.treasonGrants.listGrantsForGame,
+    hidden ? "skip" : { gameId },
+  );
+  if (hidden) return null;
+  const writable = viewerIsGm && gameState !== "archived";
+
+  return (
+    <section>
+      <div
+        className="row"
+        style={{ alignItems: "center", justifyContent: "space-between" }}
+      >
+        <h3 style={{ marginTop: 0 }}>Treason Grants</h3>
+        <span className="muted" style={{ fontSize: "0.85rem" }}>
+          {data ? `${data.grants.length} total` : ""}
+        </span>
+      </div>
+      {writable && <NewGrantForm gameId={gameId} />}
+      {data === undefined ? (
+        <div className="muted">Loading…</div>
+      ) : data.grants.length === 0 ? (
+        <div className="muted">
+          {viewerIsGm
+            ? "No grants yet. Author a treason grant to seed the pool."
+            : "No grants on offer."}
+        </div>
+      ) : (
+        <div className="card" style={{ padding: "0.25rem 0.5rem" }}>
+          {data.grants.map((g) => (
+            <TreasonGrantRow
+              key={g._id}
+              grant={g}
+              viewerIsGm={viewerIsGm}
+              gameState={gameState}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function NewGrantForm({ gameId }: { gameId: GameId }) {
+  const create = useMutation(api.treasonGrants.createGrant);
+  const [open, setOpen] = useState(false);
+  const [keyword, setKeyword] = useState("");
+  const [power, setPower] = useState("");
+  const [description, setDescription] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  function reset() {
+    setKeyword("");
+    setPower("");
+    setDescription("");
+    setErr(null);
+  }
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setErr(null);
+    const n = Number(power);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+      setErr("POWER must be a positive integer.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await create({
+        gameId,
+        keyword,
+        power: n,
+        description,
+      });
+      reset();
+      setOpen(false);
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Create failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div style={{ marginBottom: "0.5rem" }}>
+        <button type="button" onClick={() => setOpen(true)}>
+          + New Grant
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="card stack"
+      style={{ marginBottom: "0.5rem" }}
+    >
+      <div className="row-wrap" style={{ gap: "0.5rem" }}>
+        <input
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          placeholder="Keyword (1–40 chars)"
+          aria-label="Keyword"
+          maxLength={40}
+          style={{ flex: 1, minWidth: "10rem" }}
+        />
+        <input
+          value={power}
+          onChange={(e) => setPower(e.target.value)}
+          placeholder="POWER"
+          aria-label="POWER amount"
+          style={{ width: "6rem" }}
+        />
+      </div>
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Description (visible only to the owner once taken)"
+        aria-label="Description"
+        rows={3}
+        maxLength={2000}
+        style={{ width: "100%", resize: "vertical" }}
+      />
+      {err && <div className="error-text">{err}</div>}
+      <div className="row" style={{ gap: "0.5rem" }}>
+        <button type="submit" disabled={busy}>
+          {busy ? "Creating…" : "Create"}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => {
+            reset();
+            setOpen(false);
+          }}
+          disabled={busy}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function TreasonGrantRow({
+  grant,
+  viewerIsGm,
+  gameState,
+}: {
+  grant: GrantRow;
+  viewerIsGm: boolean;
+  gameState: GameState;
+}) {
+  const take = useMutation(api.treasonGrants.takeGrant);
+  const remove = useMutation(api.treasonGrants.deleteGrant);
+  const clearOwner = useMutation(api.treasonGrants.clearGrantOwner);
+  const [editing, setEditing] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const writable = viewerIsGm && gameState !== "archived";
+  const owned = grant.ownerPlayerId !== null;
+
+  async function handleTake() {
+    if (
+      !window.confirm(
+        `Take grant '${grant.keyword}' for +${grant.power} POWER?`,
+      )
+    ) {
+      return;
+    }
+    setErr(null);
+    setBusy(true);
+    try {
+      await take({ grantId: grant._id });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Take failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    const msg = owned
+      ? `Delete grant '${grant.keyword}'? POWER already paid out is NOT refunded.`
+      : `Delete grant '${grant.keyword}'?`;
+    if (!window.confirm(msg)) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      await remove({ grantId: grant._id });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Delete failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleClear() {
+    if (
+      !window.confirm(
+        `Clear owner of '${grant.keyword}'? POWER is NOT refunded; the grant becomes takeable again.`,
+      )
+    ) {
+      return;
+    }
+    setErr(null);
+    setBusy(true);
+    try {
+      await clearOwner({ grantId: grant._id });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Clear failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="row-divider">
+      <div
+        className="row-wrap"
+        style={{
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "0.5rem",
+        }}
+      >
+        <span
+          className="row-wrap"
+          style={{ alignItems: "center", gap: "0.5rem", minWidth: 0 }}
+        >
+          <strong>{grant.keyword}</strong>
+          <span className="badge accent" style={{ fontSize: "0.75rem" }}>
+            +{grant.power} POWER
+          </span>
+          {owned ? (
+            <span
+              className={`badge ${grant.isMine ? "success" : ""}`}
+              style={{ fontSize: "0.75rem" }}
+            >
+              {grant.isMine
+                ? "Yours"
+                : `Held by ${grant.ownerDisplayName ?? "Unknown"}`}
+            </span>
+          ) : (
+            <span className="muted" style={{ fontSize: "0.85rem" }}>
+              Unowned
+            </span>
+          )}
+        </span>
+        <span className="row-wrap" style={{ gap: "0.4rem" }}>
+          {grant.canTake && (
+            <button
+              type="button"
+              onClick={() => void handleTake()}
+              disabled={busy}
+              style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
+            >
+              {busy ? "Taking…" : "Take"}
+            </button>
+          )}
+          {writable && (
+            <>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setEditing((v) => !v)}
+                disabled={busy}
+                style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
+              >
+                {editing ? "Cancel" : "Edit"}
+              </button>
+              {owned && (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => void handleClear()}
+                  disabled={busy}
+                  style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
+                >
+                  Clear owner
+                </button>
+              )}
+              <button
+                type="button"
+                className="danger"
+                onClick={() => void handleDelete()}
+                disabled={busy}
+                style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
+              >
+                Delete
+              </button>
+            </>
+          )}
+        </span>
+      </div>
+      {err && <div className="error-text">{err}</div>}
+      {editing && writable && (
+        <GrantEditor
+          grant={grant}
+          onDone={() => {
+            setEditing(false);
+            setErr(null);
+          }}
+        />
+      )}
+      {grant.description !== null && grant.description.length > 0 && (
+        <div style={{ marginTop: "0.25rem" }}>
+          <p
+            style={{
+              whiteSpace: "pre-wrap",
+              margin: 0,
+              fontSize: "0.9rem",
+            }}
+          >
+            {grant.description}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GrantEditor({
+  grant,
+  onDone,
+}: {
+  grant: GrantRow;
+  onDone: () => void;
+}) {
+  const update = useMutation(api.treasonGrants.updateGrant);
+  const [keyword, setKeyword] = useState(grant.keyword);
+  const [power, setPower] = useState(String(grant.power));
+  const [description, setDescription] = useState(grant.description ?? "");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const powerLocked = !grant.canEditPower;
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setErr(null);
+    const patch: {
+      grantId: Id<"treasonGrants">;
+      keyword?: string;
+      power?: number;
+      description?: string;
+    } = { grantId: grant._id };
+    const trimmedKeyword = keyword.trim();
+    if (trimmedKeyword !== grant.keyword) patch.keyword = keyword;
+    if (description !== (grant.description ?? "")) {
+      patch.description = description;
+    }
+    if (!powerLocked) {
+      const n = Number(power);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+        setErr("POWER must be a positive integer.");
+        return;
+      }
+      if (n !== grant.power) patch.power = n;
+    }
+    setBusy(true);
+    try {
+      await update(patch);
+      onDone();
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Update failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="stack"
+      style={{
+        marginTop: "0.5rem",
+        paddingTop: "0.5rem",
+        borderTop: "1px dashed var(--border)",
+      }}
+    >
+      <div className="row-wrap" style={{ gap: "0.5rem" }}>
+        <input
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          aria-label="Keyword"
+          maxLength={40}
+          style={{ flex: 1, minWidth: "10rem" }}
+        />
+        <input
+          value={power}
+          onChange={(e) => setPower(e.target.value)}
+          aria-label="POWER amount"
+          disabled={powerLocked}
+          title={
+            powerLocked
+              ? "POWER is locked because this Grant has been taken."
+              : undefined
+          }
+          style={{ width: "6rem" }}
+        />
+      </div>
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        aria-label="Description"
+        rows={3}
+        maxLength={2000}
+        style={{ width: "100%", resize: "vertical" }}
+      />
+      {powerLocked && (
+        <div className="muted" style={{ fontSize: "0.8rem" }}>
+          POWER is locked because this Grant has been taken.
+        </div>
+      )}
+      {err && <div className="error-text">{err}</div>}
+      <div className="row" style={{ gap: "0.5rem" }}>
+        <button type="submit" disabled={busy}>
+          {busy ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={onDone}
+          disabled={busy}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }

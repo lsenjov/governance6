@@ -23,7 +23,8 @@ export type LedgerSource =
   | "transfer_out"
   | "bank_in"
   | "bank_out"
-  | "minion_buy";
+  | "minion_buy"
+  | "treason_grant";
 
 /**
  * Rule 20 (GM path): `gmEditPower(gameId, playerId, delta, reason?)`.

@@ -98,7 +98,10 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_selected_syndicate", ["selectedSyndicateId"]),
 
-  // Rules 18, 19: append-only ledger.
+  // Rules 18, 19 + Rule 26 (Treason Grants): append-only ledger.
+  // The `treason_grant` source is added by the Treason Grants feature
+  // (`plans/2026-04-27-treason-grants-v1.md`) to keep grant payouts
+  // distinguishable from arbitrary GM bank actions.
   powerLedgerEntries: defineTable({
     gameId: v.id("games"),
     playerId: v.id("players"),
@@ -110,6 +113,7 @@ export default defineSchema({
       v.literal("bank_in"),
       v.literal("bank_out"),
       v.literal("minion_buy"),
+      v.literal("treason_grant"),
     ),
     counterpartyPlayerId: v.optional(v.id("players")),
     createdByUserId: v.id("users"),
@@ -171,4 +175,27 @@ export default defineSchema({
     .index("by_syndicate", ["targetSyndicateId"])
     .index("by_minion", ["targetMinionId"])
     .index("by_author_game", ["authorUserId", "gameId"]),
+
+  // Rule 26: Treason Grants — per-game GM-authored bundles of
+  // (keyword, POWER, description, optional player owner). Players may
+  // take an unowned grant while the game is `playing`, paying out the
+  // listed POWER and revealing the description to the taker.
+  // See `plans/2026-04-27-treason-grants-v1.md`.
+  treasonGrants: defineTable({
+    gameId: v.id("games"),
+    keyword: v.string(),
+    // Lowercased, trimmed form of `keyword` used to enforce
+    // case-insensitive uniqueness within a game (Convex has no schema-
+    // level unique constraint).
+    keywordLower: v.string(),
+    power: v.number(),
+    description: v.string(),
+    ownerPlayerId: v.optional(v.id("players")),
+    takenAt: v.optional(v.number()),
+    createdAt: v.number(),
+    createdByUserId: v.id("users"),
+  })
+    .index("by_game", ["gameId"])
+    .index("by_game_keywordLower", ["gameId", "keywordLower"])
+    .index("by_game_owner", ["gameId", "ownerPlayerId"]),
 });

@@ -20,6 +20,7 @@ import type * as minions from "../minions.js";
 import type * as notes from "../notes.js";
 import type * as presetSkills from "../presetSkills.js";
 import type * as syndicates from "../syndicates.js";
+import type * as treasonGrants from "../treasonGrants.js";
 import type * as users from "../users.js";
 
 import type {
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   notes: typeof notes;
   presetSkills: typeof presetSkills;
   syndicates: typeof syndicates;
+  treasonGrants: typeof treasonGrants;
   users: typeof users;
 }>;
 
