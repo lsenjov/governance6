@@ -449,6 +449,17 @@ label {
 
 .game-main {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.game-main > section {
+  margin: 0;
+}
+
+.game-main > section > :first-child {
+  margin-top: 0;
 }
 
 .game-rail {
