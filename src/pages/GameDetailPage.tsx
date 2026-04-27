@@ -13,6 +13,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { useElapsed, formatElapsed } from "../hooks/useElapsed";
 import { resolveNoteCount, useNotesCountMap } from "../hooks/useNotesCountMap";
 import { useRosterExpandedSet } from "../hooks/useRosterExpandedSet";
+import { useHideManagementControls } from "../hooks/useHideManagementControls";
 import { NoteIcon } from "../components/NoteIcon";
 
 type GameId = Id<"games">;
@@ -59,6 +60,9 @@ export function GameDetailPage() {
     gid ? { gameId: gid } : "skip",
   );
 
+  const [hideManagementControls, setHideManagementControls] =
+    useHideManagementControls(gid);
+
   if (!gid) return <div>Missing game id.</div>;
   if (view === undefined) return <div className="muted">Loading…</div>;
   if (view === null)
@@ -81,6 +85,8 @@ export function GameDetailPage() {
         startedAt={game.startedAt ?? null}
         rosterSize={roster.length}
         gameNoteCount={resolveNoteCount(noteCounts, { kind: "game" })}
+        hideManagementControls={hideManagementControls}
+        onHideManagementControlsChange={setHideManagementControls}
       />
 
       {showYouStrip && (
@@ -139,6 +145,7 @@ export function GameDetailPage() {
             gameId={gid}
             gameState={gameState}
             viewerIsGm={viewer.isGm}
+            hideManagementControls={hideManagementControls}
           />
 
           <GoalsSection
@@ -146,6 +153,7 @@ export function GameDetailPage() {
             gameState={gameState}
             viewerIsGm={viewer.isGm}
             viewerPlayerId={viewer.playerId}
+            hideManagementControls={hideManagementControls}
           />
 
           {viewer.isGm && gameState === "ready" && (
@@ -220,6 +228,8 @@ function GameHud({
   startedAt,
   rosterSize,
   gameNoteCount,
+  hideManagementControls,
+  onHideManagementControlsChange,
 }: {
   gameId: GameId;
   gameName: string;
@@ -229,6 +239,8 @@ function GameHud({
   startedAt: number | null;
   rosterSize: number;
   gameNoteCount: number;
+  hideManagementControls: boolean;
+  onHideManagementControlsChange: (next: boolean) => void;
 }) {
   const [logOpen, setLogOpen] = useState(false);
   const [gmToolsOpen, setGmToolsOpen] = useState(false);
@@ -289,6 +301,8 @@ function GameHud({
           gameId={gameId}
           gameState={gameState}
           rosterSize={rosterSize}
+          hideManagementControls={hideManagementControls}
+          onHideManagementControlsChange={onHideManagementControlsChange}
           onClose={() => setGmToolsOpen(false)}
         />
       )}
@@ -320,11 +334,15 @@ function GmToolsDrawer({
   gameId,
   gameState,
   rosterSize,
+  hideManagementControls,
+  onHideManagementControlsChange,
   onClose,
 }: {
   gameId: GameId;
   gameState: GameState;
   rosterSize: number;
+  hideManagementControls: boolean;
+  onHideManagementControlsChange: (next: boolean) => void;
   onClose: () => void;
 }) {
   return (
@@ -336,6 +354,28 @@ function GmToolsDrawer({
           gameState={gameState}
           rosterSize={rosterSize}
         />
+      </section>
+      <section style={{ marginTop: "1rem" }}>
+        <h4 style={{ margin: "0 0 0.5rem 0" }}>Display</h4>
+        <label
+          className="row"
+          style={{ alignItems: "center", gap: "0.5rem", cursor: "pointer" }}
+        >
+          <input
+            type="checkbox"
+            checked={hideManagementControls}
+            onChange={(e) => onHideManagementControlsChange(e.target.checked)}
+          />
+          <span>Hide management controls</span>
+        </label>
+        <div
+          className="muted"
+          style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}
+        >
+          Hides + New Grant, + New Goal, and the Edit / Clear owner / Delete
+          buttons on Treason Grants and Goals. The toggle is remembered for
+          this game.
+        </div>
       </section>
     </Drawer>
   );
@@ -1996,10 +2036,12 @@ function TreasonGrantsSection({
   gameId,
   gameState,
   viewerIsGm,
+  hideManagementControls,
 }: {
   gameId: GameId;
   gameState: GameState;
   viewerIsGm: boolean;
+  hideManagementControls: boolean;
 }) {
   // Players never see Grants while the game is still being assembled.
   // GMs always see the panel so they can author grants pre-game.
@@ -2012,6 +2054,7 @@ function TreasonGrantsSection({
   );
   if (hidden) return null;
   const writable = viewerIsGm && gameState !== "archived";
+  const showCreateForm = writable && !hideManagementControls;
 
   return (
     <section>
@@ -2024,14 +2067,16 @@ function TreasonGrantsSection({
           {data ? `${data.grants.length} total` : ""}
         </span>
       </div>
-      {writable && <NewGrantForm gameId={gameId} />}
+      {showCreateForm && <NewGrantForm gameId={gameId} />}
       {data === undefined ? (
         <div className="muted">Loading…</div>
       ) : data.grants.length === 0 ? (
         <div className="muted">
-          {viewerIsGm
+          {viewerIsGm && !hideManagementControls
             ? "No grants yet. Author a treason grant to seed the pool."
-            : "No grants on offer."}
+            : viewerIsGm
+              ? "No grants yet."
+              : "No grants on offer."}
         </div>
       ) : (
         <div className="card" style={{ padding: "0.25rem 0.5rem" }}>
@@ -2041,6 +2086,7 @@ function TreasonGrantsSection({
               grant={g}
               viewerIsGm={viewerIsGm}
               gameState={gameState}
+              hideManagementControls={hideManagementControls}
             />
           ))}
         </div>
@@ -2157,10 +2203,12 @@ function TreasonGrantRow({
   grant,
   viewerIsGm,
   gameState,
+  hideManagementControls,
 }: {
   grant: GrantRow;
   viewerIsGm: boolean;
   gameState: GameState;
+  hideManagementControls: boolean;
 }) {
   const take = useMutation(api.treasonGrants.takeGrant);
   const remove = useMutation(api.treasonGrants.deleteGrant);
@@ -2170,6 +2218,7 @@ function TreasonGrantRow({
   const [busy, setBusy] = useState(false);
 
   const writable = viewerIsGm && gameState !== "archived";
+  const showRowManagement = writable && !hideManagementControls;
   const owned = grant.ownerPlayerId !== null;
 
   async function handleTake() {
@@ -2270,7 +2319,7 @@ function TreasonGrantRow({
               {busy ? "Taking…" : "Take"}
             </button>
           )}
-          {writable && (
+          {showRowManagement && (
             <>
               <button
                 type="button"
@@ -2980,11 +3029,13 @@ function GoalsSection({
   gameState,
   viewerIsGm,
   viewerPlayerId,
+  hideManagementControls,
 }: {
   gameId: GameId;
   gameState: GameState;
   viewerIsGm: boolean;
   viewerPlayerId: PlayerId | null;
+  hideManagementControls: boolean;
 }) {
   const hidden = !viewerIsGm && gameState === "ready";
   const data = useQuery(
@@ -2993,6 +3044,7 @@ function GoalsSection({
   );
   if (hidden) return null;
   const writable = viewerIsGm && gameState !== "archived";
+  const showCreateForm = writable && !hideManagementControls;
 
   return (
     <section>
@@ -3005,7 +3057,7 @@ function GoalsSection({
           {data ? `${data.goals.length} total` : ""}
         </span>
       </div>
-      {writable && data && (
+      {showCreateForm && data && (
         <NewGoalForm
           gameId={gameId}
           eligiblePlayers={data.eligiblePlayers}
@@ -3015,9 +3067,11 @@ function GoalsSection({
         <div className="muted">Loading…</div>
       ) : data.goals.length === 0 ? (
         <div className="muted">
-          {viewerIsGm
+          {viewerIsGm && !hideManagementControls
             ? "No goals yet. Author a goal to set expectations."
-            : "No goals on the table."}
+            : viewerIsGm
+              ? "No goals yet."
+              : "No goals on the table."}
         </div>
       ) : (
         <div className="card" style={{ padding: "0.25rem 0.5rem" }}>
@@ -3028,6 +3082,7 @@ function GoalsSection({
               viewerIsGm={viewerIsGm}
               viewerPlayerId={viewerPlayerId}
               eligiblePlayers={data.eligiblePlayers}
+              hideManagementControls={hideManagementControls}
             />
           ))}
         </div>
@@ -3252,11 +3307,13 @@ function GoalRowView({
   viewerIsGm,
   viewerPlayerId,
   eligiblePlayers,
+  hideManagementControls,
 }: {
   goal: GoalRow;
   viewerIsGm: boolean;
   viewerPlayerId: PlayerId | null;
   eligiblePlayers: GoalsEligiblePlayer[];
+  hideManagementControls: boolean;
 }) {
   const remove = useMutation(api.goals.deleteGoal);
   const [editing, setEditing] = useState(false);
@@ -3365,7 +3422,7 @@ function GoalRowView({
               Assign to…
             </button>
           )}
-          {goal.canEdit && (
+          {goal.canEdit && !hideManagementControls && (
             <button
               type="button"
               className="secondary"
@@ -3376,7 +3433,7 @@ function GoalRowView({
               {editing ? "Cancel" : "Edit"}
             </button>
           )}
-          {goal.canDelete && (
+          {goal.canDelete && !hideManagementControls && (
             <button
               type="button"
               className="danger"
