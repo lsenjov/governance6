@@ -123,13 +123,24 @@ export function GameDetailPage() {
           {!viewer.isGm && viewer.playerId && gameState === "ready" && (
             <section>
               <h3>Your Syndicate</h3>
-              <SyndicateSelector
-                gameId={gid}
-                currentSelection={
+              {(() => {
+                const selectedSyndicateId =
                   roster.find((p) => p._id === viewer.playerId)
-                    ?.selectedSyndicateId ?? null
-                }
-              />
+                    ?.selectedSyndicateId ?? null;
+                return (
+                  <div className="stack">
+                    <SyndicateSelector
+                      gameId={gid}
+                      currentSelection={selectedSyndicateId}
+                    />
+                    {selectedSyndicateId && (
+                      <SelectedSyndicateDetails
+                        syndicateId={selectedSyndicateId}
+                      />
+                    )}
+                  </div>
+                );
+              })()}
             </section>
           )}
         </div>
@@ -1546,6 +1557,133 @@ function SyndicateSelector({
           Clear selection
         </button>
       )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Selected syndicate details (ready state, non-GM, read-only)
+// ───────────────────────────────────────────────────────────────────────────
+
+function SelectedSyndicateDetails({
+  syndicateId,
+}: {
+  syndicateId: Id<"syndicates">;
+}) {
+  const data = useQuery(api.syndicates.getWithChildren, { syndicateId });
+
+  if (data === undefined) {
+    return (
+      <div className="card stack">
+        <div className="muted">Loading syndicate details…</div>
+      </div>
+    );
+  }
+  if (data === null) {
+    return (
+      <div className="card stack">
+        <div className="muted">Syndicate not accessible.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card stack">
+      <div className="row-wrap" style={{ justifyContent: "space-between" }}>
+        <strong>{data.name}</strong>
+        <span className="row-wrap">
+          {data.played && <span className="badge warning">Played</span>}
+          {data.isShared && <span className="badge accent">Shared</span>}
+        </span>
+      </div>
+      <div className="muted" style={{ fontSize: "0.9rem" }}>
+        Leader {data.leader}
+      </div>
+
+      <div>
+        {data.description.trim().length > 0 ? (
+          <div style={{ whiteSpace: "pre-wrap" }}>{data.description}</div>
+        ) : (
+          <div className="muted">No description.</div>
+        )}
+      </div>
+
+      <div>
+        <h4 style={{ margin: "0 0 0.5rem 0" }}>
+          Drawbacks ({data.drawbacks.length}/5)
+        </h4>
+        {data.drawbacks.length === 0 ? (
+          <div className="muted">No drawbacks.</div>
+        ) : (
+          <div className="stack">
+            {data.drawbacks.map((d) => (
+              <div key={d._id} className="row-divider">
+                <div style={{ fontWeight: 600 }}>{d.name}</div>
+                {d.description.trim().length > 0 && (
+                  <div
+                    className="muted"
+                    style={{ fontSize: "0.9rem", whiteSpace: "pre-wrap" }}
+                  >
+                    {d.description}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h4 style={{ margin: "0 0 0.5rem 0" }}>
+          Minions ({data.minions.length}/8)
+        </h4>
+        {data.minions.length === 0 ? (
+          <div className="muted">No Minions.</div>
+        ) : (
+          <div className="stack">
+            {data.minions.map((m) => (
+              <div key={m._id} className="row-divider">
+                <div className="row-wrap" style={{ alignItems: "baseline" }}>
+                  <strong>{m.name}</strong>
+                  {m.accent && (
+                    <span
+                      className="muted"
+                      style={{ fontSize: "0.85rem" }}
+                    >
+                      {m.accent}
+                    </span>
+                  )}
+                </div>
+                {m.description && m.description.trim().length > 0 && (
+                  <div
+                    style={{
+                      fontSize: "0.9rem",
+                      whiteSpace: "pre-wrap",
+                      marginTop: "0.25rem",
+                    }}
+                  >
+                    {m.description}
+                  </div>
+                )}
+                {m.skills.length > 0 && (
+                  <div
+                    className="muted"
+                    style={{ fontSize: "0.85rem", marginTop: "0.25rem" }}
+                  >
+                    Skills: {m.skills.join(", ")}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <Link to={`/syndicates/${syndicateId}`} className="muted">
+          Open in Syndicate Editor →
+        </Link>
+      </div>
     </div>
   );
 }
