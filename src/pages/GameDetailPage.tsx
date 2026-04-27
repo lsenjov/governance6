@@ -1961,8 +1961,8 @@ function TreasonGrantRow({
           }}
         />
       )}
-      <div style={{ marginTop: "0.25rem" }}>
-        {grant.description !== null ? (
+      {grant.description !== null && grant.description.length > 0 && (
+        <div style={{ marginTop: "0.25rem" }}>
           <p
             style={{
               whiteSpace: "pre-wrap",
@@ -1970,21 +1970,10 @@ function TreasonGrantRow({
               fontSize: "0.9rem",
             }}
           >
-            {grant.description.length > 0 ? (
-              grant.description
-            ) : (
-              <span className="muted">(no description)</span>
-            )}
+            {grant.description}
           </p>
-        ) : (
-          <p
-            className="muted"
-            style={{ margin: 0, fontStyle: "italic", fontSize: "0.9rem" }}
-          >
-            Description hidden — only the owner can read it.
-          </p>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
