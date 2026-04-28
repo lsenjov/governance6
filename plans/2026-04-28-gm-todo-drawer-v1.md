@@ -143,6 +143,14 @@ triggers a re-query, which directly defeats the drawer's purpose.
 2. `due_manual` (manually flagged overdue), `createdAt` descending.
 3. `done`, `createdAt` descending.
 
+`due_manual` outranks `done` on purpose. The `cycleNoteTimer`
+state machine (`convex/notes.ts:250-273`) makes done ↔ due_manual a
+deliberate GM-driven binary toggle: a GM cycling done → due_manual
+is explicitly asserting "this needs my attention again". Sorting it
+above the resolved `done` tier matches that intent — the drawer's
+job is to surface the GM's outstanding work, not preserve
+chronological history.
+
 **Client-side refinement** (Task 8) splits tier 1 against
 `Date.now()` on each tick:
 
@@ -171,20 +179,29 @@ verbatim for the click-to-cycle behaviour.
 
 - [ ] **Task 0a.** Extract the `Drawer` primitive into a new file
   `src/components/Drawer.tsx`. The primitive currently lives inline
-  at `src/pages/GameDetailPage.tsx:795-841` and is consumed by
-  `GmToolsDrawer` and `GameLogDrawer` (same file). Move the function
-  verbatim into the new module, export it, and update the three
-  existing call sites to import from `../components/Drawer`. No
-  behaviour change. Rationale: importing an in-file helper from a
+  at `src/pages/GameDetailPage.tsx:795-841` and is consumed at THREE
+  in-file call sites:
+  1. `GmToolsDrawer` (`src/pages/GameDetailPage.tsx:360`),
+  2. `GameLogDrawer` (`src/pages/GameDetailPage.tsx:864`),
+  3. The bottom-anchored "Game summary" drawer used by the player
+     rail (`src/pages/GameDetailPage.tsx:2135`).
+  Move the function verbatim into the new module, export it, and
+  update all three call sites to import from `../components/Drawer`.
+  No behaviour change. Rationale: importing an in-file helper from a
   4000+ line page module is awkward and creates a circular shape
   once `GmTodoDrawer` lives in `src/components/`. Doing the
   extraction first keeps the v1 diff for the new feature small.
   Acceptance: existing drawer tests / smoke flows pass; only the
-  import path changes for `GmToolsDrawer` and `GameLogDrawer`.
+  import path changes at the three sites enumerated above (the
+  `bottom` prop path on site 3 must keep working — verify by
+  opening the player rail's Queue drawer).
 
-- [ ] **Task 0b.** Relax the timer gate in `convex/notes.ts:181-216`
-  (the `createNote` handler) so the GM may attach `timerMinutes` to
-  any note kind they author. Concrete edits:
+- [ ] **Task 0b.** Relax the timer gate in the `createNote` handler
+  so the GM may attach `timerMinutes` to any note kind they author.
+  The relevant code spans two non-overlapping ranges:
+  `convex/notes.ts:164-179` (attachedRollSetId resolution — left
+  unchanged) and `convex/notes.ts:181-216` (timer validation — the
+  block this task edits). Concrete edits:
   - Keep guard #1 (`role !== "gm"` rejected) and guard #2
     (`timerMinutes` must be in `TIMER_PRESET_MINUTES`).
   - Drop guard #3 (the `attachedRollSetId === undefined` rejection,
@@ -198,14 +215,24 @@ verbatim for the click-to-cycle behaviour.
     is today (`convex/notes.ts:164-179`) — minion-target on the
     head call still pins a roll set, other targets still don't.
   - Update the file-top docblock (`convex/notes.ts:30-34`) to drop
-    the "only on minion-target head-call notes" implication.
+    the "only on minion-target head-call notes" implication, and
+    add a forward-pointer to this plan so a reader cross-checking
+    the older Note Timers v1 plan finds the broadened semantics.
   Tests in `convex/notes.test.ts`:
   - GM creating a `targetKind: "game"` note with `timerMinutes: 5`
     succeeds and the row carries a `ticking` timer.
   - GM creating a `targetKind: "syndicate"` note with `timerMinutes`
     on a syndicate selected by a player in this game succeeds and
     carries a `ticking` timer.
-  - Player attempting either of the above is still rejected with
+  - GM creating a `targetKind: "minion"` note with `timerMinutes`
+    for a minion that is NOT the current head call succeeds and
+    carries a `ticking` timer with NO `attachedRollSetId` — the
+    head-call gate at `convex/notes.ts:165-179` is unchanged, so
+    the row simply has no roll set to pin. This case was
+    previously blocked by the dropped guard #3 and the drawer's
+    projection (Task 1) must handle it like any other unattached
+    timer-bearing note.
+  - Player attempting any of the above is still rejected with
     "Only the GM may post a note with a timer.".
   - The minion-target on-head-call timer path continues to work
     (no regression on the existing test).
@@ -246,7 +273,12 @@ verbatim for the click-to-cycle behaviour.
   - Tests:
     - Mounting two `<NoteTimerCell>` components results in a
       single `setInterval` (assert via a Vitest spy on
-      `globalThis.setInterval`).
+      `globalThis.setInterval`). The test must run with REAL
+      timers — do not combine with `vi.useFakeTimers()` in the
+      same `describe`, and restore the spy in `afterEach`.
+      Otherwise the spy collides with Vitest's fake-timer
+      installation and reports zero calls regardless of the
+      hook's behaviour.
     - Unmounting the last subscriber clears the interval.
     - `formatTimerValue` and `deriveTimerState` are unchanged and
       their existing tests still pass.
@@ -264,6 +296,14 @@ verbatim for the click-to-cycle behaviour.
   the current `gameId`, and reject if any row other than the
   caller's own `player._id` is present. Error message: "Another
   Player in this game has already selected that Syndicate.".
+  No backfill scan is needed: `selectSyndicate` is the SOLE
+  write path for `players.selectedSyndicateId` (every other
+  reference is a read or an `undefined` clear, e.g.
+  `convex/syndicates.ts:154-166`'s cascade), so any existing data
+  was created under the same one-player-at-a-time mutation flow
+  and cannot already violate the new invariant. If a future
+  audit ever finds a violation it would indicate a bug in this
+  task, not pre-existing drift.
   Tests in `convex/games.test.ts` (or `selectSyndicate.test.ts` if
   the existing file is large):
   - First player to select a shared syndicate succeeds.
@@ -277,11 +317,27 @@ verbatim for the click-to-cycle behaviour.
     matches is theirs).
   Rationale: the GM Todo drawer projects a single
   `playerId` / `playerDisplayName` per row (Task 1). Without this
-  invariant the projection silently drops one of two equally valid
-  selectors. Making the database invariant authoritative removes
-  the ambiguity at its source. The check is also natural under the
-  rules — Rule 13 already implies one-player-one-syndicate during
-  ready, but the mutation never enforced it.
+  invariant the projection silently picks one of two equally valid
+  selectors. Making the mutation invariant authoritative removes
+  the ambiguity at the production write site. The check is also
+  natural under the rules — Rule 13 already implies
+  one-player-one-syndicate during ready, but the mutation never
+  enforced it.
+
+  **Scope caveat — this is a mutation-level invariant, not a
+  schema-level one.** Task 0d does not add a schema constraint and
+  does not backfill. Existing test fixtures (`calls.test.ts:126-139`,
+  `publicBids.test.ts:64-84`, `goals.test.ts:60-73`,
+  `treasonGrants.test.ts:60-73`) currently insert two or three
+  players in the same game with the same `selectedSyndicateId` via
+  direct `ctx.db.insert("players", …)`, bypassing every mutation.
+  None of those tests exercise `selectSyndicate` (verified —
+  `selectSyndicate` is referenced only by `convex/games.ts:88,94`
+  in the entire repo), so the new check fires zero times against
+  the existing corpus. Task 1's projection compensates for the
+  test-corpus shape with the deterministic `joinedAt` tiebreaker
+  documented above; production data created via `selectSyndicate`
+  is single-match by construction post Task 0d.
 
 ### Server (Convex)
 
@@ -299,36 +355,62 @@ verbatim for the click-to-cycle behaviour.
     (Adding a dedicated index on `(gameId, hasTimer)` is rejected —
     the working set per game is small and an index can't cover the
     optionality of a sub-object cheaply. See Risks.)
-  - Bulk-resolve auxiliaries with at most one batched read per kind
-    so we never N+1 the table:
+  - Bulk-resolve auxiliaries with deduplicated per-id reads (one
+    dedupe pass per kind, then a `for (const id of uniqueIds)
+    await ctx.db.get(id)` loop — Convex has no `getMany`, so this
+    matches the existing `convex/notes.ts:432` pattern) so we
+    never N+1 the table:
     - `minions` for every distinct `targetMinionId`,
     - `syndicates` for every distinct `targetSyndicateId` ∪
       `minion.syndicateId`,
     - `players` for every distinct `selectedSyndicateId` matching
       those syndicate ids (use the existing
       `by_selected_syndicate` index, restricted by `gameId` in
-      memory like `convex/notes.ts:548-558` does today). The
-      Task 0d invariant guarantees at most one matching player per
-      `(gameId, syndicateId)` pair, so the projection picks the
-      single hit (or none) without ambiguity.
+      memory like `convex/notes.ts:548-558` does today). Task 0d's
+      invariant is enforced at the **mutation** level only, not
+      the schema level, so production data created via
+      `selectSyndicate` carries at most one matching player per
+      `(gameId, syndicateId)` pair — but test fixtures that
+      bypass the mutation by direct `ctx.db.insert("players", …)`
+      (e.g. `convex/calls.test.ts:126-139`,
+      `convex/publicBids.test.ts:64-84`,
+      `convex/goals.test.ts:60-73`,
+      `convex/treasonGrants.test.ts:60-73`) can still produce
+      multi-selector shapes. To keep the projection deterministic
+      against any input, pick the matching player with the lowest
+      `joinedAt` (ties broken by `_id` ascending — Convex ids are
+      stable strings, so the comparison is total). In production
+      this collapses to "the single hit"; in tests it picks the
+      same row every run regardless of index walk order.
     - `users` for every author user id ∪ player user id ∪ derived
       author ids,
     - `callRollSets` for every distinct `attachedRollSetId` (reuse
-      the bulk-load + dedupe pattern from
-      `convex/notes.ts:425-444`; reuse `projectRollSet`). After
-      Task 0b a game- or syndicate-target timer-bearing note has
-      no `attachedRollSetId`, so the resulting `attachedRolls`
-      key is omitted on those rows (matching the existing GM-only
-      invariant: key absent rather than `null` when there were
-      never any rolls to attach).
+      the dedupe-then-`get` pattern from
+      `convex/notes.ts:425-444`; reuse `projectRollSet`). The
+      `attachedRolls` projection follows the existing
+      `listNotesForTarget` rule verbatim
+      (`convex/notes.ts:459-466`):
+         * if the row has NO `attachedRollSetId`, the
+           `attachedRolls` KEY IS OMITTED ENTIRELY;
+         * if the row has an `attachedRollSetId`, the key is
+           PRESENT with value `RollSetView` (or `null` if the
+           bulk join failed to find the row, matching today's
+           defensive `?? null`).
+      After Task 0b this means the key is absent on:
+         * every game-target timer-bearing note,
+         * every syndicate-target timer-bearing note,
+         * minion-target timer-bearing notes whose minion was
+           not the head call at create time (also reachable
+           after Task 0b's guard #3 drop).
   - Project a flat row per timer-bearing note:
     ```
     {
       _id, createdAt, body, visibility, authorUserId,
       authorDisplayName,
       timer,                          // GM payload, never absent here
-      attachedRolls?,                 // RollSetView | null; key absent on
-                                      // game/syndicate-target rows
+      attachedRolls?,                 // RollSetView | null; key absent
+                                      // whenever attachedRollSetId is
+                                      // unset, regardless of targetKind
       targetKind, targetSyndicateId?, targetMinionId?,
       minionName?, syndicateName?,
       playerId?, playerDisplayName?,
@@ -385,6 +467,12 @@ verbatim for the click-to-cycle behaviour.
   - For a game-target timer note (also reachable via Task 0b), the
     row carries no `minionName`, no `syndicateName`, no `playerId`,
     and no `attachedRolls` key.
+  - For a minion-target timer note whose minion was NOT the head
+    call at create time (also reachable via Task 0b — see the new
+    Task 0b test), the row carries `minionName`, `syndicateName`,
+    optionally `playerId` / `playerDisplayName`, and no
+    `attachedRolls` key (key omitted because `attachedRollSetId`
+    is unset).
   - Server-side sort order: a `ticking` row precedes a `due_manual`
     row precedes a `done` row; within the `ticking` band, the row
     with the soonest `dueAt` is first; within `due_manual` and
@@ -395,9 +483,13 @@ verbatim for the click-to-cycle behaviour.
   - Author display name is resolved from `users.displayName` /
     `users.email` / `"Unknown"` exactly like the existing
     `listNotesForTarget` code path.
-  - GM viewer sees `attachedRolls` populated for notes that pinned a
-    roll set; the field is `null` (key present) when the row had no
-    `attachedRollSetId` — match the existing GM-only invariant.
+  - GM viewer sees `attachedRolls` populated for notes that pinned
+    a roll set; the KEY IS ABSENT (not `null`) when the row had no
+    `attachedRollSetId` — match the existing GM-only invariant in
+    `listNotesForTarget` (`convex/notes.ts:463-465`). The `null`
+    sentinel is reserved for the rare case where the row pinned an
+    `attachedRollSetId` but the bulk-join `ctx.db.get` returned
+    nothing (e.g. roll set deleted out from under the note).
   - Cross-game isolation: notes in another game with a timer do not
     leak into the result.
 
@@ -484,15 +576,15 @@ verbatim for the click-to-cycle behaviour.
   Player session, but the server query is also GM-only. Defence in
   depth — the button gate alone is not sufficient (see Risks).
 
-- [ ] **Task 11.** Inline note-list link affordance (lightweight): on
-  each row, expose a button labelled "Open" (or render the row body
-  as a secondary action) that opens the standard notes popover for
-  the note's target. Implementation note: this requires hoisting
-  state into the GameDetailPage that selects which `NoteIcon`'s
-  popover should be shown next, which is non-trivial. Defer to a
-  follow-up plan unless cheap; the cycle-on-click cell already
-  delivers the primary action ("mark done"). Mark this task explicit
-  as **deferred** in v1.
+- [ ] **Task 11.** **Deferred — out of scope for v1.** Inline
+  note-list link affordance (lightweight): on each row, expose a
+  button labelled "Open" (or render the row body as a secondary
+  action) that opens the standard notes popover for the note's
+  target. Implementation note: this requires hoisting state into
+  the GameDetailPage that selects which `NoteIcon`'s popover
+  should be shown next, which is non-trivial. Defer to a follow-up
+  plan; the cycle-on-click cell already delivers the primary
+  action ("mark done").
 
 - [ ] **Task 12.** **Deferred — out of scope for v1.** A numeric
   badge on the "GM Todo" button showing the count of `ticking` +
@@ -540,14 +632,18 @@ verbatim for the click-to-cycle behaviour.
 
 - [ ] **Task 15.** Add inline doc-comment headers to the new query
   and the new drawer component documenting:
-  - the four-tier sort order,
+  - the four-tier sort order (and why `due_manual` outranks
+    `done`, mirroring the rationale in "Sort order"),
   - the GM-only invariant,
   - the rationale for in-memory filtering of `timer !== undefined`
     (no dedicated index),
-  - the read-amplification pattern (bulk-load auxiliaries once),
-  - the `attachedRolls` key being absent on game- and
-    syndicate-target rows (post Task 0b) — not an oversight, the
-    note never pinned a roll set,
+  - the read-amplification pattern (deduplicated per-id reads,
+    one dedupe pass per kind),
+  - the `attachedRolls` key being absent whenever
+    `attachedRollSetId` is unset (game-target, syndicate-target,
+    AND minion-target-not-on-head-call rows post Task 0b) — not
+    an oversight, the note never pinned a roll set; the `null`
+    value is reserved for join misses,
   - the `playerId` / `playerDisplayName` projection assuming the
     Task 0d uniqueness invariant.
 
@@ -581,6 +677,11 @@ verbatim for the click-to-cycle behaviour.
   (verifies the client-side refinement, Task 8).
 - The popover-side notes UX (`NoteIcon`) is unchanged; the drawer
   renders timers in addition, never instead.
+- Reactive deletion: the GM opens the drawer on a row, then opens
+  the corresponding note popover and deletes the note. The drawer
+  row disappears within a query round-trip with no manual refresh
+  (verifies that the new query subscription is reactive on `notes`
+  table writes, not just on `cycleNoteTimer` patches).
 - A GM may now create a 5-minute timer on a game-target note and on
   a syndicate-target note (Task 0b). Both rows appear in the drawer
   with their respective context lines and no pinned roll set.
@@ -590,8 +691,13 @@ verbatim for the click-to-cycle behaviour.
   same second-boundary (Task 0c) — visually verifiable by opening
   the drawer alongside a notes popover and watching the seconds line
   up.
-- No `console.error` / `console.warn` from per-second
-  `<NoteTimerCell>` re-renders when the drawer is open.
+- Behaviour change to acknowledge: post Task 0c, `done` and
+  `due_manual` cells re-render every second alongside `ticking`
+  cells (the existing `if (timer.kind !== "ticking") return` early
+  exit at `src/components/NoteTimerCell.tsx:122-126` is removed by
+  the unconditional `useNow()` rewrite). The work per re-render is
+  trivial and produces no `console.error` / `console.warn` output;
+  expect the same noise floor as today.
 
 ## Potential Risks and Mitigations
 
@@ -605,11 +711,19 @@ verbatim for the click-to-cycle behaviour.
    is the most invasive (touches every existing `<NoteTimerCell>`
    call site indirectly via the cell's internals); confine the
    change to the cell file and the new hook so review surface stays
-   localised. Task 0d adds an invariant — confirm with the GM
-   workflow that no existing test fixture creates two players with
-   the same selection in one game (the existing tests only ever
-   share a syndicate selection ACROSS games — see
-   `convex/notes.test.ts:393`).
+   localised. Task 0d adds an invariant **at the mutation level
+   only** — the schema is not tightened, so existing test fixtures
+   that insert two or three players in the same game with the same
+   `selectedSyndicateId` via direct `ctx.db.insert` (see
+   `convex/calls.test.ts:126-139`, `convex/publicBids.test.ts:64-84`,
+   `convex/goals.test.ts:60-73`, `convex/treasonGrants.test.ts:60-73`)
+   continue to load. None of those tests call `selectSyndicate`
+   (verified — the symbol is only referenced from
+   `convex/games.ts:88,94`), so the new mutation guard never fires
+   against the existing corpus. Task 1's projection accounts for
+   the residual multi-selector shape with a deterministic
+   `joinedAt` tiebreaker; do not attempt to backfill the test
+   fixtures into the new shape.
 
 1. **Player accidentally seeing the GM Todo button.**
    Mitigation: gate the button on `viewerIsGm`, gate the drawer mount
