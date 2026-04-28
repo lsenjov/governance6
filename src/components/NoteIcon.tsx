@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { RollSetDisplay, type RollSet } from "./RollSetDisplay";
 
 /**
  * Discriminated target for any note-bearing entity in a game.
@@ -26,6 +27,15 @@ export type NoteListItem = {
   authorDisplayName: string;
   isMine: boolean;
   canDelete: boolean;
+  /**
+   * Dice rolls v1: GM-only. Server-side `listNotesForTarget` only
+   * sets this key on GM payloads, and only when the note was
+   * authored while a call was at the head of the queue and that
+   * call's roll set was frozen onto the note. The key is omitted
+   * (rather than null) for non-GM viewers and for notes that never
+   * pinned a roll set.
+   */
+  attachedRolls?: RollSet | null;
 };
 
 type NoteIconProps = {
@@ -309,6 +319,16 @@ export function NoteList({
               </button>
             )}
           </div>
+          {/* Dice rolls v1: when the note was frozen against a call's
+              roll set, display the GM-only readout above the body.
+              Server omits the key entirely for non-GMs and for notes
+              with no pinned roll set, so this never renders for
+              Players. */}
+          {n.attachedRolls !== undefined && (
+            <div style={{ marginTop: "0.4rem" }}>
+              <RollSetDisplay rolls={n.attachedRolls} size="sm" />
+            </div>
+          )}
           <div className="note-item-body">{n.body}</div>
         </div>
       ))}

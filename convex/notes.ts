@@ -3,6 +3,11 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireGameGm, requireGameParticipant } from "./lib/auth";
+import {
+  getLatestRollSetForCall,
+  projectRollSet,
+  type RollSetView,
+} from "./lib/rolls";
 
 /**
  * Notes — per-game textual annotations on the game, a syndicate, or a minion.
@@ -117,6 +122,28 @@ export const createNote = mutation({
     const body = validateBody(args.body);
     const visibility = args.visibility ?? "private";
 
+    // Dice rolls (plans/2026-04-28-dice-rolls-v3.md): if this note
+    // targets a Minion that is currently the head of the call queue,
+    // freeze the live roll set onto the note. The roll-set id is
+    // persisted regardless of author role; the GM-only filter in
+    // `listNotesForTarget` keeps it out of Player payloads.
+    let attachedRollSetId: Id<"callRollSets"> | undefined;
+    if (args.targetKind === "minion" && args.targetMinionId) {
+      const head = await ctx.db
+        .query("calls")
+        .withIndex("by_game_active_time", (q) =>
+          q.eq("gameId", args.gameId).eq("isActive", true),
+        )
+        .order("asc")
+        .take(1);
+      if (head.length > 0 && head[0].minionId === args.targetMinionId) {
+        const rollRow = await getLatestRollSetForCall(ctx, head[0]._id);
+        if (rollRow) {
+          attachedRollSetId = rollRow._id;
+        }
+      }
+    }
+
     return await ctx.db.insert("notes", {
       gameId: game._id,
       targetKind: args.targetKind,
@@ -126,6 +153,7 @@ export const createNote = mutation({
       visibility,
       body,
       createdAt: Date.now(),
+      ...(attachedRollSetId !== undefined ? { attachedRollSetId } : {}),
     });
   },
 });
@@ -153,6 +181,10 @@ type NoteListItem = {
   authorDisplayName: string;
   isMine: boolean;
   canDelete: boolean;
+  // Dice rolls v1: present (and possibly null) only on GM payloads.
+  // For non-GM viewers the key is omitted entirely so the wire format
+  // never leaks the existence of attached rolls.
+  attachedRolls?: RollSetView | null;
 };
 
 export const listNotesForTarget = query({
@@ -217,16 +249,57 @@ export const listNotesForTarget = query({
     }
 
     const canDelete = role === "gm";
-    return visible.map((n) => ({
-      _id: n._id,
-      createdAt: n.createdAt,
-      body: n.body,
-      visibility: n.visibility,
-      authorUserId: n.authorUserId,
-      authorDisplayName: authorNames[n.authorUserId] ?? "Unknown",
-      isMine: n.authorUserId === userId,
-      canDelete,
-    }));
+
+    // Dice rolls v1: GM viewers get `attachedRolls` joined from each
+    // note's `attachedRollSetId`. Non-GMs never see the key (and the
+    // raw `attachedRollSetId` is also stripped). Bulk-load roll-set
+    // rows in one query to keep reads bounded.
+    let rollsByNoteId: Map<string, RollSetView | null> | null = null;
+    if (role === "gm") {
+      rollsByNoteId = new Map();
+      const rollSetIds = visible
+        .map((n) => n.attachedRollSetId)
+        .filter((id): id is Id<"callRollSets"> => id !== undefined);
+      // De-dupe (multiple notes may pin the same roll set).
+      const uniqueIds = Array.from(new Set(rollSetIds.map((id) => id as string)));
+      const idToRow = new Map<string, RollSetView>();
+      for (const idStr of uniqueIds) {
+        const row = await ctx.db.get(idStr as Id<"callRollSets">);
+        if (row) {
+          idToRow.set(idStr, projectRollSet(row));
+        }
+      }
+      for (const n of visible) {
+        if (n.attachedRollSetId) {
+          rollsByNoteId.set(
+            n._id as string,
+            idToRow.get(n.attachedRollSetId as string) ?? null,
+          );
+        }
+      }
+    }
+
+    return visible.map((n) => {
+      const base: NoteListItem = {
+        _id: n._id,
+        createdAt: n.createdAt,
+        body: n.body,
+        visibility: n.visibility,
+        authorUserId: n.authorUserId,
+        authorDisplayName: authorNames[n.authorUserId] ?? "Unknown",
+        isMine: n.authorUserId === userId,
+        canDelete,
+      };
+      if (role === "gm" && rollsByNoteId) {
+        // Only attach the key when this note has an `attachedRollSetId`
+        // — keeps the GM payload tight and avoids an explicit `null`
+        // for every game/syndicate-target note that never had rolls.
+        if (n.attachedRollSetId) {
+          base.attachedRolls = rollsByNoteId.get(n._id as string) ?? null;
+        }
+      }
+      return base;
+    });
   },
 });
 

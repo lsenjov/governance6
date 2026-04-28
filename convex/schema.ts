@@ -153,9 +153,63 @@ export default defineSchema({
     .index("by_game_removed_time", ["gameId", "removedAt"])
     .index("by_game_player_active", ["gameId", "playerId", "isActive"]),
 
+  // Rule (dice rolls v1, plans/2026-04-28-2026-04-28-dice-rolls-v3.md):
+  // GM-only roll set generated whenever a Call reaches the head of the
+  // FIFO queue, or when the head call's minion is replaced in place.
+  // Each row is immutable once written and addressable by id so Notes
+  // can freeze the live roll set at note-creation time. Future
+  // conditional rolls go into the `extras` array — the schema does not
+  // need to change to add new die kinds.
+  callRollSets: defineTable({
+    gameId: v.id("games"),
+    callId: v.id("calls"),
+    // Snapshot of the called minion at roll time. A subsequent
+    // replace-in-place writes a new row with a different `minionId`,
+    // leaving older rows (and the Notes attached to them) intact.
+    minionId: v.id("minions"),
+    skillRoll: v.number(),
+    skillCount: v.number(),
+    // Derived once at write time via the natural-1-aware rule:
+    //   (skillRoll === 1 || skillRoll <= skillCount) ? "failure" : "success"
+    skillResult: v.union(v.literal("success"), v.literal("failure")),
+    chaosRoll: v.number(),
+    // Set to "failure" exactly when chaosRoll === 1 (the natural-1
+    // rule). Otherwise omitted; the chaos cell renders neutrally.
+    // "success" is reserved for future use and v1 never writes it.
+    chaosResult: v.optional(
+      v.union(v.literal("success"), v.literal("failure")),
+    ),
+    // Empty for v1; reserved for future conditional rolls. `name` is
+    // mandatory (1–24 chars after trim) so every die has a UI caption.
+    // `result` is coerced to "failure" by the helper whenever
+    // value === 1, regardless of caller input.
+    extras: v.array(
+      v.object({
+        kind: v.string(),
+        name: v.string(),
+        value: v.number(),
+        result: v.optional(
+          v.union(v.literal("success"), v.literal("failure")),
+        ),
+      }),
+    ),
+    createdAt: v.number(),
+    createdReason: v.union(
+      v.literal("became_head"),
+      v.literal("minion_replaced"),
+    ),
+  })
+    .index("by_call_created", ["callId", "createdAt"])
+    .index("by_game_call", ["gameId", "callId"]),
+
   // Notes — per-game textual annotations on the game, a syndicate, or a
   // minion. Immutable once created. GM-only delete. Visibility: private
   // (author + GM) or public (all participants).
+  //
+  // `attachedRollSetId` (dice rolls v1) is set on minion-target notes
+  // authored while that minion was the head of the call queue,
+  // freezing the live roll set onto the note. Players never see the
+  // field — `listNotesForTarget` strips it for non-GM viewers.
   notes: defineTable({
     gameId: v.id("games"),
     targetKind: v.union(
@@ -169,6 +223,7 @@ export default defineSchema({
     visibility: v.union(v.literal("private"), v.literal("public")),
     body: v.string(),
     createdAt: v.number(),
+    attachedRollSetId: v.optional(v.id("callRollSets")),
   })
     .index("by_game_kind_created", ["gameId", "targetKind", "createdAt"])
     .index("by_game_syndicate_created", [

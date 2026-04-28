@@ -6,6 +6,14 @@ import {
   requireGamePlayer,
   requireUserId,
 } from "./lib/auth";
+import {
+  generateRollSetForCall,
+  getHeadCallId,
+  getLatestRollSetForCall,
+  projectRollSet,
+  type RollSetView,
+} from "./lib/rolls";
+import type { Doc, Id } from "./_generated/dataModel";
 
 /**
  * Call Queue — Rule 22.
@@ -17,6 +25,10 @@ import {
  *
  * Removed Calls are soft-deleted (`isActive=false`, `removedAt` set); the last
  * 10 are visible in a history panel.
+ *
+ * Dice rolls (plans/2026-04-28-2026-04-28-dice-rolls-v3.md): every time a
+ * Call reaches the head of the queue, a new `callRollSets` row is
+ * generated. Visible to the GM only.
  */
 
 export const addOrReplaceCall = mutation({
@@ -56,22 +68,53 @@ export const addOrReplaceCall = mutation({
       }
       // Rule 22: replace-in-place; preserve createdAt and document id.
       await ctx.db.patch(existing._id, { minionId: args.minionId });
+
+      // Dice rolls: if this call is currently the head of the queue,
+      // generate a fresh roll set because the new minion's skill count
+      // changes the skill threshold. If the call is mid-queue, no
+      // rolls fire here — they will fire when the call advances to the
+      // head (see `removeCall`).
+      const headId = await getHeadCallId(ctx, args.gameId);
+      if (headId === existing._id) {
+        await generateRollSetForCall(ctx, {
+          callId: existing._id,
+          reason: "minion_replaced",
+        });
+      }
       return existing._id;
     }
 
-    return await ctx.db.insert("calls", {
+    const newCallId = await ctx.db.insert("calls", {
       gameId: args.gameId,
       playerId: player._id,
       minionId: args.minionId,
       createdAt: Date.now(),
       isActive: true,
     });
+
+    // Dice rolls: only fire when the new call is actually the head of
+    // the queue. The caller can only have one active call (enforced
+    // above), but other players' older calls may already occupy the
+    // head — in which case rolls wait until those clear.
+    const headIdAfter = await getHeadCallId(ctx, args.gameId);
+    if (headIdAfter === newCallId) {
+      await generateRollSetForCall(ctx, {
+        callId: newCallId,
+        reason: "became_head",
+      });
+    }
+
+    return newCallId;
   },
 });
 
 /**
  * Rule 22: GM may remove any Call. Soft-deletes: sets `isActive=false`,
  * `removedAt=Date.now()`, `removedByGmId=gmId`.
+ *
+ * Dice rolls: if the removed call WAS the head, the next-oldest active
+ * call inherits the head slot and gets a fresh roll set. Removing a
+ * mid-queue call leaves the head unchanged and fires no rolls.
  */
 export const removeCall = mutation({
   args: { callId: v.id("calls") },
@@ -83,16 +126,38 @@ export const removeCall = mutation({
       // Idempotent.
       return;
     }
+
+    // Snapshot the head BEFORE the patch so we can detect whether the
+    // removed call was the head. If it wasn't, no rolls need to fire
+    // (the head is still the same call, which already has a roll set).
+    const headBefore = await getHeadCallId(ctx, call.gameId);
+    const removedWasHead = headBefore === call._id;
+
     await ctx.db.patch(args.callId, {
       isActive: false,
       removedAt: Date.now(),
       removedByGmId: game.gmId,
     });
+
+    if (removedWasHead) {
+      const newHead = await getHeadCallId(ctx, call.gameId);
+      if (newHead !== null) {
+        await generateRollSetForCall(ctx, {
+          callId: newHead,
+          reason: "became_head",
+        });
+      }
+    }
   },
 });
 
 /**
  * Active Calls (FIFO by `createdAt` ascending). Any game viewer.
+ *
+ * Dice rolls: GM viewers receive a `rolls: RollSetView | null` field
+ * on each entry; non-GM viewers receive the existing shape unchanged.
+ * The field is OMITTED ENTIRELY (not set to `null` or `undefined`) for
+ * non-GMs so the wire format never leaks the existence of rolls.
  */
 export const activeCalls = query({
   args: { gameId: v.id("games") },
@@ -119,12 +184,31 @@ export const activeCalls = query({
       .order("asc")
       .collect();
 
+    // For GMs, bulk-load roll sets in a single per-game query and
+    // index them by callId so we don't fan out N point reads.
+    let rollsByCallId: Map<Id<"calls">, Doc<"callRollSets">> | null = null;
+    if (isGm) {
+      rollsByCallId = new Map();
+      const allRolls = await ctx.db
+        .query("callRollSets")
+        .withIndex("by_game_call", (q) => q.eq("gameId", args.gameId))
+        .collect();
+      // Newest-first per call: iterate and only keep the latest by
+      // `createdAt` for each callId.
+      for (const r of allRolls) {
+        const existing = rollsByCallId.get(r.callId);
+        if (!existing || existing.createdAt < r.createdAt) {
+          rollsByCallId.set(r.callId, r);
+        }
+      }
+    }
+
     return await Promise.all(
       rows.map(async (c) => {
         const player = await ctx.db.get(c.playerId);
         const user = player ? await ctx.db.get(player.userId) : null;
         const minion = await ctx.db.get(c.minionId);
-        return {
+        const base = {
           _id: c._id,
           playerId: c.playerId,
           minionId: c.minionId,
@@ -132,6 +216,18 @@ export const activeCalls = query({
           playerName: user?.displayName ?? user?.email ?? "Unknown",
           minionName: minion?.name ?? "Unknown Minion",
         };
+        if (isGm && rollsByCallId) {
+          const row = rollsByCallId.get(c._id) ?? null;
+          // GM payload: include `rolls` (possibly null while the helper
+          // is mid-flight in a race; the UI handles null).
+          return {
+            ...base,
+            rolls: row ? projectRollSet(row) : (null as RollSetView | null),
+          };
+        }
+        // Player payload: no `rolls` key at all. Tests assert via
+        // hasOwnProperty that the key is genuinely absent.
+        return base;
       }),
     );
   },
@@ -145,8 +241,9 @@ export const activeCalls = query({
  * defensive nulls keep the rendering contract simple: the UI just shows
  * the empty state in those cases. A successful result joins the call,
  * the called minion (with skills/accent/description), the minion's owning
- * syndicate, and that syndicate's drawbacks (sorted by `order` ascending,
- * matching `drawbacks.listForSyndicate`).
+ * syndicate, that syndicate's drawbacks (sorted by `order` ascending,
+ * matching `drawbacks.listForSyndicate`), and the latest roll set for
+ * that head call.
  */
 export const getCurrentCallDetails = query({
   args: { gameId: v.id("games") },
@@ -181,6 +278,9 @@ export const getCurrentCallDetails = query({
       .collect();
     drawbackRows.sort((a, b) => a.order - b.order);
 
+    const rollRow = await getLatestRollSetForCall(ctx, call._id);
+    const rolls: RollSetView | null = rollRow ? projectRollSet(rollRow) : null;
+
     return {
       call: {
         _id: call._id,
@@ -205,6 +305,7 @@ export const getCurrentCallDetails = query({
           description: d.description,
         })),
       },
+      rolls,
     };
   },
 });

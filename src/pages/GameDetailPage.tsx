@@ -15,6 +15,7 @@ import { resolveNoteCount, useNotesCountMap } from "../hooks/useNotesCountMap";
 import { useRosterExpandedSet } from "../hooks/useRosterExpandedSet";
 import { useHideManagementControls } from "../hooks/useHideManagementControls";
 import { NoteIcon, NoteList, NoteCreateForm, buildListArgs } from "../components/NoteIcon";
+import { RollSetDisplay } from "../components/RollSetDisplay";
 
 type GameId = Id<"games">;
 type PlayerId = Id<"players">;
@@ -1431,7 +1432,7 @@ function CallQueueRail({
       {active?.length === 0 && <div className="muted">Queue is empty.</div>}
       {active && active.length > 0 && (
         <ol style={{ paddingLeft: "1.4rem", margin: 0 }}>
-          {active.map((c) => (
+          {active.map((c, i) => (
             <li key={c._id} className="row-divider">
               <div
                 className="row"
@@ -1474,6 +1475,18 @@ function CallQueueRail({
                   )}
                 </span>
               </div>
+              {/* Dice: only for the FIFO head, only for GMs. The
+                  `rolls` field is omitted from non-GM payloads, so a
+                  Player will never satisfy this branch even if
+                  `isGm` is somehow stale on the client. */}
+              {isGm && i === 0 && "rolls" in c && (
+                <div style={{ marginTop: "0.4rem" }}>
+                  <RollSetDisplay
+                    rolls={(c as { rolls: Parameters<typeof RollSetDisplay>[0]["rolls"] }).rolls}
+                    size="sm"
+                  />
+                </div>
+              )}
             </li>
           ))}
         </ol>
@@ -2133,7 +2146,7 @@ function CurrentCallSection({
     <section>
       <h3 style={{ marginTop: 0 }}>Current Call</h3>
 
-      {/* Header row: caller → minion + time + Remove button */}
+      {/* Header row: caller → minion + time + dice + Remove button */}
       <div className="card tight" style={{ marginBottom: "0.75rem" }}>
         {removeErr && <div className="error-text">{removeErr}</div>}
         <div
@@ -2154,7 +2167,11 @@ function CurrentCallSection({
               {new Date(data.call.createdAt).toLocaleTimeString()}
             </span>
           </div>
-          <span className="row" style={{ gap: "0.5rem" }}>
+          <span
+            className="row"
+            style={{ gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}
+          >
+            <RollSetDisplay rolls={data.rolls} size="md" />
             <NoteIcon
               gameId={gameId}
               target={{ kind: "minion", minionId: data.minion._id }}

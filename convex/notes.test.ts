@@ -583,3 +583,226 @@ describe("notes: counts query", () => {
     expect(gmMinionList).toHaveLength(gmCounts.byMinion[h.ids.minionId]);
   });
 });
+
+/**
+ * Dice rolls v1: notes authored while a minion is at the head of the
+ * call queue freeze the live roll set onto the new note. The GM payload
+ * carries `attachedRolls`; non-GM payloads omit the key entirely.
+ *
+ * See `plans/2026-04-28-2026-04-28-dice-rolls-v3.md`.
+ */
+describe("notes: attached dice rolls", () => {
+  /**
+   * Promote the harness's game to `playing` and pre-mark the minion as
+   * bought for the given player so `addOrReplaceCall` succeeds. Returns
+   * a helper that places `minionId` on the head of the call queue for
+   * the chosen actor.
+   */
+  async function preparePlayingGame(h: Harness, playerUserId: Id<"users">) {
+    // Find the player's `players` row — the harness exposes both
+    // playerAId and playerBId, but we re-query for clarity.
+    const playerId = await h.t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("players")
+        .withIndex("by_game_user", (q) =>
+          q.eq("gameId", h.ids.gameId).eq("userId", playerUserId),
+        )
+        .unique();
+      if (!row) throw new Error("player row not found");
+      return row._id;
+    });
+
+    // Make the harness's syndicate the player's selection, so the call
+    // path passes "called minion belongs to caller's syndicate" if the
+    // mutation enforces that. Also ensure EVERY player on the game
+    // has a syndicate selected — the game-start transition requires
+    // it for all players. (Alice's row already has it; Bob's
+    // doesn't — patch defensively for both.)
+    await h.t.run(async (ctx) => {
+      const allPlayers = await ctx.db
+        .query("players")
+        .withIndex("by_game_user", (q) => q.eq("gameId", h.ids.gameId))
+        .collect();
+      for (const row of allPlayers) {
+        if (!row.selectedSyndicateId) {
+          await ctx.db.patch(row._id, {
+            selectedSyndicateId: h.ids.syndicateId,
+          });
+        }
+      }
+    });
+
+    // Mark the minion as bought for this (game, player).
+    await h.t.run(async (ctx) => {
+      await ctx.db.insert("gamePlayerMinions", {
+        gameId: h.ids.gameId,
+        playerId,
+        minionId: h.ids.minionId,
+        bought: true,
+        boughtAt: Date.now(),
+        pricePaid: 0,
+      });
+    });
+
+    // Promote game to playing.
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.games.transitionState, {
+        gameId: h.ids.gameId,
+        target: "playing",
+      });
+
+    return {
+      placeOnHead: async () => {
+        return await h.t
+          .withIdentity(asUser(playerUserId))
+          .mutation(api.calls.addOrReplaceCall, {
+            gameId: h.ids.gameId,
+            minionId: h.ids.minionId,
+          });
+      },
+    };
+  }
+
+  test("note on the head minion: GM sees `attachedRolls` with the live roll set", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    await ctl.placeOnHead();
+
+    // Author a private minion note as the GM while Alice's call is the head.
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "minion",
+      targetMinionId: h.ids.minionId,
+      body: "tagging the head minion",
+      visibility: "private",
+    });
+
+    const list = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+      });
+    expect(list).toHaveLength(1);
+    const note = list[0] as {
+      attachedRolls?:
+        | { skillRoll: number; chaosRoll: number; skillCount: number }
+        | null;
+    };
+    expect(Object.prototype.hasOwnProperty.call(note, "attachedRolls")).toBe(
+      true,
+    );
+    expect(note.attachedRolls).not.toBeNull();
+    expect(note.attachedRolls!.skillCount).toBe(1); // Raven has [sneak]
+    expect(note.attachedRolls!.skillRoll).toBeGreaterThanOrEqual(1);
+    expect(note.attachedRolls!.skillRoll).toBeLessThanOrEqual(6);
+  });
+
+  test("note on the head minion: Player payload OMITS the `attachedRolls` key", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    await ctl.placeOnHead();
+
+    // Public note so Alice (the author + Player) can see it back.
+    await h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "minion",
+      targetMinionId: h.ids.minionId,
+      body: "player-authored, public",
+      visibility: "public",
+    });
+
+    const list = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+      });
+    expect(list).toHaveLength(1);
+    // Wire format must not leak the attachment to non-GMs — even as
+    // `null` or `undefined`. The key MUST be absent.
+    expect(
+      Object.prototype.hasOwnProperty.call(list[0], "attachedRolls"),
+    ).toBe(false);
+  });
+
+  test("note on a minion that is NOT the head omits `attachedRolls`", async () => {
+    // The harness only seeds one minion, so "not the head" means the
+    // queue is empty. createNote should leave attachedRollSetId
+    // unset; listNotesForTarget should not include the key (the
+    // payload-shaping rule omits `attachedRolls` when the row never
+    // had a roll set, even on the GM payload — see notes.ts L297).
+    const h = await createHarness();
+    await preparePlayingGame(h, h.ids.aId);
+    // Note: did NOT call placeOnHead — queue is empty.
+
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "minion",
+      targetMinionId: h.ids.minionId,
+      body: "no-call note",
+      visibility: "private",
+    });
+
+    const list = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+      });
+    expect(list).toHaveLength(1);
+    expect(
+      Object.prototype.hasOwnProperty.call(list[0], "attachedRolls"),
+    ).toBe(false);
+  });
+
+  test("game-target and syndicate-target notes never get `attachedRolls`", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    await ctl.placeOnHead();
+
+    // Even with a minion at the head of the queue, notes on other
+    // target kinds do not pin the roll set — only minion-target notes
+    // can attach.
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "game",
+      body: "game note while call is live",
+      visibility: "private",
+    });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "syndicate",
+      targetSyndicateId: h.ids.syndicateId,
+      body: "syndicate note while call is live",
+      visibility: "private",
+    });
+
+    const gameList = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "game",
+      });
+    expect(gameList).toHaveLength(1);
+    expect(
+      Object.prototype.hasOwnProperty.call(gameList[0], "attachedRolls"),
+    ).toBe(false);
+
+    const syndList = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "syndicate",
+        targetSyndicateId: h.ids.syndicateId,
+      });
+    expect(syndList).toHaveLength(1);
+    expect(
+      Object.prototype.hasOwnProperty.call(syndList[0], "attachedRolls"),
+    ).toBe(false);
+  });
+});
