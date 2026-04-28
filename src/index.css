@@ -1019,7 +1019,12 @@ body:has(.sign-in-wrapper) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-between;
+  /* Anchor the caption + value (+ footer) at the top of the cell so
+   * the numbers sit close to the title rather than drifting to the
+   * vertical centre. The badge still pins itself to the bottom via
+   * `margin-top: auto` (see `.roll-cell-badge`), so cells with a
+   * Pass/Fail/Due/Done badge keep the original two-zone layout. */
+  justify-content: flex-start;
   gap: 0.25rem;
   background: var(--bg-elevated);
   border: 2px solid var(--border);
@@ -1100,6 +1105,11 @@ body:has(.sign-in-wrapper) {
 
 .roll-cell-badge {
   display: inline-block;
+  /* Pin the badge to the bottom of the cell. `.roll-cell` switched
+   * from `space-between` to `flex-start` so the numbers hug the
+   * caption; this `margin-top: auto` preserves the original
+   * "badge at the bottom edge" layout for Pass / Fail / Due / Done. */
+  margin-top: auto;
   font-family: var(--font-mono);
   font-size: 0.6rem;
   text-transform: uppercase;
