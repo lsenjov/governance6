@@ -7,9 +7,11 @@ import { useEffect, useState } from "react";
  * primitives) that mirrors the dice cells visually so the timer sits
  * inline with the skill check it clocks. Four UI states:
  *
- *   A. Ticking, future  — caption CLOCK, value MM:SS, neutral cell.
- *   B. Ticking, past    — caption CLOCK, value -MM:SS (capped at -99:59),
- *                         failure cell with DUE badge.
+ *   A. Ticking, future  — caption CLOCK, value MM stacked over SS,
+ *                         neutral cell.
+ *   B. Ticking, past    — caption CLOCK, value -MM stacked over SS
+ *                         (capped at -99:59), failure cell with DUE
+ *                         badge.
  *   C. Done             — caption CLOCK, no value, success cell with
  *                         DONE badge.
  *   D. Due (manual)     — caption CLOCK, value `!`, failure cell with
@@ -46,23 +48,30 @@ export type NoteTimerState =
 type Size = "sm" | "md";
 
 /**
- * Format a remaining-ms value as `MM:SS` (positive remainder) or
- * `-MM:SS` (negative remainder, capped at -99:59).
+ * Format a remaining-ms value as a `{ mm, ss }` pair so the cell can
+ * render minutes on the top line and seconds below. Positive
+ * remainders produce two-digit, zero-padded strings; negative
+ * remainders carry the leading `-` on `mm` (the top line) and stay
+ * capped at -99:59 so the cell never grows wider than three chars.
  *
  * Pure helper exported so unit tests cover the formatting rules
  * independently of the component's tick wiring (Task 15).
  */
-export function formatTimerValue(remainingMs: number): string {
+export function formatTimerValue(remainingMs: number): {
+  mm: string;
+  ss: string;
+} {
   const sign = remainingMs < 0 ? "-" : "";
   const absSec = Math.floor(Math.abs(remainingMs) / 1000);
   // Cap at 99:59 in either direction so the cell never grows wider
-  // than two-digit minutes. Negatives get the cap as -99:59.
+  // than two-digit minutes. Negatives get the cap as -99:59 with the
+  // sign attached to the mm line.
   const totalSec = Math.min(absSec, 99 * 60 + 59);
-  const mm = Math.floor(totalSec / 60)
+  const mmRaw = Math.floor(totalSec / 60)
     .toString()
     .padStart(2, "0");
   const ss = (totalSec % 60).toString().padStart(2, "0");
-  return `${sign}${mm}:${ss}`;
+  return { mm: `${sign}${mmRaw}`, ss };
 }
 
 /**
@@ -132,8 +141,18 @@ export function NoteTimerCell({
   if (effective === "running" || effective === "overdue") {
     const remaining =
       timer.kind === "ticking" ? timer.dueAt - Date.now() : 0;
+    // Stack mm on the top line and ss on the line below. When the
+    // timer is overdue the leading `-` is already part of `mm`, so
+    // it stays on the top line beside the minutes. Wrapping both
+    // spans in a single container collapses the pair into ONE flex
+    // child of `.roll-cell`, so `justify-content: space-between` no
+    // longer pushes ss away from mm when no badge is present.
+    const { mm, ss } = formatTimerValue(remaining);
     valueNode = (
-      <span className="roll-cell-value">{formatTimerValue(remaining)}</span>
+      <span className="note-timer-stack">
+        <span className="roll-cell-value">{mm}</span>
+        <span className="roll-cell-value">{ss}</span>
+      </span>
     );
   } else if (effective === "due_manual") {
     valueNode = <span className="roll-cell-value">!</span>;

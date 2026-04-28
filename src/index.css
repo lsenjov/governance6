@@ -1153,3 +1153,16 @@ button.roll-cell.note-timer-cell-clickable:hover .roll-cell-footer {
   color: inherit;
 }
 
+/* Note timers v1: stack mm above ss as a single flex child of
+ * `.roll-cell` so the pair stays glued together regardless of whether
+ * the cell carries a Due/Done badge. Without this wrapper the cell's
+ * `justify-content: space-between` would push ss to the bottom edge
+ * whenever the badge is absent, leaving a wide gap between minutes
+ * and seconds. */
+.note-timer-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+
