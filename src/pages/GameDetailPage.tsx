@@ -2409,6 +2409,15 @@ function CurrentCallSection({
             </div>
 
             <div>
+              {/*
+                Drawback rows render only (name, description) here, even
+                for `isRolled === true` drawbacks. The abbreviation and
+                isRolled flag are intentionally not surfaced in this
+                list: the abbreviation appears solely as the dice-cell
+                caption inside `RollSetDisplay`. Do not "helpfully" add
+                a badge or "Rolled" marker here — see the visibility
+                contract in `plans/2026-04-28-drawback-rolls-v1.md`.
+              */}
               <h4 style={{ margin: "0 0 0.25rem 0" }}>
                 Drawbacks ({data.syndicate.drawbacks.length})
               </h4>

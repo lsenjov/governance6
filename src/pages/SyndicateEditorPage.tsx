@@ -187,6 +187,23 @@ function SyndicateCore({
 
 type DrawbackDoc = Doc<"drawbacks">;
 
+/**
+ * Drawback editor.
+ *
+ * The user-visible surface stays exactly `(name, description)` for both
+ * creation and existing-row editing — no abbreviation input, no
+ * "Rolled when called" checkbox is rendered. The schema-level
+ * `abbreviation` and `isRolled` fields are populated invisibly when
+ * (and only when) the user picks a name that exactly matches a preset
+ * drawback (case-insensitive). On submit, the editor passes all four
+ * fields to `api.drawbacks.create`; existing-row edits send only
+ * `(name, description)` so the persisted abbreviation/isRolled
+ * remain at their preset-frozen creation values.
+ *
+ * To grant a free-form drawback rolling behaviour, an admin must add it
+ * to the preset catalogue (Admin page) and the owner must delete and
+ * re-create the row.
+ */
 function DrawbacksEditor({
   syndicateId,
   drawbacks,
@@ -199,15 +216,61 @@ function DrawbacksEditor({
   const create = useMutation(api.drawbacks.create);
   const update = useMutation(api.drawbacks.update);
   const remove = useMutation(api.drawbacks.remove);
+  // Subscribe to the preset-drawback catalogue. Every authenticated
+  // user can read it (admin-only writes are gated server-side).
+  const presetDrawbacks = useQuery(api.presetDrawbacks.list);
+  const presetListId = useId();
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [err, setErr] = useState<string | null>(null);
+
+  // Find the preset row whose name matches the typed name
+  // (case-insensitive). Used to silently carry abbreviation+isRolled
+  // through to the create mutation without surfacing them in the UI.
+  const matchedPreset = (() => {
+    if (!presetDrawbacks) return null;
+    const lower = newName.trim().toLowerCase();
+    if (lower.length === 0) return null;
+    return (
+      presetDrawbacks.find((p) => p.name.toLowerCase() === lower) ?? null
+    );
+  })();
+
+  // When the typed name matches a preset and the description is empty
+  // or whitespace-only, prefill the description from the preset.
+  // Guarded against clobbering user-entered prose: once the user
+  // types into description, subsequent matches do NOT overwrite it.
+  function handleNameChange(value: string) {
+    setNewName(value);
+    if (!presetDrawbacks) return;
+    const lower = value.trim().toLowerCase();
+    if (lower.length === 0) return;
+    const preset = presetDrawbacks.find(
+      (p) => p.name.toLowerCase() === lower,
+    );
+    if (preset && newDesc.trim().length === 0) {
+      setNewDesc(preset.description);
+    }
+  }
 
   async function handleCreate(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setErr(null);
     try {
-      await create({ syndicateId, name: newName, description: newDesc });
+      // Pipe abbreviation+isRolled through ONLY when the typed name
+      // exactly matches a preset. Free-form rows pass `undefined`,
+      // letting the schema's optionals default to absent / `false`.
+      if (matchedPreset) {
+        await create({
+          syndicateId,
+          name: newName,
+          description: newDesc,
+          abbreviation: matchedPreset.abbreviation ?? undefined,
+          isRolled: matchedPreset.isRolled ?? false,
+        });
+      } else {
+        await create({ syndicateId, name: newName, description: newDesc });
+      }
       setNewName("");
       setNewDesc("");
     } catch (e2) {
@@ -233,11 +296,23 @@ function DrawbacksEditor({
       ))}
       {canEdit && drawbacks.length < 5 && (
         <form onSubmit={handleCreate} className="card tight stack">
+          {presetDrawbacks && presetDrawbacks.length > 0 && (
+            <datalist id={presetListId}>
+              {presetDrawbacks.map((p) => (
+                <option key={p._id} value={p.name} />
+              ))}
+            </datalist>
+          )}
           <input
             value={newName}
-            onChange={(e) => setNewName(e.target.value)}
+            onChange={(e) => handleNameChange(e.target.value)}
             required
             maxLength={120}
+            list={
+              presetDrawbacks && presetDrawbacks.length > 0
+                ? presetListId
+                : undefined
+            }
             aria-label="New drawback name"
             placeholder="Drawback name"
             style={{ width: "100%" }}

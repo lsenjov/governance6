@@ -8,6 +8,7 @@ import {
 } from "./lib/auth";
 import {
   generateRollSetForCall,
+  getDrawbackExtrasForCall,
   getHeadCallId,
   getLatestRollSetForCall,
   projectRollSet,
@@ -85,7 +86,18 @@ export const addOrReplaceCall = mutation({
         //     re-read; treat the same way) → "became_head".
         const reason: "became_head" | "minion_replaced" =
           result.prevKind === "minion" ? "minion_replaced" : "became_head";
-        await generateRollSetForCall(ctx, { callId: result.id, reason });
+        // Drawback extras: re-read the head call AFTER the queue
+        // mutation so any concurrent toggle of `isRolled` is reflected
+        // in the new roll set (drawback rolls v1).
+        const headCall = await ctx.db.get(result.id);
+        const extras = headCall
+          ? await getDrawbackExtrasForCall(ctx, headCall)
+          : [];
+        await generateRollSetForCall(ctx, {
+          callId: result.id,
+          reason,
+          extras,
+        });
       }
     }
 
@@ -180,9 +192,15 @@ export const removeCall = mutation({
         const newHead = await ctx.db.get(newHeadId);
         const newHeadKind: "minion" | "custom" = newHead?.kind ?? "minion";
         if (newHeadKind === "minion") {
+          // Drawback extras for the newly-promoted head (drawback
+          // rolls v1).
+          const extras = newHead
+            ? await getDrawbackExtrasForCall(ctx, newHead)
+            : [];
           await generateRollSetForCall(ctx, {
             callId: newHeadId,
             reason: "became_head",
+            extras,
           });
         }
       }

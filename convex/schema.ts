@@ -38,6 +38,25 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_name", ["name"]),
 
+  // Preset drawback catalogue. Used by the Syndicate editor's drawback
+  // autocomplete. Writeable only by site admins; readable by any
+  // authenticated user.
+  //
+  // Picking a preset in the Syndicate editor copies all four fields
+  // (name, description, abbreviation, isRolled) onto the per-Syndicate
+  // `drawbacks` row at insert time — there is NO foreign key from
+  // `drawbacks` to `presetDrawbacks`. This keeps Played syndicates
+  // immutable even if an admin later edits the catalogue, and allows
+  // free-form drawback names that are not in the catalogue.
+  presetDrawbacks: defineTable({
+    name: v.string(),
+    description: v.string(),
+    abbreviation: v.optional(v.string()),
+    isRolled: v.optional(v.boolean()),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_name", ["name"]),
+
   // Rule 2: Syndicate.
   syndicates: defineTable({
     name: v.string(),
@@ -51,11 +70,29 @@ export default defineSchema({
     .index("by_shared", ["isShared"]),
 
   // Rule 3: Drawbacks (0-5 per Syndicate).
+  //
+  // `abbreviation` and `isRolled` are admin-managed via the
+  // `presetDrawbacks` catalogue. They are populated only by the
+  // editor's preset-prefill pipeline at row-creation time (or directly
+  // via the Convex dashboard); the Syndicate editor does NOT expose
+  // them for direct editing.
+  //
+  // Toggling `isRolled` only affects future roll sets — existing
+  // `callRollSets` rows are immutable (append-only), so the boolean
+  // cannot retroactively rewrite history. See dice-rolls v3 plan
+  // (`plans/2026-04-28-2026-04-28-dice-rolls-v3.md` Key finding 3).
   drawbacks: defineTable({
     syndicateId: v.id("syndicates"),
     name: v.string(),
     description: v.string(),
     order: v.number(),
+    // Short caption (≤6 chars after trim) used as the die-cell label
+    // when this drawback rolls. Optional so legacy rows remain valid.
+    abbreviation: v.optional(v.string()),
+    // When `true`, this drawback contributes a d6 to every
+    // becoming-the-head roll set for any minion in this syndicate.
+    // `undefined` projects to `false` for downstream consumers.
+    isRolled: v.optional(v.boolean()),
   }).index("by_syndicate", ["syndicateId"]),
 
   // Rule 4: Minions (<=8 per Syndicate, 1-5 skills). In addition, the

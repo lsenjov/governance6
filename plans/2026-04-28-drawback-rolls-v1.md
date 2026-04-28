@@ -157,7 +157,7 @@ The two surfaces are:
 
 ### Backend: schema
 
-- [ ] Task 1. In `convex/schema.ts`, extend the existing `drawbacks` table
+- [x] Task 1. In `convex/schema.ts`, extend the existing `drawbacks` table
       (`convex/schema.ts:54-59`) with two optional fields:
       - `abbreviation: v.optional(v.string())` — short caption (≤6
         chars after trim) used as the die-cell label when the drawback
@@ -174,7 +174,7 @@ The two surfaces are:
       No new index is required — drawbacks are already fetched per
       syndicate via `by_syndicate` at `convex/schema.ts:59`.
 
-- [ ] Task 2. In `convex/schema.ts`, add a new `presetDrawbacks` table
+- [x] Task 2. In `convex/schema.ts`, add a new `presetDrawbacks` table
       mirroring the preset-skill shape (`convex/schema.ts:35-39`). Fields:
       - `name: v.string()` — required, trimmed, 1–120 chars, unique
         case-insensitively across the table (matching the preset-skill
@@ -198,7 +198,7 @@ The two surfaces are:
 
 ### Backend: per-Syndicate drawback CRUD
 
-- [ ] Task 3. In `convex/drawbacks.ts`, extend the `create` mutation
+- [x] Task 3. In `convex/drawbacks.ts`, extend the `create` mutation
       (`convex/drawbacks.ts:13-43`) to accept optional `abbreviation`
       and optional `isRolled` arguments. Validation:
       - `abbreviation`, when present, is trimmed; reject if empty after
@@ -214,7 +214,7 @@ The two surfaces are:
       admin-edit-then-database-script can patch existing rows without
       touching the editor.
 
-- [ ] Task 4. In `convex/drawbacks.ts`, extend the `update` mutation
+- [x] Task 4. In `convex/drawbacks.ts`, extend the `update` mutation
       (`convex/drawbacks.ts:45-71`) symmetrically:
       - Accept optional `abbreviation` (same rules as Task 3; an
         explicitly empty string after trim should clear the field via an
@@ -227,14 +227,14 @@ The two surfaces are:
       payload to `name` and `description`); the args exist for admin
       DB-shell scripts and any future tooling.
 
-- [ ] Task 5. `listForSyndicate` (`convex/drawbacks.ts:83-93`) requires
+- [x] Task 5. `listForSyndicate` (`convex/drawbacks.ts:83-93`) requires
       no logic change — the new fields are returned automatically by the
       `.collect()`. Add a brief code comment noting that `isRolled ===
       undefined` projects to `false` for downstream consumers.
 
 ### Backend: preset Drawback catalogue (new module)
 
-- [ ] Task 6. Create `convex/presetDrawbacks.ts` mirroring
+- [x] Task 6. Create `convex/presetDrawbacks.ts` mirroring
       `convex/presetSkills.ts:1-87`:
       - `list` query: `requireUserId`, `.collect()`, sort by `name`.
       - `add` mutation (`requireSiteAdmin`): accepts `name`,
@@ -252,7 +252,7 @@ The two surfaces are:
 
 ### Backend: drawback dice on every becoming-the-head event
 
-- [ ] Task 7. Add a private helper `getDrawbackExtrasForCall` to
+- [x] Task 7. Add a private helper `getDrawbackExtrasForCall` to
       `convex/lib/rolls.ts` (or co-locate next to
       `generateRollSetForCall`). Signature conceptually:
       `(ctx: MutationCtx, call: Doc<"calls">) =>
@@ -290,7 +290,7 @@ The two surfaces are:
            `normaliseExtraRoll` (`convex/lib/rolls.ts:80-106`) will set
            it to `"failure"` whenever `value === 1`.
 
-- [ ] Task 8. Update each call site of `generateRollSetForCall` so the
+- [x] Task 8. Update each call site of `generateRollSetForCall` so the
       drawback extras are computed once and passed in:
       - `addOrReplaceCall` at `convex/calls.ts:88` (head insert /
         cross-kind upgrade / replace-in-place).
@@ -303,7 +303,7 @@ The two surfaces are:
       3. Pass the result as `extras` to `generateRollSetForCall`.
       No new index is needed — `by_syndicate` already supports the read.
 
-- [ ] Task 9. Confirm the helper's own contract is unchanged: every
+- [x] Task 9. Confirm the helper's own contract is unchanged: every
       caller-supplied extras item still passes through
       `normaliseExtraRoll` (`convex/lib/rolls.ts:80-106,197-198`), so
       the natural-1 coercion, the trimmed `kind`/`name` invariants, and
@@ -312,13 +312,13 @@ The two surfaces are:
 
 ### Backend: query exposure
 
-- [ ] Task 10. `activeCalls` (`convex/calls.ts:233-337`) requires no
+- [x] Task 10. `activeCalls` (`convex/calls.ts:233-337`) requires no
       change — it already projects the full `extras` array via
       `projectRollSet` for GMs (`convex/calls.ts:328`,
       `convex/lib/rolls.ts:247-260`). Drawback dice flow through
       automatically.
 
-- [ ] Task 11. `getCurrentCallDetails` (`convex/calls.ts:390-469`)
+- [x] Task 11. `getCurrentCallDetails` (`convex/calls.ts:390-469`)
       requires no change. The drawback list at
       `convex/calls.ts:460-464` continues to project just
       `{ _id, name, description }` — the GM's Current Call section
@@ -330,13 +330,13 @@ The two surfaces are:
       symmetry with the Player-facing read paths and avoids leaking
       `isRolled` into a query whose only consumer wouldn't display it.
 
-- [ ] Task 12. `listNotesForTarget` and the rest of the notes pipeline
+- [x] Task 12. `listNotesForTarget` and the rest of the notes pipeline
       (`convex/notes.ts`) require no change — the dice-rolls v3 freezing
       mechanism (`plans/2026-04-28-2026-04-28-dice-rolls-v3.md` Task 11)
       already snapshots the entire roll set including extras, and the
       GM-only filtering already covers drawback dice.
 
-- [ ] Task 13. Confirm `syndicates.getWithChildren`
+- [x] Task 13. Confirm `syndicates.getWithChildren`
       (`convex/syndicates.ts:204-235`) requires no change — the
       handler returns `{ ...syndicate, drawbacks, minions, isOwner,
       canEdit }` with `drawbacks` set to the raw `.collect()` result
@@ -348,7 +348,7 @@ The two surfaces are:
 
 ### Frontend: Syndicate editor — drawback autocomplete (no new visible fields)
 
-- [ ] Task 14. In `src/pages/SyndicateEditorPage.tsx`, extend
+- [x] Task 14. In `src/pages/SyndicateEditorPage.tsx`, extend
       `DrawbacksEditor` (`src/pages/SyndicateEditorPage.tsx:188-259`)
       and `DrawbackRow` (`src/pages/SyndicateEditorPage.tsx:261-322`).
       The editor's user-visible surface stays exactly
@@ -395,7 +395,7 @@ The two surfaces are:
 
 ### Frontend: Admin console — preset drawback section
 
-- [ ] Task 15. In `src/pages/AdminPage.tsx`, add a second `<section>`
+- [x] Task 15. In `src/pages/AdminPage.tsx`, add a second `<section>`
       below the existing preset-skills section, mirroring the structure
       of `src/pages/AdminPage.tsx:41-55`:
       - "Preset drawbacks ({drawbacks?.length ?? 0})" heading.
@@ -411,7 +411,7 @@ The two surfaces are:
 
 ### Frontend: Current Call section — no drawback-row indicators
 
-- [ ] Task 16. In `src/pages/GameDetailPage.tsx`'s `CurrentCallSection`,
+- [x] Task 16. In `src/pages/GameDetailPage.tsx`'s `CurrentCallSection`,
       the drawback list at
       `src/pages/GameDetailPage.tsx:2410-2437` requires **no change**.
       The GM-facing drawback list keeps its existing
@@ -424,7 +424,7 @@ The two surfaces are:
 
 ### Frontend: dice display — no changes required
 
-- [ ] Task 17. Confirm `RollSetDisplay`
+- [x] Task 17. Confirm `RollSetDisplay`
       (`src/components/RollSetDisplay.tsx:1-142`) renders drawback dice
       correctly with no code change: extras with `kind: "drawback"`
       flow through the existing iteration at
@@ -438,7 +438,7 @@ The two surfaces are:
 
 ### Backend: tests
 
-- [ ] Task 18. Create `convex/drawbacks.test.ts` (no existing test
+- [x] Task 18. Create `convex/drawbacks.test.ts` (no existing test
       file for this module — the existing backend test suite at
       `convex/calls.test.ts`, `convex/notes.test.ts`,
       `convex/treasonGrants.test.ts`, `convex/goals.test.ts`,
@@ -457,7 +457,7 @@ The two surfaces are:
         regression-tested.)
       - `listForSyndicate` returns the new fields.
 
-- [ ] Task 19. Create `convex/presetDrawbacks.test.ts` (no existing
+- [x] Task 19. Create `convex/presetDrawbacks.test.ts` (no existing
       test file — `convex/presetSkills.ts` is also untested today, so
       there is no direct preset analog). Use
       `convex/treasonGrants.test.ts` as a structural template for
@@ -469,7 +469,7 @@ The two surfaces are:
         (≤6 chars) applied; `isRolled` defaults to `false` on
         omission.
 
-- [ ] Task 20. Extend `convex/calls.test.ts`'s "dice rolls" describe
+- [x] Task 20. Extend `convex/calls.test.ts`'s "dice rolls" describe
       block (or add a new "drawback rolls" block) to cover:
       - Creating a syndicate with two `isRolled` drawbacks and one
         non-rolled drawback (seeded directly via `ctx.db.insert` or
@@ -517,7 +517,7 @@ The two surfaces are:
         wire-format guarantee from `plans/2026-04-28-2026-04-28-dice-rolls-v3.md`
         Task 8).
 
-- [ ] Task 21. Extend `convex/notes.test.ts`'s "dice attachment" block
+- [x] Task 21. Extend `convex/notes.test.ts`'s "dice attachment" block
       (per `plans/2026-04-28-2026-04-28-dice-rolls-v3.md` Task 17) with
       one extra case: a Note frozen onto a head call with drawback
       extras still resolves them in the GM's
@@ -527,7 +527,7 @@ The two surfaces are:
 
 ### Frontend: smoke checks
 
-- [ ] Task 22. Manually verify (or, if a UI test harness exists, add
+- [x] Task 22. Manually verify (or, if a UI test harness exists, add
       smoke coverage matching `plans/2026-04-28-2026-04-28-dice-rolls-v3.md`
       Task 20) that:
       - The Admin page shows two sections (skills and drawbacks) for

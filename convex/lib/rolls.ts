@@ -126,6 +126,75 @@ export async function getHeadCallId(
 }
 
 /**
+ * Brutalist square-cell budget for drawback-die captions. Six chars
+ * fits between Skill and Chaos at the right-rail size without
+ * wrapping. The dice-roll helper's own `EXTRA_NAME_MAX = 24` is a
+ * defensive upper bound shared by all extras kinds; drawbacks are
+ * intentionally stricter.
+ */
+const DRAWBACK_CAPTION_MAX = 6;
+
+/**
+ * Compute the drawback-die extras for a given Call.
+ *
+ * Returns one `ExtraRollInput` per `isRolled === true` drawback on the
+ * called Minion's syndicate, in `order` ascending (so dice appear in
+ * the same order the Syndicate editor and the GM Current Call section
+ * show them).
+ *
+ *  - Returns `[]` for custom calls (no `minionId`), for calls whose
+ *    `minionId` resolves to a deleted minion, and for syndicates with
+ *    no rolled drawbacks.
+ *  - Caption is `(abbreviation ?? "").trim() || drawback.name`,
+ *    truncated to 6 chars after trim. The truncate happens BEFORE the
+ *    helper's validator sees the string so a 120-char drawback name
+ *    cannot trip the validator's length check.
+ *  - `value` is rolled here (not inside `generateRollSetForCall`) so
+ *    the helper's input shape stays generic and all drawback-aware
+ *    logic lives in one place. `result` is omitted; the helper's
+ *    natural-1 coercion sets it to `"failure"` when `value === 1`.
+ */
+export async function getDrawbackExtrasForCall(
+  ctx: MutationCtx,
+  call: Doc<"calls">,
+): Promise<ExtraRollInput[]> {
+  // Defence in depth — trigger sites already gate on minion-kind, but
+  // this helper's contract should be safe to invoke for any call.
+  if (call.kind === "custom" || !call.minionId) {
+    return [];
+  }
+  const minion = await ctx.db.get(call.minionId);
+  if (!minion) return [];
+
+  const drawbacks = await ctx.db
+    .query("drawbacks")
+    .withIndex("by_syndicate", (q) => q.eq("syndicateId", minion.syndicateId))
+    .collect();
+  drawbacks.sort((a, b) => a.order - b.order);
+
+  const extras: ExtraRollInput[] = [];
+  for (const d of drawbacks) {
+    if (d.isRolled !== true) continue;
+    const abbrev = (d.abbreviation ?? "").trim();
+    const rawCaption = abbrev.length > 0 ? abbrev : d.name;
+    const caption = rawCaption.trim().slice(0, DRAWBACK_CAPTION_MAX);
+    // The validator at `normaliseExtraRoll` rejects empty captions —
+    // skip silently if both abbreviation and name are blank after
+    // trim/truncate (an impossible state given `DRAWBACK_NAME_MAX`,
+    // but defended here).
+    if (caption.length === 0) continue;
+    extras.push({
+      kind: "drawback",
+      name: caption,
+      value: rollD6(),
+      // `result` intentionally omitted — `normaliseExtraRoll` will
+      // coerce to `"failure"` whenever `value === 1`.
+    });
+  }
+  return extras;
+}
+
+/**
  * Generate a fresh `callRollSets` row for the given call.
  *
  * Callers MUST only invoke this when the call is at the head of the

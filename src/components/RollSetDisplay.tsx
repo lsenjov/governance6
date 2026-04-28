@@ -120,7 +120,16 @@ export function RollSetDisplay({
       </div>
 
       {/* Extras: every entry has a required `name` (schema + helper
-       * guarantee). The component MUST NOT fall back to `kind`. */}
+       * guarantee). The component MUST NOT fall back to `kind`.
+       *
+       * Drawback dice are first-class extras (kind: "drawback") and
+       * flow through this iteration unchanged. The natural-1 rule
+       * applies via `effective(...)` above, the caption comes from
+       * `extra.name` (already truncated to ≤6 chars at the trigger
+       * site in `convex/lib/rolls.ts`), and no kind-specific styling
+       * is required. Do not introduce `if (extra.kind === "drawback")`
+       * branches here — future extras kinds (e.g. allies, hazards)
+       * should likewise be rendered uniformly. */}
       {rolls.extras.map((extra, i) => {
         const extraEffective = effective(extra.value, extra.result ?? null);
         return (

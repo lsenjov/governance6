@@ -21,6 +21,7 @@ import type * as lib_rolls from "../lib/rolls.js";
 import type * as minionBuys from "../minionBuys.js";
 import type * as minions from "../minions.js";
 import type * as notes from "../notes.js";
+import type * as presetDrawbacks from "../presetDrawbacks.js";
 import type * as presetSkills from "../presetSkills.js";
 import type * as publicBids from "../publicBids.js";
 import type * as syndicates from "../syndicates.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   minionBuys: typeof minionBuys;
   minions: typeof minions;
   notes: typeof notes;
+  presetDrawbacks: typeof presetDrawbacks;
   presetSkills: typeof presetSkills;
   publicBids: typeof publicBids;
   syndicates: typeof syndicates;

@@ -805,4 +805,128 @@ describe("notes: attached dice rolls", () => {
       Object.prototype.hasOwnProperty.call(syndList[0], "attachedRolls"),
     ).toBe(false);
   });
+
+  /**
+   * Drawback rolls v1 — see `plans/2026-04-28-drawback-rolls-v1.md` Task 21.
+   *
+   * A note authored against a head-minion call freezes the full extras
+   * bundle (skill + chaos + drawbacks) onto the note. After the head
+   * moves on the GM still sees the original drawback values; the
+   * Player still sees no `attachedRolls` field at all.
+   */
+  test("note attached to head minion freezes drawback extras; survives head moving on", async () => {
+    const h = await createHarness();
+    // Add a single rolled drawback to Alice's syndicate before the
+    // game starts. The Syndicate editor cannot toggle isRolled in
+    // production (Task 14 of the drawback-rolls plan), but the
+    // backend invariant must still hold.
+    await h.t.run(async (ctx) => {
+      await ctx.db.insert("drawbacks", {
+        syndicateId: h.ids.syndicateId,
+        name: "Glass Jaw",
+        description: "",
+        order: 0,
+        isRolled: true,
+        abbreviation: "GLSJAW",
+      });
+    });
+
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    const headCallId = await ctl.placeOnHead();
+
+    // Author a note while the call is the head.
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "minion",
+      targetMinionId: h.ids.minionId,
+      body: "freezing the drawback bundle",
+      visibility: "private",
+    });
+
+    // GM list includes attachedRolls with one drawback extra.
+    const gmListBefore = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+      });
+    expect(gmListBefore).toHaveLength(1);
+    const noteBefore = gmListBefore[0] as {
+      attachedRolls?:
+        | {
+            skillRoll: number;
+            chaosRoll: number;
+            extras: Array<{
+              kind: string;
+              name: string;
+              value: number;
+            }>;
+          }
+        | null;
+    };
+    expect(noteBefore.attachedRolls).not.toBeNull();
+    expect(noteBefore.attachedRolls!.extras).toHaveLength(1);
+    const frozen = noteBefore.attachedRolls!.extras[0];
+    expect(frozen.kind).toBe("drawback");
+    expect(frozen.name).toBe("GLSJAW");
+    expect(frozen.value).toBeGreaterThanOrEqual(1);
+    expect(frozen.value).toBeLessThanOrEqual(6);
+    const frozenValue = frozen.value;
+
+    // Move the head off — GM removes the call. Subsequent reads must
+    // still surface the original frozen extras (immutability of
+    // `callRollSets`).
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.removeCall, { callId: headCallId });
+
+    const gmListAfter = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+      });
+    const noteAfter = gmListAfter[0] as {
+      attachedRolls?: {
+        extras: Array<{ name: string; value: number }>;
+      } | null;
+    };
+    expect(noteAfter.attachedRolls!.extras).toHaveLength(1);
+    expect(noteAfter.attachedRolls!.extras[0].name).toBe("GLSJAW");
+    expect(noteAfter.attachedRolls!.extras[0].value).toBe(frozenValue);
+
+    // Player still sees no attachedRolls key. Bob is a participant
+    // and Alice is the author, so use Alice (the author) to read
+    // back the same private note — but wait: private + author === Alice
+    // means she could see it; we want to assert the WIRE FORMAT for a
+    // Player viewer. Alice is the only viable Player viewer here (Bob
+    // can't see private notes by another author). Alice as author of
+    // a private note authored by GM cannot see it either. Re-use the
+    // public-author-Alice path: author a public note and re-read.
+    await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+        body: "alice public note",
+        visibility: "public",
+      });
+    const aliceList = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+      });
+    // Alice now sees her own public note. Confirm `attachedRolls`
+    // is absent from EVERY entry on the Player payload.
+    for (const row of aliceList) {
+      expect(
+        Object.prototype.hasOwnProperty.call(row, "attachedRolls"),
+      ).toBe(false);
+    }
+  });
 });

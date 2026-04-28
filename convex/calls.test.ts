@@ -638,6 +638,370 @@ describe("calls: dice rolls", () => {
 });
 
 /**
+ * Drawback rolls v1 — see `plans/2026-04-28-drawback-rolls-v1.md` Task 20.
+ *
+ * Drawback dice ride along on every becoming-the-head event for a
+ * minion call: one d6 per `isRolled === true` drawback on the called
+ * minion's syndicate, in `order` ascending. Each die's caption is the
+ * abbreviation (truncated to 6 chars) or the drawback name truncated
+ * to 6 chars when no abbreviation is set. Captions are not uppercased
+ * by the backend — `RollSetDisplay` does that at render time. The
+ * universal natural-1 rule applies via `normaliseExtraRoll`.
+ *
+ * The harness's two seeded drawbacks (`drawbackAId`, `drawbackBId`)
+ * are inserted with neither field set, so they default to
+ * `isRolled: undefined` (which projects to `false`). Tests below
+ * patch them directly via `ctx.db.patch` to opt them in — the
+ * Syndicate editor cannot toggle `isRolled` in production (Task 14)
+ * but the backend invariant must still hold for any code path that
+ * does (admin DB-shell scripts, future tooling).
+ */
+describe("calls: drawback rolls", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Patch the harness's two seeded drawbacks to set `isRolled`,
+   * `abbreviation`, and (optionally) `name`. Bypasses the editor by
+   * design — the editor does not expose these fields.
+   */
+  async function configureDrawbacks(
+    h: Harness,
+    config: {
+      a?: { isRolled?: boolean; abbreviation?: string; name?: string };
+      b?: { isRolled?: boolean; abbreviation?: string; name?: string };
+    },
+  ) {
+    await h.t.run(async (ctx) => {
+      if (config.a) {
+        await ctx.db.patch(h.ids.drawbackAId, config.a);
+      }
+      if (config.b) {
+        await ctx.db.patch(h.ids.drawbackBId, config.b);
+      }
+    });
+  }
+
+  test("two isRolled drawbacks emit two extras with valid d6 values, in order, with truncated names", async () => {
+    const h = await createHarness();
+    await configureDrawbacks(h, {
+      a: { isRolled: true, abbreviation: "GLSJAW" },
+      b: { isRolled: true, abbreviation: "SLOW" },
+    });
+    await startGame(h);
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+
+    const r = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(r);
+    const rolls = r.rolls!;
+    expect(rolls.extras).toHaveLength(2);
+    // Order ascending: A (order 0) first, B (order 1) second.
+    expect(rolls.extras[0].kind).toBe("drawback");
+    expect(rolls.extras[0].name).toBe("GLSJAW");
+    expect(rolls.extras[1].kind).toBe("drawback");
+    expect(rolls.extras[1].name).toBe("SLOW");
+    for (const e of rolls.extras) {
+      expect(e.value).toBeGreaterThanOrEqual(1);
+      expect(e.value).toBeLessThanOrEqual(6);
+    }
+  });
+
+  test("non-rolled drawbacks emit no extras", async () => {
+    const h = await createHarness();
+    // Only A is opt-in; B stays at its default `isRolled: undefined`.
+    await configureDrawbacks(h, {
+      a: { isRolled: true, abbreviation: "AAAA" },
+    });
+    await startGame(h);
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+
+    const r = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(r);
+    expect(r.rolls!.extras).toHaveLength(1);
+    expect(r.rolls!.extras[0].name).toBe("AAAA");
+  });
+
+  test("free-form drawbacks (no preset prefill) do not roll", async () => {
+    // Default seeded drawbacks (`isRolled: undefined`,
+    // `abbreviation: undefined`) are the same shape produced by a
+    // free-form editor entry. They must not generate any extras.
+    const h = await createHarness();
+    await startGame(h);
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+
+    const r = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(r);
+    expect(r.rolls!.extras).toHaveLength(0);
+  });
+
+  test("empty-after-trim abbreviation falls back to the drawback name", async () => {
+    const h = await createHarness();
+    await configureDrawbacks(h, {
+      a: { isRolled: true, abbreviation: "", name: "Quiet" },
+    });
+    await startGame(h);
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+
+    const r = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(r);
+    expect(r.rolls!.extras).toHaveLength(1);
+    // Abbreviation absent → name fallback (≤6 chars naturally).
+    expect(r.rolls!.extras[0].name).toBe("Quiet");
+  });
+
+  test("name longer than 6 chars is truncated at the trigger site", async () => {
+    const h = await createHarness();
+    // No abbreviation → name fallback. Name is 22 chars; helper
+    // validator caps at 24 but the trigger site truncates to 6 first.
+    await configureDrawbacks(h, {
+      a: { isRolled: true, name: "VeryLongDrawbackName!!" },
+    });
+    await startGame(h);
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+
+    const r = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(r);
+    expect(r.rolls!.extras).toHaveLength(1);
+    expect(r.rolls!.extras[0].name).toBe("VeryLo");
+    expect(r.rolls!.extras[0].name.length).toBe(6);
+  });
+
+  test("natural-1 on a drawback die is coerced to result: failure", async () => {
+    const h = await createHarness();
+    await configureDrawbacks(h, {
+      a: { isRolled: true, abbreviation: "GLSJAW" },
+    });
+    await startGame(h);
+
+    // Random sequence: drawback (1), then skill (6), then chaos (1).
+    // The drawback rolls FIRST in the trigger site (extras computed
+    // before generateRollSetForCall), so the very first random pull
+    // is the drawback.
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(0) //    drawback A = 1 → failure
+      .mockReturnValueOnce(0.99) // skillRoll = 6 → success
+      .mockReturnValueOnce(0); //   chaosRoll = 1 → failure
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+
+    const r = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(r);
+    expect(r.rolls!.extras[0].value).toBe(1);
+    expect(r.rolls!.extras[0].result).toBe("failure");
+    // Sanity-check chaos natural-1 still records failure too — guards
+    // against natural-1 drift across cells.
+    expect(r.rolls!.chaosRoll).toBe(1);
+    expect(r.rolls!.chaosResult).toBe("failure");
+  });
+
+  test("replace-in-place re-rolls the drawback dice independently", async () => {
+    const h = await createHarness();
+    await configureDrawbacks(h, {
+      a: { isRolled: true, abbreviation: "GLSJAW" },
+    });
+    await startGame(h);
+
+    // First roll (Raven): drawback=4, skill=4, chaos=4.
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(0.5)
+      .mockReturnValueOnce(0.5)
+      .mockReturnValueOnce(0.5)
+      // Replace-in-place (Wraith): drawback=6, skill=6, chaos=6.
+      .mockReturnValueOnce(0.99)
+      .mockReturnValueOnce(0.99)
+      .mockReturnValueOnce(0.99);
+
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    const before = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(before);
+    expect(before.rolls!.extras).toHaveLength(1);
+    expect(before.rolls!.extras[0].value).toBe(4);
+
+    await addCall(h, h.ids.aId, h.ids.minionWraithId);
+    const after = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(after);
+    expect(after.rolls!.extras).toHaveLength(1);
+    expect(after.rolls!.extras[0].value).toBe(6);
+
+    // Two separate `callRollSets` rows now exist for this call —
+    // confirm the extras differ between rows.
+    const rows = await h.t.run((ctx) =>
+      ctx.db
+        .query("callRollSets")
+        .withIndex("by_call_created", (q) => q.eq("callId", after.call._id))
+        .order("asc")
+        .collect(),
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0].extras[0].value).toBe(4);
+    expect(rows[1].extras[0].value).toBe(6);
+  });
+
+  test("toggle-then-replace: flipping isRolled before a replace picks up on the new roll set", async () => {
+    // Starting state: drawback A is non-rolled; head call has no
+    // drawback extras.
+    const h = await createHarness();
+    await startGame(h);
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    const before = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(before);
+    expect(before.rolls!.extras).toHaveLength(0);
+
+    // Flip A's `isRolled` directly via db.patch — the editor cannot
+    // do this in production (Task 14), but the backend invariant
+    // must still hold for admin tooling. After the flip, the head's
+    // existing roll set is unchanged (immutability) but the next
+    // becoming-the-head event must include the now-rolled drawback.
+    await h.t.run(async (ctx) => {
+      await ctx.db.patch(h.ids.drawbackAId, {
+        isRolled: true,
+        abbreviation: "TOG",
+      });
+    });
+
+    // Replace-in-place on the head with a different minion — fires
+    // `minion_replaced`, which re-reads drawbacks AFTER the patch
+    // commits. Asserts the trigger-site re-read order.
+    await addCall(h, h.ids.aId, h.ids.minionWraithId);
+    const after = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(after);
+    expect(after.rolls!.extras).toHaveLength(1);
+    expect(after.rolls!.extras[0].name).toBe("TOG");
+  });
+
+  test("removal advancing to a new head includes that minion's syndicate's drawbacks", async () => {
+    // Build a second syndicate (owned by Bob) whose minion has
+    // a different `isRolled` drawback. Removing Alice's head call
+    // promotes Bob's call and rolls Bob's syndicate's drawbacks.
+    const h = await createHarness();
+    const bobSetup = await h.t.run(async (ctx) => {
+      const bobSyndicateId = await ctx.db.insert("syndicates", {
+        name: "Bob's Syndicate",
+        leader: "Bob",
+        description: "",
+        played: false,
+        isShared: true,
+        ownerId: h.ids.bId,
+      });
+      await ctx.db.insert("drawbacks", {
+        syndicateId: bobSyndicateId,
+        name: "Loud",
+        description: "",
+        order: 0,
+        isRolled: true,
+        abbreviation: "LOUD",
+      });
+      const bobMinionId = await ctx.db.insert("minions", {
+        syndicateId: bobSyndicateId,
+        name: "Sparrow",
+        skills: ["lie", "sneak"],
+        order: 0,
+      });
+      // Bob now selects HIS own syndicate (must change his player row).
+      const bobPlayer = (await ctx.db.get(h.ids.playerBId))!;
+      await ctx.db.patch(h.ids.playerBId, {
+        selectedSyndicateId: bobSyndicateId,
+      });
+      // Mark Bob's minion bought for Bob.
+      await ctx.db.insert("gamePlayerMinions", {
+        gameId: h.ids.gameId,
+        playerId: h.ids.playerBId,
+        minionId: bobMinionId,
+        bought: true,
+        boughtAt: Date.now(),
+        pricePaid: 0,
+      });
+      return { bobSyndicateId, bobMinionId, bobPlayer };
+    });
+    await startGame(h);
+
+    // Alice calls Raven (head, no drawback extras — Alice's
+    // syndicate has none rolled).
+    const aliceCallId = await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    await new Promise((r) => setTimeout(r, 5));
+    // Bob calls Sparrow — mid-queue, no roll yet.
+    const bobCallId = await addCall(h, h.ids.bId, bobSetup.bobMinionId);
+
+    // GM removes Alice's head — Bob's call advances and rolls.
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.removeCall, { callId: aliceCallId });
+
+    const r = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(r);
+    expect(r.call._id).toBe(bobCallId);
+    expect(r.rolls!.extras).toHaveLength(1);
+    expect(r.rolls!.extras[0].kind).toBe("drawback");
+    expect(r.rolls!.extras[0].name).toBe("LOUD");
+  });
+
+  test("custom calls emit no drawback extras even when the player's syndicate has rolled drawbacks", async () => {
+    const h = await createHarness();
+    await configureDrawbacks(h, {
+      a: { isRolled: true, abbreviation: "GLSJAW" },
+    });
+    await startGame(h);
+    await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.calls.addOrReplaceCustomCall, {
+        gameId: h.ids.gameId,
+        label: "Need GM",
+      });
+
+    const r = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    expect(r?.kind).toBe("custom");
+    // No callRollSets row for a custom call.
+    const callId = (r as CustomHead).call._id;
+    const rows = await h.t.run((ctx) =>
+      ctx.db
+        .query("callRollSets")
+        .withIndex("by_call_created", (q) => q.eq("callId", callId))
+        .collect(),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  test("Player activeCalls payload still omits `rolls` when drawback extras are present", async () => {
+    const h = await createHarness();
+    await configureDrawbacks(h, {
+      a: { isRolled: true, abbreviation: "GLSJAW" },
+    });
+    await startGame(h);
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+
+    const list = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.calls.activeCalls, { gameId: h.ids.gameId });
+    expect(list).toHaveLength(1);
+    expect(Object.prototype.hasOwnProperty.call(list[0], "rolls")).toBe(false);
+  });
+});
+
+/**
  * Extras validator — direct unit tests for `normaliseExtraRoll` so
  * the schema-level invariants ("name required", "natural-1 coercion",
  * "value 1..6") are locked from day one. The validator runs inside
