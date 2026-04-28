@@ -15,6 +15,15 @@ in full; v1 is retained for audit only.
 
 The objective is unchanged. The substantive deltas vs. v1 are:
 
+*Revision 2026-04-28b: amended in place after self-review to (a) pin
+the `createdReason` rule for cross-kind head transitions, (b)
+spell out the `CurrentCallSection` pre-render hook updates, (c)
+tighten `recentlyRemovedCalls` field projection, (d) place
+`upsertActiveCall` in `convex/lib/calls.ts`, (e) refine
+`GameLogDrawer` copy for custom rows, (f) make the label-trim
+contract explicit between Task 4 and Task 2, and (g) promote the
+legacy-row back-compat test from a risk mitigation into Task 18.*
+
 - **Dice rolls.** Custom calls do not generate `callRollSets` rows; the
   trigger sites in `addOrReplaceCall` and `removeCall` short-circuit on
   `kind === "custom"`. Roll generation otherwise behaves identically to
@@ -176,27 +185,47 @@ uniformly to both call kinds.
 ### Phase 2 — Backend mutations (`convex/calls.ts`)
 
 - [ ] Task 2. Extract the "one active call per player; preserve `_id`
-  and `createdAt` on replace" invariant into a private helper
-  `upsertActiveCall(ctx, { gameId, player, content })` where
+  and `createdAt` on replace" invariant into a helper
+  `upsertActiveCall(ctx, { gameId, player, content })` placed in a
+  new file `convex/lib/calls.ts` (matches the existing
+  `convex/lib/{auth,rolls}.ts` convention; both mutations import it).
   `content` is a discriminated union
-  `{ kind: "minion"; minionId } | { kind: "custom"; label }`. The
-  helper:
+  `{ kind: "minion"; minionId } | { kind: "custom"; label }`. **Label
+  trim contract:** `content.label` is *already trimmed and validated*
+  by the calling mutation (Task 4); the helper does no further
+  trimming and only does direct string equality on the trimmed
+  value. The helper:
   - Looks up the existing active call via the
     `by_game_player_active` index.
   - If found and `content` matches kind+payload byte-for-byte
-    (same `minionId` for minion, same trimmed `label` for custom),
-    return the existing id as a no-op.
-  - If found and `content` differs, `ctx.db.patch` with the kind
-    and the active payload and **explicitly `undefined` the unused
-    field** (set `minionId: undefined` for a custom patch and
-    `label: undefined` for a minion patch). Preserve `createdAt`.
-    Return existing id.
-  - Otherwise, `ctx.db.insert` a fresh row with
-    `{ gameId, playerId: player._id, kind, ...content, createdAt: Date.now(), isActive: true }`. Return the new id.
+    (`existing.kind ?? "minion"` equals `content.kind` AND the
+    payload field matches: same `minionId` for minion, same
+    already-trimmed `label` for custom), return the existing id as
+    a no-op (zero writes; the caller observes unchanged
+    `createdAt`).
+  - If found and `content` differs (including the
+    legacy-row case where `existing.kind` is `undefined` and the
+    new `content.kind` is `"minion"` — this performs a one-time
+    idempotent kind-stamping patch on the legacy row), `ctx.db.patch`
+    with the kind and the active payload and **explicitly
+    `undefined` the unused field** (set `minionId: undefined` for
+    a custom patch and `label: undefined` for a minion patch — the
+    `: undefined` idiom is already used to clear optional fields
+    elsewhere, e.g. `convex/games.ts:105`). Preserve `createdAt`.
+    **Return** `{ id: existing._id, prevKind: existing.kind ?? "minion", changed: true }` so the caller can decide whether
+    and how to fire dice rolls (Tasks 3 and 4 below). For the no-op
+    branch, return `{ id, prevKind, changed: false }`. For the
+    fresh-insert branch, return `{ id: newId, prevKind: null, changed: true }`.
+  - Otherwise (no existing active call), `ctx.db.insert` a fresh row
+    with
+    `{ gameId, playerId: player._id, kind, ...content, createdAt: Date.now(), isActive: true }`. Return the new id with
+    `prevKind: null`.
 
   Rationale: centralises the kind/content drift defence (Decision 3)
   and the queue-position invariant in one place; both mutations
-  funnel through it.
+  funnel through it. The `prevKind` return is what lets Task 3
+  resolve the `createdReason` ambiguity for cross-kind head
+  transitions without re-reading the row.
 
 - [ ] Task 3. Refactor `addOrReplaceCall` (`convex/calls.ts:34-109`)
   to use the helper:
@@ -204,29 +233,45 @@ uniformly to both call kinds.
     (`convex/calls.ts:42-54`).
   - Replace the inline insert/patch branch with
     `upsertActiveCall(ctx, { gameId, player, content: { kind: "minion", minionId: args.minionId } })`.
-  - Dice-rolls trigger logic stays as-is and is **gated on the
-    final head's kind**:
-    - `getHeadCallId` after upsert → if the resulting call is the
-      head **and** the upsert resulted in a row with
-      `kind === "minion"`, call `generateRollSetForCall` with the
-      same `reason` semantics as today (`became_head` for empty-
-      queue insert; `minion_replaced` for in-place minion swap).
-    - If the upsert was an idempotent same-minion no-op, no roll
+  - Dice-rolls trigger logic uses the helper's `{ id, prevKind, changed }` return and the post-upsert head id. The
+    **`createdReason` rule** for the resulting roll set is:
+    - `changed === false` (idempotent same-minion no-op): no roll
       fires (matches today).
+    - The upserted row is **not** the head: no roll fires; rolls
+      will fire when the call advances (handled in `removeCall`).
+    - The upserted row **is** the head AND `prevKind === "minion"`
+      AND it was a fresh insert (`prevKind === null` is impossible
+      here when the row is the head and the upsert was a fresh
+      insert into an empty queue — see next bullet) OR the row
+      previously had a different `minionId` (in-place minion-to-
+      minion swap on the head): fire `generateRollSetForCall` with
+      `reason: "minion_replaced"` — matches today's semantics.
+    - The upserted row **is** the head AND (`prevKind === null`
+      i.e. fresh insert into an empty queue, OR `prevKind === "custom"`
+      i.e. cross-kind upgrade where there was no prior minion roll
+      set to "replace"): fire `generateRollSetForCall` with
+      `reason: "became_head"`. *This is the new rule*: when the
+      prior head's `kind` was custom (or absent), the row's minion
+      is **becoming** a head minion for the first time, so
+      `became_head` is the correct semantic, not `minion_replaced`.
 
-  Rationale: roll generation is unchanged for the existing minion
-  paths; the gating only matters once Task 4 introduces custom-kind
-  upserts that share the head.
+  Rationale: the `prevKind === "custom"` branch is the only new
+  path; existing minion-only flows behave exactly as today. The
+  rule is captured by the rule-of-thumb "`minion_replaced` requires
+  a prior minion roll set on the same row; everything else is
+  `became_head`".
 
 - [ ] Task 4. Add a new mutation `addOrReplaceCustomCall({ gameId, label })`:
   - `requireGamePlayer(ctx, args.gameId)` and assert
     `game.state === "playing"` (matches the existing minion
     mutation's preconditions).
-  - Validate `label`: trim; reject empty / whitespace-only; reject
-    `length > 80` after trim; reject if non-string. Throw plain
-    `Error` with a concise user-readable message; the form surfaces
-    it inline.
-  - Call `upsertActiveCall(ctx, { gameId, player, content: { kind: "custom", label } })`.
+  - **Validate and trim `label`** *in this mutation, exactly once*:
+    coerce to string (the validator already does this), trim; reject
+    empty / whitespace-only; reject `length > 80` after trim. Throw
+    plain `Error` with a concise user-readable message; the form
+    surfaces it inline. The trimmed value is what flows into the
+    helper — see Task 2's label trim contract.
+  - Call `upsertActiveCall(ctx, { gameId, player, content: { kind: "custom", label: trimmedLabel } })`.
   - **No `generateRollSetForCall` call.** Custom calls do not roll
     dice (Decision 2). If this upsert turned a *previous* minion
     head into a custom head, no new roll fires; the previous
@@ -236,15 +281,22 @@ uniformly to both call kinds.
 
   Rationale: keeps the Private button a pure client-side shortcut
   (it just supplies `"Private Call"` as the label); the server has
-  no concept of "private".
+  no concept of "private". Trimming exactly once at the mutation
+  boundary keeps equality comparisons in the helper safe from
+  trailing-whitespace mismatches.
 
 - [ ] Task 5. Update `removeCall` (`convex/calls.ts:119-152`) to gate
   the new-head roll generation on `kind`:
   - The "removed call was the head; advance head; roll for new
-    head" branch (`convex/calls.ts:142-150`) must call
-    `generateRollSetForCall` only when the new head's
-    `kind === "minion"`. If the new head is a custom call, the
-    soft-delete proceeds but no roll is generated.
+    head" branch (`convex/calls.ts:142-150`) loads the new head
+    row and resolves `newHeadKind = newHead.kind ?? "minion"`. It
+    calls `generateRollSetForCall({ callId: newHead._id, reason: "became_head" })` **only when `newHeadKind === "minion"`**.
+    If the new head is a custom call, the soft-delete proceeds but
+    no roll is generated.
+  - The `reason` here is unconditionally `became_head` (matches
+    today and matches the rule of thumb in Task 3: a fresh roll on
+    a different row is always `became_head`; `minion_replaced` is
+    reserved for in-place edits to the *same* row).
   - All other behaviour (idempotency, soft-delete fields,
     `removedByGmId`) is unchanged.
 
@@ -272,10 +324,19 @@ uniformly to both call kinds.
   truth and avoids a second round-trip from the client.
 
 - [ ] Task 7. Update `recentlyRemovedCalls`
-  (`convex/calls.ts:316-354`) with the same kind-branching:
-  preserve `label` for custom rows in the return shape so the
-  Game Log drawer can render `<strong>{label}</strong>` instead of
-  resolving a minion that may not exist.
+  (`convex/calls.ts:316-354`) with the same kind-branching the
+  query in Task 6 uses. Per-row return shape:
+  - **Minion row** (`kind === "minion"`, including the legacy
+    `kind === undefined` projection): `{ _id, kind: "minion", playerId, playerName, minionId, minionName, createdAt, removedAt }`. Preserves today's `minionId`/`minionName` keys.
+  - **Custom row** (`kind === "custom"`): `{ _id, kind: "custom", playerId, playerName, label, createdAt, removedAt }`. **Omit
+    `minionId` and `minionName` entirely** — do not project them
+    as `null`/`undefined`; the discriminated union is the contract
+    and Task 18 asserts genuine absence via
+    `Object.prototype.hasOwnProperty.call`.
+
+  Rationale: matches the active-queue projection (Task 6) and lets
+  the Game Log drawer (Task 12) branch on `kind` exhaustively
+  without dereferencing fields that don't exist.
 
 - [ ] Task 8. Update `getCurrentCallDetails`
   (`convex/calls.ts:248-311`) to return a discriminated union:
@@ -315,7 +376,15 @@ uniformly to both call kinds.
   - GM Remove button is unchanged — works on both kinds.
 
 - [ ] Task 11. Update `CurrentCallSection` (`:2070`+) to switch on
-  `data.kind`:
+  `data.kind`. **This includes the pre-render hooks at
+  `:2088-2096`, not just the JSX** — getting the JSX right while
+  leaving the hooks unchanged would have the custom-head case
+  subscribe `api.notes.listNotesForTarget` against
+  `data.minion._id` (which doesn't exist on the custom branch) and
+  crash at hook eval time. Concretely:
+  - Replace `const minionId = data ? data.minion._id : null;` with
+    `const minionId = data && data.kind === "minion" ? data.minion._id : null;` so the `useMemo`/`useQuery` for notes is
+    `"skip"` on a custom head and only fires for a minion head.
   - `"minion"` branch: today's render path, unchanged after the
     payload is unwrapped (the existing `data.minion`,
     `data.syndicate`, `data.rolls` references continue to work).
@@ -327,10 +396,13 @@ uniformly to both call kinds.
     loading state.
 
 - [ ] Task 12. Update `GameLogDrawer`'s "Recently removed calls"
-  section (`:760-800`):
-  - At `:783-786`, switch the rendered name on `c.kind`: minion
-    rows render `c.minionName` as today; custom rows render
-    `c.label`.
+  section (`:760-800`). At `:783-786`, branch on `c.kind`:
+  - **Minion row:** unchanged — `<strong>{c.playerName}</strong> called <strong>{c.minionName}</strong>`.
+  - **Custom row:** swap the connector verb from "called" to
+    "posted" so the sentence reads naturally for free-form labels:
+    `<strong>{c.playerName}</strong> posted <strong>{c.label}</strong>`. ("Alice called Need GM" reads as a typo;
+    "Alice posted Need GM" is unambiguous.)
+  - The "Removed at HH:MM" line is shared and stays as-is.
 
 - [ ] Task 13. Add a `CustomCallButton` + `CustomCallForm` to
   `YouStrip` (`:479-521`):
@@ -402,7 +474,16 @@ uniformly to both call kinds.
     `callRollSets` row is written (the pre-swap roll set is
     untouched). Then replace it back with a minion call and
     assert a fresh `callRollSets` row is written with
-    `createdReason === "minion_replaced"`.
+    `createdReason === "became_head"` (per the Task 3 rule:
+    `minion_replaced` requires a *prior minion* on the same row;
+    when the prior head's kind was `"custom"`, the row's minion
+    is becoming a head minion for the first time, so
+    `became_head` is the correct reason). Finally, replace the
+    minion call again with a *different* `minionId` while it is
+    still the head and assert that roll set has
+    `createdReason === "minion_replaced"` — this is the only
+    path that produces `minion_replaced` and it is unchanged
+    from today.
   - **Removal advancing to a custom new head.** Queue
     `[minion(A), custom(B)]`; remove the head minion call; assert
     no new roll set is generated for B. Conversely with
@@ -418,14 +499,25 @@ uniformly to both call kinds.
     existing fields (regression guard for the wrap).
 
 - [ ] Task 18. Extend the `recentlyRemovedCalls` and `activeCalls`
-  describe blocks with kind-discrimination assertions: a custom
-  row in the response has `kind === "custom"` and `label` set
-  (and no `minionName`); a minion row has `kind === "minion"` and
-  `minionName` set (and no `label`). The non-GM payload for a
-  custom row continues to omit the `rolls` key (use
-  `Object.prototype.hasOwnProperty.call` to assert genuine
-  absence — matches the existing assertion style at the top of
-  `convex/calls.ts:228-230`).
+  describe blocks with kind-discrimination assertions:
+  - A custom row in the response has `kind === "custom"` and
+    `label` set (and `Object.prototype.hasOwnProperty.call(row, "minionName") === false` and same for `minionId`); a minion row
+    has `kind === "minion"` and `minionName` set (and
+    `hasOwnProperty(row, "label") === false`). The non-GM payload
+    for a custom row continues to omit the `rolls` key (matches
+    the existing assertion style at the top of
+    `convex/calls.ts:228-230`).
+  - **Legacy back-compat regression test** (promoted from Risk 1
+    mitigation). Insert a `calls` row directly via
+    `t.run((ctx) => ctx.db.insert("calls", { ... }))` with no
+    `kind` field set (mirroring rows written before this plan
+    shipped). Assert that both `activeCalls` and
+    `recentlyRemovedCalls` project the row with `kind === "minion"`
+    and the existing `minionName` field. Also assert that
+    `addOrReplaceCall` against the same legacy row with the same
+    `minionId` is an idempotent no-op (no new roll set, unchanged
+    `createdAt`) — even though the helper sees `existing.kind === undefined`, its `existing.kind ?? "minion"` projection makes
+    the equality check succeed.
 
 ### Phase 6 — Documentation
 
@@ -482,8 +574,10 @@ uniformly to both call kinds.
    `minionId` set and no `kind`. Readers project `kind ?? "minion"`,
    so legacy rows are indistinguishable from explicit minion rows.
    Mitigation: enforced in Tasks 6–8 with the explicit fallback;
-   add a regression test that inserts a row directly with no `kind`
-   field and asserts both queries treat it as a minion row.
+   the regression test in Task 18 inserts a row directly with no
+   `kind` field and asserts both queries treat it as a minion row
+   AND that an idempotent same-minion `addOrReplaceCall` is a
+   no-op against the legacy shape.
 
 2. **Drift between `kind` and content on replace.** A row that ends
    up with both `minionId` and `label` set, or neither, would break
