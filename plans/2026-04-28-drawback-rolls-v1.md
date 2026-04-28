@@ -12,21 +12,45 @@ contract.
 In addition, mirror the existing preset-skill admin catalogue
 (`convex/presetSkills.ts`, `src/pages/AdminPage.tsx`) with a new preset
 **Drawback** catalogue. Site admins manage a list of named drawback
-templates (name, description, optional abbreviation, `isRolled` boolean);
-the Syndicate editor's drawback form uses that list for autocompletion and
-prefilling, while still allowing free-form drawbacks the same way the skill
-field does.
+templates (name, description, optional abbreviation, `isRolled` boolean).
+
+**Syndicates are not required to use the preset catalogue.** The Syndicate
+editor's drawback form merely *autocompletes* on the preset list — typing
+a preset name will offer it as a suggestion and (on selection) prefill
+the **name and description only**, but free-form drawback names that are
+not in the catalogue remain fully supported, exactly the same way the
+skills field at `src/pages/SyndicateEditorPage.tsx:564-627` permits
+typed-but-not-listed values. The catalogue is a convenience layer, not
+a constraint.
+
+**Visibility of `abbreviation` and `isRolled` is asymmetric by design.**
+Site admins set them when authoring presets; non-admin Syndicate owners
+never see them in the editor. The two fields ride along invisibly when
+the editor matches a preset by name and then live frozen on the
+per-Syndicate row. From a Syndicate owner's vantage point, drawbacks
+are still just `(name, description)` pairs. The abbreviation only ever
+surfaces to a **GM**, and only as the caption on the rolled die in
+`RollSetDisplay`; it is never rendered as a badge in the Current Call
+drawback list, the Syndicate editor, or any Player-visible payload.
+This means free-form drawbacks (typed names not in the catalogue) carry
+`abbreviation: undefined` and `isRolled: false` by default and produce
+no extra die — to make a drawback roll, the Syndicate owner must pick
+a preset whose admin marked it `isRolled === true`.
 
 The two surfaces are:
 
 1. **Per-Syndicate Drawback rows** (`drawbacks` table — already exists,
    Rule 3): gain two new fields, `abbreviation` (optional) and `isRolled`
-   (boolean). Used to drive the new die-roll behaviour and the existing
-   read surfaces.
+   (boolean). The Syndicate editor does not expose them; they are
+   populated only by the preset-prefill pipeline at row-creation time
+   (or directly via the Convex dashboard for admin overrides). Used to
+   drive the new die-roll behaviour.
 2. **Preset Drawback catalogue** (new `presetDrawbacks` table): admin-only
    CRUD; reused as autocomplete templates in the Syndicate editor. Each
    row carries the same four fields so picking a preset can prefill all of
-   them onto the per-syndicate row at insert time.
+   them onto the per-syndicate row at insert time (the user sees only
+   name and description; abbreviation and `isRolled` ride along
+   invisibly).
 
 ## Project structure summary
 
@@ -94,12 +118,17 @@ The two surfaces are:
    `convex/calls.ts:292`. Owners can opt in by editing the drawback row.
 
 5. **Abbreviation drives the die caption; name is the fallback.** The
-   helper's name validator (`convex/lib/rolls.ts:80-106`) already
-   enforces 1–24 chars after trim and rejects empty values. Trigger
-   sites build the caption as `(abbreviation ?? "").trim() ||
-   drawback.name`, then truncate to 24 characters before passing the
-   item in. The validator stays the single source of truth and the UI
-   still gets a non-empty caption for every die.
+   helper's name validator (`convex/lib/rolls.ts:80-106`) enforces
+   1–24 chars after trim and rejects empty values. The drawback
+   trigger site is **stricter** than the helper: it caps the abbreviation
+   at 6 characters at the input boundary (Tasks 1, 3, 6) and truncates
+   the name fallback to 6 characters as well (Task 7 step 5). Six is
+   the brutalist square-cell budget — short enough to fit between
+   Skill and Chaos at the right-rail size without wrapping or shrinking
+   the cell. The 24-char cap in `convex/lib/rolls.ts:66` stays as the
+   helper's defensive ceiling so other future extras kinds (which may
+   want longer captions) are not constrained by the drawback-specific
+   choice.
 
 6. **Preset drawbacks are templates, not foreign keys.** Mirroring the
    preset-skill model (`convex/presetSkills.ts:1-87`), preset rows are
@@ -119,7 +148,7 @@ The two surfaces are:
 
 8. **Brutalist cell labelling fits unchanged.** `RollSetDisplay` already
    rendering `extra.name.toUpperCase()` (`src/components/RollSetDisplay.tsx:133`)
-   means a 12-char abbreviation like `"GLASS-JAW"` slots cleanly between
+   means a 6-char abbreviation like `"GLSJAW"` slots cleanly between
    Skill and Chaos with no styling work. The defence-in-depth natural-1
    re-derivation at `src/components/RollSetDisplay.tsx:124-126` already
    covers drawback dice.
@@ -130,12 +159,18 @@ The two surfaces are:
 
 - [ ] Task 1. In `convex/schema.ts`, extend the existing `drawbacks` table
       (`convex/schema.ts:54-59`) with two optional fields:
-      - `abbreviation: v.optional(v.string())` — short caption (≤12
+      - `abbreviation: v.optional(v.string())` — short caption (≤6
         chars after trim) used as the die-cell label when the drawback
-        rolls. Optional so legacy rows remain valid.
+        rolls. Optional so legacy rows remain valid. Set only via the
+        preset-prefill pipeline (Task 14) at row creation; the
+        Syndicate editor does not expose this field for direct editing.
       - `isRolled: v.optional(v.boolean())` — when `true`, this drawback
         contributes a d6 to every becoming-the-head roll set for any
-        minion in this syndicate. `undefined` projects to `false`.
+        minion in this syndicate. `undefined` projects to `false`. Set
+        only via the preset-prefill pipeline (Task 14) at row creation;
+        the Syndicate editor does not expose this field. To grant a
+        free-form drawback rolling behaviour, an admin must add it to
+        the preset catalogue and the owner must re-pick it.
       No new index is required — drawbacks are already fetched per
       syndicate via `by_syndicate` at `convex/schema.ts:59`.
 
@@ -152,7 +187,14 @@ The two surfaces are:
         per-syndicate row.
       - `createdByUserId: v.id("users")`.
       - `createdAt: v.number()`.
-      Index: `by_name` on `["name"]` (matches preset skills).
+      Add the `by_name` index on `["name"]` explicitly — it mirrors the
+      `presetSkills` index at `convex/schema.ts:39` and exists so the
+      catalogue's autocomplete `list` query returns rows in a stable
+      sort-friendly order. Although the case-insensitive uniqueness
+      check on insert/update is currently implemented via `.collect()`
+      (matching `convex/presetSkills.ts:46-50`), the `by_name` index
+      keeps the table's read pattern symmetric with preset skills and
+      leaves room for a future indexed-prefix lookup.
 
 ### Backend: per-Syndicate drawback CRUD
 
@@ -161,10 +203,16 @@ The two surfaces are:
       and optional `isRolled` arguments. Validation:
       - `abbreviation`, when present, is trimmed; reject if empty after
         trim (treat empty input as "absent" — pass `undefined` through),
-        reject if longer than 12 chars.
+        reject if longer than 6 chars.
       - `isRolled` defaults to `false` when omitted; `true` is accepted
         as-is.
-      Persist both fields via `ctx.db.insert("drawbacks", …)`.
+      Persist both fields via `ctx.db.insert("drawbacks", …)`. Note: in
+      production these args are only ever populated by the editor's
+      preset-prefill pipeline (Task 14); free-form rows pass
+      `undefined` for both. The mutation accepts the args directly
+      rather than performing a server-side preset lookup so a single
+      admin-edit-then-database-script can patch existing rows without
+      touching the editor.
 
 - [ ] Task 4. In `convex/drawbacks.ts`, extend the `update` mutation
       (`convex/drawbacks.ts:45-71`) symmetrically:
@@ -174,7 +222,10 @@ The two surfaces are:
         `convex/lib/calls.ts:105,111`).
       - Accept optional `isRolled` boolean.
       Both fields are independently patchable; omitting them leaves the
-      stored value unchanged.
+      stored value unchanged. The Syndicate editor does **not** call
+      `update` with these fields (Task 14 limits the editor's update
+      payload to `name` and `description`); the args exist for admin
+      DB-shell scripts and any future tooling.
 
 - [ ] Task 5. `listForSyndicate` (`convex/drawbacks.ts:83-93`) requires
       no logic change — the new fields are returned automatically by the
@@ -190,7 +241,7 @@ The two surfaces are:
         `description`, optional `abbreviation`, optional `isRolled`.
         Validates name (trimmed, 1–120 chars, case-insensitive unique
         across the table — same idiom as `convex/presetSkills.ts:46-50`),
-        description (≤2000 chars), abbreviation (trimmed, ≤12 chars or
+        description (≤2000 chars), abbreviation (trimmed, ≤6 chars or
         absent). Defaults `isRolled` to `false`.
       - `update` mutation (`requireSiteAdmin`): patches any subset of
         the four fields with the same per-field validation; explicit
@@ -220,11 +271,17 @@ The two surfaces are:
       5. For each, build an `ExtraRollInput`:
          - `kind: "drawback"` — stable machine discriminator.
          - `name`: `(d.abbreviation ?? "").trim() || d.name`, then
-           truncated to 24 characters via `.slice(0, 24)` after trim.
-           This guarantees the helper's own validator
-           (`convex/lib/rolls.ts:80-106`) cannot reject the value for
-           length; the trim+truncate happens *before* the validator
-           sees the string.
+           truncated to **6 characters** via `.slice(0, 6)` after trim.
+           Six is the brutalist square-cell budget (Key finding 5);
+           the helper's own 24-char ceiling at
+           `convex/lib/rolls.ts:66` still applies as a defensive upper
+           bound but the trigger site is intentionally stricter so all
+           drawback dice render at a uniform width regardless of
+           whether the abbreviation is set. Truncating *before* the
+           validator sees the string also guarantees a name like
+           `"VERY-LONG-DRAWBACK-NAME"` (legal under
+           `DRAWBACK_NAME_MAX = 120`) cannot trip the validator's
+           length check.
          - `value`: `1 + Math.floor(Math.random() * 6)`. Rolling here
            rather than inside `generateRollSetForCall` keeps the
            helper's input shape intact and confines all drawback-aware
@@ -262,14 +319,16 @@ The two surfaces are:
       automatically.
 
 - [ ] Task 11. `getCurrentCallDetails` (`convex/calls.ts:390-469`)
-      requires no change to its `rolls` field; however, widen the
-      `syndicate.drawbacks` projection at `convex/calls.ts:460-464` so
-      the GM deep-dive can render the abbreviation and the `isRolled`
-      indicator alongside the drawback name (used by Task 16). Add
-      `abbreviation: d.abbreviation ?? null` and
-      `isRolled: d.isRolled ?? false` to the per-row object, and update
-      the `CurrentCallDetails` type at `convex/calls.ts:355-388`
-      accordingly.
+      requires no change. The drawback list at
+      `convex/calls.ts:460-464` continues to project just
+      `{ _id, name, description }` — the GM's Current Call section
+      does not render abbreviation badges or `isRolled` markers in the
+      drawback list. The abbreviation surfaces only as the dice-cell
+      caption inside `RollSetDisplay`, which reads it from the immutable
+      `callRollSets.extras` snapshot (Task 7), not from the live
+      drawback row. Keeping the projection narrow also preserves the
+      symmetry with the Player-facing read paths and avoids leaking
+      `isRolled` into a query whose only consumer wouldn't display it.
 
 - [ ] Task 12. `listNotesForTarget` and the rest of the notes pipeline
       (`convex/notes.ts`) require no change — the dice-rolls v3 freezing
@@ -277,18 +336,26 @@ The two surfaces are:
       already snapshots the entire roll set including extras, and the
       GM-only filtering already covers drawback dice.
 
-- [ ] Task 13. `syndicates.getWithChildren` (used by the Syndicate editor;
-      look up its definition in `convex/syndicates.ts`) requires no
-      change beyond confirming that the `drawbacks` projection passes
-      through the two new fields. If it currently maps to a narrowed
-      shape, widen that shape to include `abbreviation` and `isRolled`
-      so the editor (Task 14) sees them.
+- [ ] Task 13. Confirm `syndicates.getWithChildren`
+      (`convex/syndicates.ts:204-235`) requires no change — the
+      handler returns `{ ...syndicate, drawbacks, minions, isOwner,
+      canEdit }` with `drawbacks` set to the raw `.collect()` result
+      and no per-field projection, so the two new optional fields
+      (`abbreviation`, `isRolled`) flow through to the editor
+      automatically. The editor does not display them (Task 14) but
+      passing them through is harmless and matches the
+      no-projection-narrowing convention already used here.
 
-### Frontend: Syndicate editor — drawback fields + autocomplete
+### Frontend: Syndicate editor — drawback autocomplete (no new visible fields)
 
 - [ ] Task 14. In `src/pages/SyndicateEditorPage.tsx`, extend
       `DrawbacksEditor` (`src/pages/SyndicateEditorPage.tsx:188-259`)
-      and `DrawbackRow` (`src/pages/SyndicateEditorPage.tsx:261-322`):
+      and `DrawbackRow` (`src/pages/SyndicateEditorPage.tsx:261-322`).
+      The editor's user-visible surface stays exactly
+      `(name, description)` for both creation and existing-row editing —
+      no abbreviation input, no "Rolled when called" checkbox is
+      rendered. The two new fields are populated invisibly when (and
+      only when) the user picks a name that matches a preset.
       - Subscribe to `api.presetDrawbacks.list` (analogous to the
         existing `api.presetSkills.list` subscription at
         `src/pages/SyndicateEditorPage.tsx:338`).
@@ -296,19 +363,35 @@ The two surfaces are:
         input so users see preset names as suggestions (mirror the
         `SkillsField` pattern at `src/pages/SyndicateEditorPage.tsx:577-587`).
       - When the typed name **exactly matches** (case-insensitive) a
-        preset row, prefill the description, abbreviation, and
-        `isRolled` fields with the preset's values on first match — but
-        leave them user-editable. Document this in a comment so a
-        future contributor doesn't mistake it for a strict link.
-      - Add two controls per row in addition to the existing name and
-        description: an `abbreviation` text input (≤12 chars,
-        placeholder "Short label") and a checkbox "Rolled when called"
-        wired to `isRolled`. Both controls are disabled when
-        `canEdit === false` (matches the existing `disabled` pattern).
-      - Pipe both new fields through to the `create` and `update`
-        mutations. Treat an empty-after-trim abbreviation as
-        `undefined` at the boundary so the backend's validator gets a
-        clean shape.
+        preset row, on the matching keystroke prefill the visible
+        `description` field (only when the description input is empty
+        or whitespace, to avoid clobbering user-entered prose) and
+        snapshot the preset's `abbreviation` and `isRolled` into
+        component state. On submit, pass all four fields
+        (`name`, `description`, `abbreviation`, `isRolled`) to the
+        `create` mutation; otherwise pass just `(name, description)`
+        and let the schema's optionals default to absent / `false`.
+        Document this in a code comment so a future contributor doesn't
+        mistake the auto-prefill for a strict link to the preset row.
+      - Existing-row editing: `DrawbackRow`'s save action calls
+        `update` with **only** `(name, description)`. The persisted
+        `abbreviation` and `isRolled` are intentionally not patchable
+        from this UI — they remain at whatever value the row was
+        created with (or `undefined` / `false` for free-form rows). To
+        change the rolling behaviour of an existing row the owner
+        must delete and re-create it.
+      - The whole prefill machinery is gated on `canEdit === true`,
+        consistent with the disabled-state pattern at
+        `src/pages/SyndicateEditorPage.tsx:290,300`.
+
+      Rationale: the user feedback (2026-04-28) explicitly scoped
+      `abbreviation` and `isRolled` to the admin domain — site admins
+      author them on presets, GMs see the abbreviation only on the
+      rolled die. Surfacing the boolean in the syndicate-owner UI
+      would invite mis-toggles and re-open the immutability
+      expectation gap (Risk 6). This task therefore eliminates the
+      tooltip-on-checkbox affordance entirely and preserves the
+      existing two-field editor shape.
 
 ### Frontend: Admin console — preset drawback section
 
@@ -326,15 +409,18 @@ The two surfaces are:
       No new visual primitives required — reuse `card`, `card stack`,
       `error-text`, `success-text`, `danger`, `secondary` classes.
 
-### Frontend: Current Call section — drawback indicators
+### Frontend: Current Call section — no drawback-row indicators
 
-- [ ] Task 16. In `src/pages/GameDetailPage.tsx`'s `CurrentCallSection`
-      (around `src/pages/GameDetailPage.tsx:2057-2294` per the dice-v3
-      plan), augment the per-drawback rendering so each drawback line
-      shows its `abbreviation` (when present) as a small mono badge and
-      a "Rolled" marker when `isRolled === true`, so the GM can visually
-      correlate the rendered die with the drawback that produced it.
-      Reuse existing utility classes — no new tokens.
+- [ ] Task 16. In `src/pages/GameDetailPage.tsx`'s `CurrentCallSection`,
+      the drawback list at
+      `src/pages/GameDetailPage.tsx:2410-2437` requires **no change**.
+      The GM-facing drawback list keeps its existing
+      `(name, description)` rendering — abbreviation and `isRolled`
+      are intentionally never surfaced here per the visibility
+      contract in the Objective. Add a one-line code comment at the
+      top of that block explaining the omission so a future contributor
+      doesn't "helpfully" add a badge. The abbreviation appears solely
+      as the dice-cell caption rendered by `RollSetDisplay` (Task 17).
 
 ### Frontend: dice display — no changes required
 
@@ -352,37 +438,51 @@ The two surfaces are:
 
 ### Backend: tests
 
-- [ ] Task 18. Extend `convex/drawbacks.test.ts` (or the equivalent
-      test file — confirm path) with cases for the new fields:
+- [ ] Task 18. Create `convex/drawbacks.test.ts` (no existing test
+      file for this module — the existing backend test suite at
+      `convex/calls.test.ts`, `convex/notes.test.ts`,
+      `convex/treasonGrants.test.ts`, `convex/goals.test.ts`,
+      `convex/publicBids.test.ts` provides the harness pattern). Use
+      `convex/treasonGrants.test.ts` as the structural template (it
+      exercises owner-gated CRUD with optional fields, which is the
+      closest analog). Cases:
       - `create` accepts optional `abbreviation` and optional
         `isRolled`; persists them; rejects abbreviation longer than
-        12 chars; treats empty-after-trim abbreviation as
+        6 chars; treats empty-after-trim abbreviation as
         `undefined`.
       - `update` patches abbreviation and `isRolled` independently;
-        explicit empty abbreviation clears the field.
+        explicit empty abbreviation clears the field. (Note: the
+        editor will not exercise these update paths in production —
+        Task 14 — but they exist for admin tooling and must be
+        regression-tested.)
       - `listForSyndicate` returns the new fields.
 
-- [ ] Task 19. Create `convex/presetDrawbacks.test.ts` mirroring the
-      existing preset-skill test structure (look at
-      `convex/presetSkills.test.ts` if present; otherwise use the
-      patterns in `convex/drawbacks.test.ts`):
-      - Site admin can create / update / delete; non-admin cannot.
+- [ ] Task 19. Create `convex/presetDrawbacks.test.ts` (no existing
+      test file — `convex/presetSkills.ts` is also untested today, so
+      there is no direct preset analog). Use
+      `convex/treasonGrants.test.ts` as a structural template for
+      admin-gated CRUD. Cases:
+      - Site admin can create / update / delete; non-admin cannot
+        (asserts `requireSiteAdmin` throws for a vanilla user).
       - Case-insensitive name uniqueness on insert and update.
       - All four fields round-trip; abbreviation length validation
-        applied; `isRolled` defaults to `false` on omission.
+        (≤6 chars) applied; `isRolled` defaults to `false` on
+        omission.
 
 - [ ] Task 20. Extend `convex/calls.test.ts`'s "dice rolls" describe
       block (or add a new "drawback rolls" block) to cover:
       - Creating a syndicate with two `isRolled` drawbacks and one
-        non-rolled drawback, then issuing a head call: the resulting
-        roll set has exactly two extras with `kind === "drawback"`,
-        each with a value in `[1,6]`, and each with `name` equal to
-        the drawback's abbreviation (or fallback name) uppercased
-        post-validation.
+        non-rolled drawback (seeded directly via `ctx.db.insert` or
+        `t.run` so the editor gating in Task 14 doesn't apply), then
+        issuing a head call: the resulting roll set has exactly two
+        extras with `kind === "drawback"`, each with a value in
+        `[1,6]`, and each with `name` equal to the drawback's
+        abbreviation (or fallback name) truncated to 6 chars and
+        uppercased post-validation.
       - A drawback whose abbreviation is empty after trim falls back
         to `name` and the helper still accepts the row.
-      - A drawback whose name is longer than 24 chars and has no
-        abbreviation is truncated to 24 chars at the trigger site
+      - A drawback whose name is longer than 6 chars and has no
+        abbreviation is truncated to 6 chars at the trigger site
         (asserts the truncation invariant in Task 7 step 5).
       - When `chaosRoll === 1` AND a drawback rolls `1`, both cells
         are recorded as `result: "failure"` (regression guard against
@@ -391,6 +491,21 @@ The two surfaces are:
         with `isRolled` drawbacks emits a brand-new roll set whose
         extras are independently re-rolled (each row's drawback
         values can differ from the previous row's).
+      - **Toggle-then-replace**: starting from a head call whose
+        syndicate has a non-rolled drawback, flipping that drawback's
+        `isRolled` to `true` directly via `ctx.db.patch` (the editor
+        cannot do this in production — Task 14 — but the backend
+        invariant must still hold) and then triggering a
+        replace-in-place on the head minion produces a new roll set
+        whose extras include the now-rolled drawback. This asserts
+        the trigger-site re-read happens *after* the queue mutation
+        commits, so newly-rolled drawbacks are picked up immediately
+        on the next eligible event without restarting the game.
+      - **Free-form drawbacks do not roll**: a syndicate with a
+        drawback that has `abbreviation: undefined` and
+        `isRolled: undefined` (the default for any row created
+        without preset prefill) emits zero drawback extras even
+        though the drawback row exists.
       - Removing the head call promotes the next call and includes
         that next call's syndicate's `isRolled` drawbacks as extras
         on the new roll set.
@@ -419,14 +534,23 @@ The two surfaces are:
         a site admin and the same "no privileges" card for everyone
         else.
       - The Syndicate editor's drawback name input opens the preset
-        list as a `<datalist>`; selecting a preset prefills
-        description, abbreviation, and `isRolled`.
+        list as a `<datalist>`; selecting a preset prefills only the
+        description (and only when the description is empty), and
+        does **not** add any abbreviation input or "Rolled when
+        called" checkbox to the editor.
+      - Free-form drawback names not in the catalogue still create
+        successfully and are persisted with
+        `abbreviation: undefined`, `isRolled: false`.
       - A GM playing a game whose head minion belongs to a syndicate
-        with two `isRolled` drawbacks sees four cells (Skill, Chaos,
-        and two drawback cells) in the right rail's head row and in
-        the Current Call section, with each drawback cell captioned
-        by the abbreviation (uppercased) or the drawback name when
-        no abbreviation is set.
+        with two preset-sourced `isRolled` drawbacks sees four cells
+        (Skill, Chaos, and two drawback cells) in the right rail's
+        head row and in the Current Call section, with each drawback
+        cell captioned by the abbreviation (uppercased, ≤6 chars) or
+        the drawback name truncated to 6 chars and uppercased when no
+        abbreviation is set.
+      - The GM's Current Call drawback list still shows just
+        `name` + `description` per drawback — no badge, no "Rolled"
+        marker.
       - A natural `1` on any drawback die shows the riot-red top
         rule + "FAIL" badge identical to the skill failure
         treatment.
@@ -436,18 +560,26 @@ The two surfaces are:
 - A site admin can create, edit, and delete preset drawbacks via the
   Admin page; a non-admin sees a read-only message in that section.
 - The Syndicate editor lists preset drawback names as autocomplete
-  suggestions on the new-drawback name input; picking a preset
-  prefills description, abbreviation, and `isRolled`. Free-form
-  drawback names not in the catalogue still create successfully.
-- The Syndicate editor exposes editable abbreviation and "Rolled when
-  called" controls on every drawback row, both disabled when the
-  syndicate is read-only or played.
+  suggestions on the new-drawback name input. Picking a preset
+  prefills the description (only when empty) and silently carries
+  the preset's `abbreviation` and `isRolled` into the per-Syndicate
+  row at create time. Free-form drawback names not in the catalogue
+  still create successfully and are persisted with
+  `abbreviation: undefined` and `isRolled: false`.
+- The Syndicate editor's drawback rows expose only `name` and
+  `description` controls — no abbreviation input and no "Rolled when
+  called" checkbox is rendered for syndicate owners. Editing an
+  existing drawback row patches `name` and `description` only;
+  `abbreviation` and `isRolled` retain their creation-time values.
 - When a Minion call reaches the head of the queue, the GM's
   Current Call section and right-rail head row display one extra
   die per `isRolled === true` drawback on that Minion's syndicate,
   in the same order the editor shows them. Each die's caption is
-  the abbreviation (uppercased) or the drawback name (uppercased,
-  truncated to 24 chars) when no abbreviation is set.
+  the abbreviation (uppercased, ≤6 chars) or the drawback name
+  truncated to 6 chars and uppercased when no abbreviation is set.
+- The GM's Current Call drawback list continues to render only
+  `(name, description)` per drawback — no abbreviation badge or
+  "Rolled" marker is shown anywhere outside the dice-cell caption.
 - Replacing the head minion with another (same syndicate or
   different syndicate) regenerates the entire roll set including
   fresh drawback rolls, and removing the head promotes the next
@@ -474,10 +606,12 @@ The two surfaces are:
 ## Potential Risks and Mitigations
 
 1. **Caption length collisions.** A drawback whose abbreviation is
-   absent and whose name is over 24 chars would otherwise be rejected
-   by `normaliseExtraRoll`. Mitigation: Task 7 step 5 truncates to 24
-   characters before the helper sees the string, so the validator
-   never trips. Task 20 adds a regression test for this branch.
+   absent and whose name is longer than 6 chars would render an
+   under-filled cell if the trigger site didn't truncate. Mitigation:
+   Task 7 step 5 truncates to 6 characters before the helper sees the
+   string, and the brutalist square cell renders any 1–6 char caption
+   uniformly. Task 20 adds a regression test for the truncation
+   branch and for the abbreviation-absent fallback path.
 
 2. **Per-game read-budget growth.** Each becoming-the-head event now
    loads the syndicate's drawbacks (already loaded in
@@ -506,15 +640,22 @@ The two surfaces are:
    row, not a multi-input field. Mitigation: Task 14 explicitly
    models the drawback datalist on `SkillsField`'s pattern at
    `src/pages/SyndicateEditorPage.tsx:564-627`, so the keyboard
-   semantics match.
+   semantics match. The auto-prefill only writes into the visible
+   `description` field when it is empty (avoiding the clobber-while-
+   typing failure mode), and never writes into a field the user can
+   see for `abbreviation` / `isRolled` (those fields aren't
+   rendered).
 
 6. **`isRolled` toggling mid-game changes future rolls but not past
    ones.** Players might expect a toggled drawback to retroactively
    change rolls. Mitigation: roll sets are immutable
    (`callRollSets` is append-only by design — see Key finding 3 in
-   the dice-rolls v3 plan). Document the expected behaviour in
-   `convex/drawbacks.ts` next to the new field, and surface it as a
-   tooltip in the editor.
+   the dice-rolls v3 plan). The Syndicate editor cannot toggle
+   `isRolled` at all (Task 14 deliberately removes the affordance),
+   so the only mid-game toggles can come from an admin DB-shell
+   patch. Document the expected behaviour as a code comment in
+   `convex/drawbacks.ts` next to the new field so admins reading
+   the schema know the semantics before they reach for `db.patch`.
 
 7. **Naming of `isRolled`.** The user explicitly invited a better
    name. Mitigation: stay with `isRolled` for parity with the
