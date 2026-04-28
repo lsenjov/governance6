@@ -515,6 +515,7 @@ function YouStrip({
       {gameState === "playing" && (
         <TransferButton gameId={gameId} myPlayerId={me._id} roster={roster} />
       )}
+      {gameState === "playing" && <CustomCallButton gameId={gameId} />}
       <LedgerButton gameId={gameId} />
     </div>
   );
@@ -554,6 +555,97 @@ function TransferButton({
         </ActionPopover>
       )}
     </div>
+  );
+}
+
+function CustomCallButton({ gameId }: { gameId: GameId }) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  return (
+    <div
+      ref={anchorRef}
+      style={{ position: "relative", display: "inline-block" }}
+    >
+      <button type="button" onClick={() => setOpen((o) => !o)}>
+        Custom Call
+      </button>
+      {open && (
+        <ActionPopover
+          anchorRef={anchorRef}
+          onClose={() => setOpen(false)}
+          title="Custom Call"
+        >
+          <CustomCallForm gameId={gameId} onSuccess={() => setOpen(false)} />
+        </ActionPopover>
+      )}
+    </div>
+  );
+}
+
+function CustomCallForm({
+  gameId,
+  onSuccess,
+}: {
+  gameId: GameId;
+  onSuccess: () => void;
+}) {
+  const addOrReplaceCustomCall = useMutation(api.calls.addOrReplaceCustomCall);
+  const [label, setLabel] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(value: string) {
+    setErr(null);
+    setBusy(true);
+    try {
+      await addOrReplaceCustomCall({ gameId, label: value });
+      setLabel("");
+      onSuccess();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not post custom call.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const trimmed = label.trim();
+
+  return (
+    <form
+      onSubmit={(e: FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        if (trimmed.length === 0) return;
+        void submit(trimmed);
+      }}
+      className="stack"
+    >
+      <input
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        placeholder="Label (e.g. Need GM)"
+        aria-label="Custom call label"
+        maxLength={80}
+        style={{ width: "100%" }}
+      />
+      <div className="muted" style={{ fontSize: "0.85rem" }}>
+        Replaces your current call, if any.
+      </div>
+      {err && <div className="error-text">{err}</div>}
+      <div className="row-wrap" style={{ gap: "0.5rem" }}>
+        <button type="submit" disabled={busy || trimmed.length === 0}>
+          {busy ? "Posting…" : "Add custom call"}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy}
+          title="Posts the text 'Private Call' to the queue."
+          onClick={() => void submit("Private Call")}
+        >
+          Private Call
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -781,8 +873,17 @@ function GameLogDrawer({
             <div key={c._id} className="row-divider">
               <div>
                 <strong>{c.playerName}</strong>
-                <span className="muted"> called </span>
-                <strong>{c.minionName}</strong>
+                {c.kind === "minion" ? (
+                  <>
+                    <span className="muted"> called </span>
+                    <strong>{c.minionName}</strong>
+                  </>
+                ) : (
+                  <>
+                    <span className="muted"> posted </span>
+                    <strong>{c.label}</strong>
+                  </>
+                )}
               </div>
               <div className="muted" style={{ fontSize: "0.8rem" }}>
                 Removed {new Date(c.removedAt).toLocaleTimeString()}
@@ -1445,23 +1546,29 @@ function CallQueueRail({
                 <div style={{ minWidth: 0 }}>
                   <strong>{c.playerName}</strong>
                   <span className="muted"> → </span>
-                  <strong>{c.minionName}</strong>
+                  {c.kind === "minion" ? (
+                    <strong>{c.minionName}</strong>
+                  ) : (
+                    <strong>{c.label}</strong>
+                  )}
                   <span className="muted" style={{ fontSize: "0.8rem" }}>
                     {" · "}
                     {new Date(c.createdAt).toLocaleTimeString()}
                   </span>
                 </div>
                 <span className="row" style={{ gap: "0.25rem" }}>
-                  <NoteIcon
-                    gameId={gameId}
-                    target={{ kind: "minion", minionId: c.minionId }}
-                    count={resolveNoteCount(noteCounts, {
-                      kind: "minion",
-                      minionId: c.minionId,
-                    })}
-                    label={c.minionName}
-                    hideManagementControls={hideManagementControls}
-                  />
+                  {c.kind === "minion" && (
+                    <NoteIcon
+                      gameId={gameId}
+                      target={{ kind: "minion", minionId: c.minionId }}
+                      count={resolveNoteCount(noteCounts, {
+                        kind: "minion",
+                        minionId: c.minionId,
+                      })}
+                      label={c.minionName}
+                      hideManagementControls={hideManagementControls}
+                    />
+                  )}
                   {isGm && (
                     <button
                       type="button"
@@ -1475,14 +1582,15 @@ function CallQueueRail({
                   )}
                 </span>
               </div>
-              {/* Dice: only for the FIFO head, only for GMs. The
-                  `rolls` field is omitted from non-GM payloads, so a
-                  Player will never satisfy this branch even if
-                  `isGm` is somehow stale on the client. */}
-              {isGm && i === 0 && "rolls" in c && (
+              {/* Dice: only for the FIFO head, only for GMs, only for
+                  minion-kind rows. The `rolls` field is omitted from
+                  non-GM payloads AND from custom rows (Task 6), so a
+                  Player will never satisfy this branch and a custom
+                  head will never render dice. */}
+              {isGm && i === 0 && c.kind === "minion" && "rolls" in c && (
                 <div style={{ marginTop: "0.4rem" }}>
                   <RollSetDisplay
-                    rolls={(c as { rolls: Parameters<typeof RollSetDisplay>[0]["rolls"] }).rolls}
+                    rolls={c.rolls ?? null}
                     size="sm"
                   />
                 </div>
@@ -2085,7 +2193,11 @@ function CurrentCallSection({
   const removeCall = useMutation(api.calls.removeCall);
   const deleteNote = useMutation(api.notes.deleteNote);
 
-  const minionId = data ? data.minion._id : null;
+  // Notes only attach to a minion-kind head. Gate on `data.kind` so a
+  // custom head doesn't subscribe `listNotesForTarget` against an
+  // absent `data.minion._id` (which would crash the hook).
+  const minionId =
+    data && data.kind === "minion" ? data.minion._id : null;
   const noteListArgs = useMemo(() => {
     if (!minionId) return null;
     return buildListArgs(gameId, { kind: "minion", minionId });
@@ -2139,6 +2251,60 @@ function CurrentCallSection({
     );
   }
 
+  // Custom head: render just the caller / label / time / Remove header.
+  // Custom calls have no minion, syndicate, drawbacks, or rolls — there
+  // is no Context column or Notes column to render.
+  if (data.kind === "custom") {
+    return (
+      <section>
+        <h3 style={{ marginTop: 0 }}>Current Call</h3>
+        <div className="card tight" style={{ marginBottom: "0.75rem" }}>
+          {removeErr && <div className="error-text">{removeErr}</div>}
+          <div
+            className="row"
+            style={{
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "0.5rem",
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <strong>{data.call.playerName}</strong>
+              <span className="muted"> → </span>
+              <strong>{data.label}</strong>
+              <span className="muted" style={{ fontSize: "0.85rem" }}>
+                {" · "}
+                {new Date(data.call.createdAt).toLocaleTimeString()}
+              </span>
+            </div>
+            <span
+              className="row"
+              style={{ gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}
+            >
+              <button
+                type="button"
+                className="danger"
+                onClick={() => void handleRemoveCall(data.call._id)}
+                aria-label="Remove call"
+              >
+                Remove call
+              </button>
+            </span>
+          </div>
+          <div
+            className="muted"
+            style={{ fontSize: "0.85rem", marginTop: "0.5rem" }}
+          >
+            Custom calls have no Minion or Syndicate context.
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // Minion head: existing render path. From here `data.kind === "minion"`,
+  // so `data.minion`, `data.syndicate`, and `data.rolls` are all in scope.
   const visibleNotes = notes ? notes.slice(0, 5) : undefined;
   const olderCount = notes ? Math.max(0, notes.length - 5) : 0;
 

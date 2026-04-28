@@ -167,7 +167,7 @@ uniformly to both call kinds.
 
 ### Phase 1 — Schema
 
-- [ ] Task 1. In `convex/schema.ts:142-154`, mutate the `calls` table:
+- [x] Task 1. In `convex/schema.ts:142-154`, mutate the `calls` table:
   - Make `minionId` optional: `minionId: v.optional(v.id("minions"))`.
   - Add `kind: v.optional(v.union(v.literal("minion"), v.literal("custom")))`. Readers treat `undefined` as `"minion"` for
     back-compat with existing rows (every existing row has `minionId`
@@ -184,7 +184,7 @@ uniformly to both call kinds.
 
 ### Phase 2 — Backend mutations (`convex/calls.ts`)
 
-- [ ] Task 2. Extract the "one active call per player; preserve `_id`
+- [x] Task 2. Extract the "one active call per player; preserve `_id`
   and `createdAt` on replace" invariant into a helper
   `upsertActiveCall(ctx, { gameId, player, content })` placed in a
   new file `convex/lib/calls.ts` (matches the existing
@@ -227,7 +227,7 @@ uniformly to both call kinds.
   resolve the `createdReason` ambiguity for cross-kind head
   transitions without re-reading the row.
 
-- [ ] Task 3. Refactor `addOrReplaceCall` (`convex/calls.ts:34-109`)
+- [x] Task 3. Refactor `addOrReplaceCall` (`convex/calls.ts:34-109`)
   to use the helper:
   - The minion-bought precondition stays
     (`convex/calls.ts:42-54`).
@@ -261,7 +261,7 @@ uniformly to both call kinds.
   a prior minion roll set on the same row; everything else is
   `became_head`".
 
-- [ ] Task 4. Add a new mutation `addOrReplaceCustomCall({ gameId, label })`:
+- [x] Task 4. Add a new mutation `addOrReplaceCustomCall({ gameId, label })`:
   - `requireGamePlayer(ctx, args.gameId)` and assert
     `game.state === "playing"` (matches the existing minion
     mutation's preconditions).
@@ -285,7 +285,7 @@ uniformly to both call kinds.
   boundary keeps equality comparisons in the helper safe from
   trailing-whitespace mismatches.
 
-- [ ] Task 5. Update `removeCall` (`convex/calls.ts:119-152`) to gate
+- [x] Task 5. Update `removeCall` (`convex/calls.ts:119-152`) to gate
   the new-head roll generation on `kind`:
   - The "removed call was the head; advance head; roll for new
     head" branch (`convex/calls.ts:142-150`) loads the new head
@@ -305,7 +305,7 @@ uniformly to both call kinds.
 
 ### Phase 3 — Backend queries (`convex/calls.ts`)
 
-- [ ] Task 6. Update `activeCalls` (`convex/calls.ts:162-234`) to
+- [x] Task 6. Update `activeCalls` (`convex/calls.ts:162-234`) to
   branch on `kind`:
   - Resolve `kind` per row as `c.kind ?? "minion"` (back-compat).
   - Minion branch (`kind === "minion"`): unchanged — load minion,
@@ -323,7 +323,7 @@ uniformly to both call kinds.
   Rationale: keeps the live-subscribed query as the UI's source of
   truth and avoids a second round-trip from the client.
 
-- [ ] Task 7. Update `recentlyRemovedCalls`
+- [x] Task 7. Update `recentlyRemovedCalls`
   (`convex/calls.ts:316-354`) with the same kind-branching the
   query in Task 6 uses. Per-row return shape:
   - **Minion row** (`kind === "minion"`, including the legacy
@@ -338,7 +338,7 @@ uniformly to both call kinds.
   the Game Log drawer (Task 12) branch on `kind` exhaustively
   without dereferencing fields that don't exist.
 
-- [ ] Task 8. Update `getCurrentCallDetails`
+- [x] Task 8. Update `getCurrentCallDetails`
   (`convex/calls.ts:248-311`) to return a discriminated union:
   - **`kind: "custom"`:** when the head call is custom, return
     `{ kind: "custom", call: { _id, createdAt, playerId, playerName }, label }`. Skip every minion / syndicate / drawback / roll-set
@@ -354,7 +354,7 @@ uniformly to both call kinds.
   for a custom head (caller, label, time, Remove button) without
   fabricating a minion or syndicate.
 
-- [ ] Task 9. Define and export a TypeScript discriminated-union
+- [x] Task 9. Define and export a TypeScript discriminated-union
   type `CallRow` in `convex/calls.ts` reflecting the shared shape
   (`_id`, `playerId`, `createdAt`, `playerName`) plus the kind-
   specific payload (`{ kind: "minion"; minionId; minionName; rolls? }` | `{ kind: "custom"; label }`). Used by the client for
@@ -362,7 +362,7 @@ uniformly to both call kinds.
 
 ### Phase 4 — Client (`src/pages/GameDetailPage.tsx`)
 
-- [ ] Task 10. Update `CallQueueRail` (`:1404-1496`):
+- [x] Task 10. Update `CallQueueRail` (`:1404-1496`):
   - Replace the unconditional `<strong>{c.minionName}</strong>`
     render at `:1448` with a `kind` switch:
     - `"minion"` → existing layout, including the per-row
@@ -375,7 +375,7 @@ uniformly to both call kinds.
       because Task 6 omits the field.
   - GM Remove button is unchanged — works on both kinds.
 
-- [ ] Task 11. Update `CurrentCallSection` (`:2070`+) to switch on
+- [x] Task 11. Update `CurrentCallSection` (`:2070`+) to switch on
   `data.kind`. **This includes the pre-render hooks at
   `:2088-2096`, not just the JSX** — getting the JSX right while
   leaving the hooks unchanged would have the custom-head case
@@ -395,7 +395,7 @@ uniformly to both call kinds.
     the empty space is intentional rather than mistakable for a
     loading state.
 
-- [ ] Task 12. Update `GameLogDrawer`'s "Recently removed calls"
+- [x] Task 12. Update `GameLogDrawer`'s "Recently removed calls"
   section (`:760-800`). At `:783-786`, branch on `c.kind`:
   - **Minion row:** unchanged — `<strong>{c.playerName}</strong> called <strong>{c.minionName}</strong>`.
   - **Custom row:** swap the connector verb from "called" to
@@ -404,7 +404,7 @@ uniformly to both call kinds.
     "Alice posted Need GM" is unambiguous.)
   - The "Removed at HH:MM" line is shared and stays as-is.
 
-- [ ] Task 13. Add a `CustomCallButton` + `CustomCallForm` to
+- [x] Task 13. Add a `CustomCallButton` + `CustomCallForm` to
   `YouStrip` (`:479-521`):
   - **Visibility.** Render only when
     `gameState === "playing"` (Transfer is already gated this way
@@ -435,7 +435,7 @@ uniformly to both call kinds.
   across the right rail and mobile bottom-sheet because `YouStrip`
   is rendered once at the top of the page.
 
-- [ ] Task 14. Leave the per-Minion **Call** button in
+- [x] Task 14. Leave the per-Minion **Call** button in
   `MinionBuyPanel` (`:1281-1290`) unchanged. Its behaviour is
   identical: clicking still issues the existing
   `api.calls.addOrReplaceCall` mutation, which now flows through
@@ -443,7 +443,7 @@ uniformly to both call kinds.
 
 ### Phase 5 — Tests (extend `convex/calls.test.ts`)
 
-- [ ] Task 15. Add a new `describe("addOrReplaceCustomCall", ...)`
+- [x] Task 15. Add a new `describe("addOrReplaceCustomCall", ...)`
   block reusing the existing `createHarness()` helper. Cover:
   - Custom call inserts when no active call exists; row has
     `kind === "custom"`, `label` set, `minionId` undefined,
@@ -464,7 +464,7 @@ uniformly to both call kinds.
     `game.state === "ready"` and `"archived"` rejected with the
     "only while playing" error.
 
-- [ ] Task 16. Extend the existing dice-rolls describe block(s) in
+- [x] Task 16. Extend the existing dice-rolls describe block(s) in
   the same file with two cases:
   - **Custom call does not generate a roll set.** Insert a custom
     head call from an empty queue; assert `callRollSets` for that
@@ -490,7 +490,7 @@ uniformly to both call kinds.
     `[custom(A), minion(B)]`, removing A's head emits a fresh
     roll set for B with `createdReason === "became_head"`.
 
-- [ ] Task 17. Extend the existing `getCurrentCallDetails` describe
+- [x] Task 17. Extend the existing `getCurrentCallDetails` describe
   block with:
   - **Custom head returns `kind: "custom"`** with the caller's
     name, the label, and the call timestamp; no `minion`,
@@ -498,7 +498,7 @@ uniformly to both call kinds.
   - **Minion head still returns `kind: "minion"`** with the
     existing fields (regression guard for the wrap).
 
-- [ ] Task 18. Extend the `recentlyRemovedCalls` and `activeCalls`
+- [x] Task 18. Extend the `recentlyRemovedCalls` and `activeCalls`
   describe blocks with kind-discrimination assertions:
   - A custom row in the response has `kind === "custom"` and
     `label` set (and `Object.prototype.hasOwnProperty.call(row, "minionName") === false` and same for `minionId`); a minion row
@@ -521,7 +521,7 @@ uniformly to both call kinds.
 
 ### Phase 6 — Documentation
 
-- [ ] Task 19. Update the file-top doc comment in
+- [x] Task 19. Update the file-top doc comment in
   `convex/calls.ts:18-32` to:
   - Mention the two call kinds (`"minion"`, `"custom"`).
   - Note that "Private Call" is a client-side shortcut for a

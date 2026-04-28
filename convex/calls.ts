@@ -13,22 +13,30 @@ import {
   projectRollSet,
   type RollSetView,
 } from "./lib/rolls";
+import { upsertActiveCall } from "./lib/calls";
 import type { Doc, Id } from "./_generated/dataModel";
 
 /**
  * Call Queue — Rule 22.
  *
  * FIFO by `createdAt` ascending. At most one active Call per Player.
- * Adding a new Call while one exists REPLACES the existing Call's `minionId`
- * in place, preserving `createdAt` and document id (queue position preserved).
- * Same-minion replace is a no-op.
+ * Adding a new Call while one exists REPLACES the existing Call's content
+ * in place via `upsertActiveCall`, preserving `createdAt` and document id
+ * (queue position preserved). Same-content resubmits are no-ops.
  *
- * Removed Calls are soft-deleted (`isActive=false`, `removedAt` set); the last
- * 10 are visible in a history panel.
+ * Two call kinds:
+ *   - `"minion"` — bought-Minion calls. Generate dice rolls per the
+ *     dice-rolls v3 plan whenever the call is at the FIFO head.
+ *   - `"custom"` — free-form text label calls. The "Private Call"
+ *     button in `YouStrip` is purely a client-side shortcut for a
+ *     custom call whose `label === "Private Call"`; the server has no
+ *     concept of "private" — every active call remains visible to
+ *     every game participant. Custom calls do NOT generate roll sets;
+ *     the natural-1 / dice-rolls invariants from v3 only apply to
+ *     minion calls.
  *
- * Dice rolls (plans/2026-04-28-2026-04-28-dice-rolls-v3.md): every time a
- * Call reaches the head of the queue, a new `callRollSets` row is
- * generated. Visible to the GM only.
+ * Removed Calls are soft-deleted (`isActive=false`, `removedAt` set);
+ * the last 10 are visible in a history panel.
  */
 
 export const addOrReplaceCall = mutation({
@@ -53,58 +61,79 @@ export const addOrReplaceCall = mutation({
       throw new Error("You must buy this Minion before calling it.");
     }
 
-    // Existing active Call for this Player?
-    const existing = await ctx.db
-      .query("calls")
-      .withIndex("by_game_player_active", (q) =>
-        q.eq("gameId", args.gameId).eq("playerId", player._id).eq("isActive", true),
-      )
-      .unique();
-
-    if (existing) {
-      if (existing.minionId === args.minionId) {
-        // Rule 22: idempotent no-op.
-        return existing._id;
-      }
-      // Rule 22: replace-in-place; preserve createdAt and document id.
-      await ctx.db.patch(existing._id, { minionId: args.minionId });
-
-      // Dice rolls: if this call is currently the head of the queue,
-      // generate a fresh roll set because the new minion's skill count
-      // changes the skill threshold. If the call is mid-queue, no
-      // rolls fire here — they will fire when the call advances to the
-      // head (see `removeCall`).
-      const headId = await getHeadCallId(ctx, args.gameId);
-      if (headId === existing._id) {
-        await generateRollSetForCall(ctx, {
-          callId: existing._id,
-          reason: "minion_replaced",
-        });
-      }
-      return existing._id;
-    }
-
-    const newCallId = await ctx.db.insert("calls", {
+    const result = await upsertActiveCall(ctx, {
       gameId: args.gameId,
-      playerId: player._id,
-      minionId: args.minionId,
-      createdAt: Date.now(),
-      isActive: true,
+      player,
+      content: { kind: "minion", minionId: args.minionId },
     });
 
-    // Dice rolls: only fire when the new call is actually the head of
-    // the queue. The caller can only have one active call (enforced
-    // above), but other players' older calls may already occupy the
-    // head — in which case rolls wait until those clear.
-    const headIdAfter = await getHeadCallId(ctx, args.gameId);
-    if (headIdAfter === newCallId) {
-      await generateRollSetForCall(ctx, {
-        callId: newCallId,
-        reason: "became_head",
-      });
+    // Roll-set generation per the dice-rolls v3 rule:
+    //   `minion_replaced` requires a prior minion roll set on the same row;
+    //   everything else is `became_head`.
+    if (result.changed) {
+      const headId = await getHeadCallId(ctx, args.gameId);
+      if (headId === result.id) {
+        // The upserted call is the head. Pick the reason:
+        //   - prevKind === "minion" → in-place minion-to-minion swap on
+        //     the head; the helper only returns `changed: true` here when
+        //     the minionId actually differs (same-minion is a no-op),
+        //     so this is always a genuine replace → "minion_replaced".
+        //   - prevKind === "custom" → cross-kind upgrade; the row had no
+        //     prior minion roll set to "replace" → "became_head".
+        //   - prevKind === null → fresh insert into an empty queue (or
+        //     into a position that became the head between insert and
+        //     re-read; treat the same way) → "became_head".
+        const reason: "became_head" | "minion_replaced" =
+          result.prevKind === "minion" ? "minion_replaced" : "became_head";
+        await generateRollSetForCall(ctx, { callId: result.id, reason });
+      }
     }
 
-    return newCallId;
+    return result.id;
+  },
+});
+
+/**
+ * Player-only mutation: enqueue (or replace in place) a custom call with a
+ * free-form text label. The Private Call button is a client-side shortcut
+ * that simply calls this mutation with `label = "Private Call"`.
+ *
+ * Validation:
+ *   - `label` is trimmed; must be non-empty after trim.
+ *   - `label.length` must be ≤ 80 after trim.
+ *
+ * Custom calls do not generate dice roll sets. If this upsert turned a
+ * previous minion head into a custom head, the previous minion call's
+ * existing roll set remains in `callRollSets` (the table is append-only)
+ * but is no longer surfaced because the row's `kind` is now `"custom"`.
+ */
+export const addOrReplaceCustomCall = mutation({
+  args: { gameId: v.id("games"), label: v.string() },
+  handler: async (ctx, args) => {
+    const { game, player } = await requireGamePlayer(ctx, args.gameId);
+    if (game.state !== "playing") {
+      throw new Error("Calls can only be added while the game is playing.");
+    }
+
+    // Trim once at the mutation boundary; the helper trusts the value.
+    const trimmedLabel = args.label.trim();
+    if (trimmedLabel.length === 0) {
+      throw new Error("Custom call label cannot be empty.");
+    }
+    if (trimmedLabel.length > 80) {
+      throw new Error(
+        "Custom call label must be at most 80 characters.",
+      );
+    }
+
+    const result = await upsertActiveCall(ctx, {
+      gameId: args.gameId,
+      player,
+      content: { kind: "custom", label: trimmedLabel },
+    });
+
+    // Custom calls never roll dice — no `generateRollSetForCall` here.
+    return result.id;
   },
 });
 
@@ -113,8 +142,9 @@ export const addOrReplaceCall = mutation({
  * `removedAt=Date.now()`, `removedByGmId=gmId`.
  *
  * Dice rolls: if the removed call WAS the head, the next-oldest active
- * call inherits the head slot and gets a fresh roll set. Removing a
- * mid-queue call leaves the head unchanged and fires no rolls.
+ * call inherits the head slot. A fresh roll set is generated ONLY when
+ * the new head is `kind === "minion"` (custom heads do not roll). Removing
+ * a mid-queue call leaves the head unchanged and fires no rolls.
  */
 export const removeCall = mutation({
   args: { callId: v.id("calls") },
@@ -140,12 +170,21 @@ export const removeCall = mutation({
     });
 
     if (removedWasHead) {
-      const newHead = await getHeadCallId(ctx, call.gameId);
-      if (newHead !== null) {
-        await generateRollSetForCall(ctx, {
-          callId: newHead,
-          reason: "became_head",
-        });
+      const newHeadId = await getHeadCallId(ctx, call.gameId);
+      if (newHeadId !== null) {
+        // Gate roll generation on the new head's kind. Custom heads do
+        // not roll. Reason is unconditionally `became_head` here — a
+        // fresh roll on a *different* row is always `became_head`;
+        // `minion_replaced` is reserved for in-place edits to the
+        // *same* row (handled in `addOrReplaceCall`).
+        const newHead = await ctx.db.get(newHeadId);
+        const newHeadKind: "minion" | "custom" = newHead?.kind ?? "minion";
+        if (newHeadKind === "minion") {
+          await generateRollSetForCall(ctx, {
+            callId: newHeadId,
+            reason: "became_head",
+          });
+        }
       }
     }
   },
@@ -154,14 +193,46 @@ export const removeCall = mutation({
 /**
  * Active Calls (FIFO by `createdAt` ascending). Any game viewer.
  *
- * Dice rolls: GM viewers receive a `rolls: RollSetView | null` field
- * on each entry; non-GM viewers receive the existing shape unchanged.
- * The field is OMITTED ENTIRELY (not set to `null` or `undefined`) for
- * non-GMs so the wire format never leaks the existence of rolls.
+ * Returns a discriminated union per row keyed off `kind`:
+ *   - `kind: "minion"` rows (including legacy `kind === undefined`
+ *     projected forward) carry `minionId` + `minionName`.
+ *   - `kind: "custom"` rows carry `label`. They never carry `minionId`
+ *     or `minionName`.
+ *
+ * Dice rolls: GM viewers receive a `rolls: RollSetView | null` field on
+ * each minion-kind entry; non-GM viewers receive the existing shape
+ * unchanged. The field is OMITTED ENTIRELY (not set to `null`) for
+ * non-GMs and for ALL custom rows (no roll set ever exists for a custom
+ * call) so the wire format never lies about the presence of rolls.
  */
+
+/**
+ * Public TypeScript types for the active-queue payload. Clients can
+ * `switch (row.kind)` exhaustively. `rolls` only appears on the GM
+ * minion-row variant.
+ */
+export type ActiveCallSharedFields = {
+  _id: Id<"calls">;
+  playerId: Id<"players">;
+  createdAt: number;
+  playerName: string;
+};
+
+export type ActiveCallRow =
+  | (ActiveCallSharedFields & {
+      kind: "minion";
+      minionId: Id<"minions">;
+      minionName: string;
+      rolls?: RollSetView | null;
+    })
+  | (ActiveCallSharedFields & {
+      kind: "custom";
+      label: string;
+    });
+
 export const activeCalls = query({
   args: { gameId: v.id("games") },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<ActiveCallRow[]> => {
     const userId = await requireUserId(ctx);
     const game = await requireGame(ctx, args.gameId);
     const isGm = game.gmId === userId;
@@ -204,30 +275,62 @@ export const activeCalls = query({
     }
 
     return await Promise.all(
-      rows.map(async (c) => {
+      rows.map(async (c): Promise<ActiveCallRow> => {
         const player = await ctx.db.get(c.playerId);
         const user = player ? await ctx.db.get(player.userId) : null;
-        const minion = await ctx.db.get(c.minionId);
-        const base = {
+        const playerName = user?.displayName ?? user?.email ?? "Unknown";
+        const shared: ActiveCallSharedFields = {
           _id: c._id,
           playerId: c.playerId,
-          minionId: c.minionId,
           createdAt: c.createdAt,
-          playerName: user?.displayName ?? user?.email ?? "Unknown",
+          playerName,
+        };
+
+        // Project legacy `kind === undefined` rows as minion. Defence
+        // in depth: the discriminator wins; we never read `label` on
+        // a `kind: "minion"` projection or `minionId` on a `kind: "custom"` projection.
+        const kind: "minion" | "custom" = c.kind ?? "minion";
+
+        if (kind === "custom") {
+          // Custom rows: no minion lookup, no `rolls` key (GM or not).
+          return {
+            ...shared,
+            kind: "custom",
+            label: c.label ?? "",
+          };
+        }
+
+        // Minion branch: load the minion. `c.minionId` should be set
+        // for any `kind === "minion"` row (the schema permits it as
+        // optional only because custom rows omit it); a legacy row
+        // with no `kind` and no `minionId` would be malformed and is
+        // not believed to exist in production data, but we still
+        // tolerate it gracefully via `minionName: "Unknown Minion"`.
+        const minion = c.minionId ? await ctx.db.get(c.minionId) : null;
+        const minionRow: ActiveCallRow = {
+          ...shared,
+          kind: "minion",
+          // Non-null assertion is safe at the type boundary because
+          // we only enter this branch when `kind === "minion"`; in
+          // the malformed legacy case we still hand back the row's
+          // (possibly absent) minionId rather than fabricate one.
+          minionId: c.minionId as Id<"minions">,
           minionName: minion?.name ?? "Unknown Minion",
         };
+
         if (isGm && rollsByCallId) {
           const row = rollsByCallId.get(c._id) ?? null;
-          // GM payload: include `rolls` (possibly null while the helper
-          // is mid-flight in a race; the UI handles null).
+          // GM payload for minion rows: include `rolls` (possibly null
+          // while the helper is mid-flight in a race; the UI handles
+          // null).
           return {
-            ...base,
-            rolls: row ? projectRollSet(row) : (null as RollSetView | null),
+            ...minionRow,
+            rolls: row ? projectRollSet(row) : null,
           };
         }
         // Player payload: no `rolls` key at all. Tests assert via
         // hasOwnProperty that the key is genuinely absent.
-        return base;
+        return minionRow;
       }),
     );
   },
@@ -236,18 +339,57 @@ export const activeCalls = query({
 /**
  * GM-only deep-dive on the head of the FIFO call queue.
  *
- * Returns `null` when the queue is empty, when the head call's minion has
- * been removed, or when the minion's owning syndicate is missing. The
- * defensive nulls keep the rendering contract simple: the UI just shows
- * the empty state in those cases. A successful result joins the call,
- * the called minion (with skills/accent/description), the minion's owning
- * syndicate, that syndicate's drawbacks (sorted by `order` ascending,
- * matching `drawbacks.listForSyndicate`), and the latest roll set for
- * that head call.
+ * Returns a discriminated union:
+ *   - `null` when the queue is empty (or, for minion heads, when the
+ *     called minion or its syndicate has been removed — defensive nulls
+ *     match today's behaviour).
+ *   - `{ kind: "custom", call, label }` when the head call is custom.
+ *     Skips every minion / syndicate / drawback / roll-set fetch.
+ *   - `{ kind: "minion", call, minion, syndicate, rolls }` when the
+ *     head call is minion-kind. Joins the called minion (with
+ *     skills/accent/description), the minion's owning syndicate, that
+ *     syndicate's drawbacks (sorted by `order` ascending, matching
+ *     `drawbacks.listForSyndicate`), and the latest roll set for that
+ *     head call.
  */
+export type CurrentCallDetails =
+  | {
+      kind: "minion";
+      call: {
+        _id: Id<"calls">;
+        createdAt: number;
+        playerId: Id<"players">;
+        playerName: string;
+      };
+      minion: {
+        _id: Id<"minions">;
+        name: string;
+        accent: string | null;
+        description: string | null;
+        skills: string[];
+      };
+      syndicate: {
+        _id: Id<"syndicates">;
+        name: string;
+        leader: string;
+        drawbacks: { _id: Id<"drawbacks">; name: string; description: string }[];
+      };
+      rolls: RollSetView | null;
+    }
+  | {
+      kind: "custom";
+      call: {
+        _id: Id<"calls">;
+        createdAt: number;
+        playerId: Id<"players">;
+        playerName: string;
+      };
+      label: string;
+    };
+
 export const getCurrentCallDetails = query({
   args: { gameId: v.id("games") },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<CurrentCallDetails | null> => {
     // GM-only — Rule 24, enforced server-side regardless of UI.
     await requireGameGm(ctx, args.gameId);
 
@@ -262,15 +404,35 @@ export const getCurrentCallDetails = query({
     if (head.length === 0) return null;
     const call = head[0];
 
+    const player = await ctx.db.get(call.playerId);
+    const user = player ? await ctx.db.get(player.userId) : null;
+    const playerName = user?.displayName ?? user?.email ?? "Unknown";
+
+    const callShared = {
+      _id: call._id,
+      createdAt: call.createdAt,
+      playerId: call.playerId,
+      playerName,
+    };
+
+    // Project legacy `kind === undefined` as `"minion"`.
+    const kind: "minion" | "custom" = call.kind ?? "minion";
+
+    if (kind === "custom") {
+      return {
+        kind: "custom",
+        call: callShared,
+        label: call.label ?? "",
+      };
+    }
+
+    // Minion branch: defensive nulls match today's contract.
+    if (!call.minionId) return null;
     const minion = await ctx.db.get(call.minionId);
     if (!minion) return null;
 
     const syndicate = await ctx.db.get(minion.syndicateId);
     if (!syndicate) return null;
-
-    const player = await ctx.db.get(call.playerId);
-    const user = player ? await ctx.db.get(player.userId) : null;
-    const playerName = user?.displayName ?? user?.email ?? "Unknown";
 
     const drawbackRows = await ctx.db
       .query("drawbacks")
@@ -282,12 +444,8 @@ export const getCurrentCallDetails = query({
     const rolls: RollSetView | null = rollRow ? projectRollSet(rollRow) : null;
 
     return {
-      call: {
-        _id: call._id,
-        createdAt: call.createdAt,
-        playerId: call.playerId,
-        playerName,
-      },
+      kind: "minion",
+      call: callShared,
       minion: {
         _id: minion._id,
         name: minion.name,
@@ -312,10 +470,35 @@ export const getCurrentCallDetails = query({
 
 /**
  * Recently removed Calls — up to 10, ordered by `removedAt` descending.
+ *
+ * Returns a discriminated union per row keyed off `kind`, matching the
+ * `activeCalls` projection: minion rows carry `minionId` + `minionName`,
+ * custom rows carry `label`. The discriminator-irrelevant field is
+ * genuinely absent from the wire payload (asserted via
+ * `Object.prototype.hasOwnProperty.call` in tests).
  */
+export type RemovedCallSharedFields = {
+  _id: Id<"calls">;
+  playerId: Id<"players">;
+  createdAt: number;
+  removedAt: number;
+  playerName: string;
+};
+
+export type RemovedCallRow =
+  | (RemovedCallSharedFields & {
+      kind: "minion";
+      minionId: Id<"minions">;
+      minionName: string;
+    })
+  | (RemovedCallSharedFields & {
+      kind: "custom";
+      label: string;
+    });
+
 export const recentlyRemovedCalls = query({
   args: { gameId: v.id("games") },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<RemovedCallRow[]> => {
     const userId = await requireUserId(ctx);
     const game = await requireGame(ctx, args.gameId);
     const isGm = game.gmId === userId;
@@ -335,17 +518,32 @@ export const recentlyRemovedCalls = query({
       .take(20); // over-fetch because some rows have removedAt=undefined
     const removed = rows.filter((r) => !r.isActive && r.removedAt).slice(0, 10);
     return await Promise.all(
-      removed.map(async (c) => {
+      removed.map(async (c): Promise<RemovedCallRow> => {
         const player = await ctx.db.get(c.playerId);
         const user = player ? await ctx.db.get(player.userId) : null;
-        const minion = await ctx.db.get(c.minionId);
-        return {
+        const playerName = user?.displayName ?? user?.email ?? "Unknown";
+        const shared: RemovedCallSharedFields = {
           _id: c._id,
           playerId: c.playerId,
-          minionId: c.minionId,
           createdAt: c.createdAt,
           removedAt: c.removedAt!,
-          playerName: user?.displayName ?? user?.email ?? "Unknown",
+          playerName,
+        };
+
+        const kind: "minion" | "custom" = c.kind ?? "minion";
+        if (kind === "custom") {
+          return {
+            ...shared,
+            kind: "custom",
+            label: c.label ?? "",
+          };
+        }
+
+        const minion = c.minionId ? await ctx.db.get(c.minionId) : null;
+        return {
+          ...shared,
+          kind: "minion",
+          minionId: c.minionId as Id<"minions">,
           minionName: minion?.name ?? "Unknown Minion",
         };
       }),

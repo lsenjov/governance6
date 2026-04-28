@@ -4,7 +4,37 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
 import type { Id } from "./_generated/dataModel";
+import type { CurrentCallDetails } from "./calls";
 import { normaliseExtraRoll } from "./lib/rolls";
+
+type MinionHead = Extract<CurrentCallDetails, { kind: "minion" }>;
+type CustomHead = Extract<CurrentCallDetails, { kind: "custom" }>;
+
+/**
+ * Narrowing helper used after `getCurrentCallDetails` queries: confirms
+ * the head is a minion-call (the union variant carrying `minion`,
+ * `syndicate`, and `rolls`) and lets the rest of each test access those
+ * fields without a `kind` switch in every assertion.
+ */
+function assertMinionHead(
+  r: CurrentCallDetails | null,
+): asserts r is MinionHead {
+  expect(r).not.toBeNull();
+  expect(r?.kind).toBe("minion");
+  if (r?.kind !== "minion") {
+    throw new Error("expected minion-kind head");
+  }
+}
+
+function assertCustomHead(
+  r: CurrentCallDetails | null,
+): asserts r is CustomHead {
+  expect(r).not.toBeNull();
+  expect(r?.kind).toBe("custom");
+  if (r?.kind !== "custom") {
+    throw new Error("expected custom-kind head");
+  }
+}
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -190,11 +220,11 @@ describe("calls.getCurrentCallDetails", () => {
     const result = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
-    expect(result).not.toBeNull();
-    expect(result!.call.playerId).toBe(h.ids.playerAId);
-    expect(result!.call.playerName).toBe("Alice");
-    expect(result!.minion._id).toBe(h.ids.minionRavenId);
-    expect(result!.minion.name).toBe("Raven");
+    assertMinionHead(result);
+    expect(result.call.playerId).toBe(h.ids.playerAId);
+    expect(result.call.playerName).toBe("Alice");
+    expect(result.minion._id).toBe(h.ids.minionRavenId);
+    expect(result.minion.name).toBe("Raven");
   });
 
   test("after removing the head, returns the next head", async () => {
@@ -209,8 +239,9 @@ describe("calls.getCurrentCallDetails", () => {
     const before = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
-    expect(before!.call.playerId).toBe(h.ids.playerAId);
-    const aliceCallId = before!.call._id;
+    assertMinionHead(before);
+    expect(before.call.playerId).toBe(h.ids.playerAId);
+    const aliceCallId = before.call._id;
 
     // GM removes Alice's (the head) call.
     await h.t
@@ -221,15 +252,15 @@ describe("calls.getCurrentCallDetails", () => {
     const after = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
-    expect(after).not.toBeNull();
-    expect(after!.call.playerId).toBe(h.ids.playerBId);
-    expect(after!.call.playerName).toBe("Bob");
-    expect(after!.minion._id).toBe(h.ids.minionWraithId);
+    assertMinionHead(after);
+    expect(after.call.playerId).toBe(h.ids.playerBId);
+    expect(after.call.playerName).toBe("Bob");
+    expect(after.minion._id).toBe(h.ids.minionWraithId);
 
     // And after removing Bob's call too, the queue is empty.
     await h.t
       .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.calls.removeCall, { callId: after!.call._id });
+      .mutation(api.calls.removeCall, { callId: after.call._id });
 
     const empty = await h.t
       .withIdentity(asUser(h.ids.gmId))
@@ -245,25 +276,25 @@ describe("calls.getCurrentCallDetails", () => {
     const result = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
-    expect(result).not.toBeNull();
+    assertMinionHead(result);
 
     // Minion descriptors round-trip exactly.
-    expect(result!.minion.skills).toEqual(["sneak", "perceive"]);
-    expect(result!.minion.accent).toBe("the silent one");
-    expect(result!.minion.description).toBe("Tall and gaunt.");
+    expect(result.minion.skills).toEqual(["sneak", "perceive"]);
+    expect(result.minion.accent).toBe("the silent one");
+    expect(result.minion.description).toBe("Tall and gaunt.");
 
     // Syndicate-level fields.
-    expect(result!.syndicate._id).toBe(h.ids.syndicateId);
-    expect(result!.syndicate.name).toBe("Alice's Syndicate");
-    expect(result!.syndicate.leader).toBe("Alice");
+    expect(result.syndicate._id).toBe(h.ids.syndicateId);
+    expect(result.syndicate.name).toBe("Alice's Syndicate");
+    expect(result.syndicate.leader).toBe("Alice");
 
     // Drawbacks come back in `order` ascending, regardless of insertion
     // order. The harness inserts B (order 1) before A (order 0).
-    expect(result!.syndicate.drawbacks.map((d) => d._id)).toEqual([
+    expect(result.syndicate.drawbacks.map((d) => d._id)).toEqual([
       h.ids.drawbackAId,
       h.ids.drawbackBId,
     ]);
-    expect(result!.syndicate.drawbacks.map((d) => d.name)).toEqual([
+    expect(result.syndicate.drawbacks.map((d) => d.name)).toEqual([
       "Drawback A",
       "Drawback B",
     ]);
@@ -326,9 +357,9 @@ describe("calls: dice rolls", () => {
     const result = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
-    expect(result).not.toBeNull();
-    expect(result!.rolls).not.toBeNull();
-    const rolls = result!.rolls!;
+    assertMinionHead(result);
+    expect(result.rolls).not.toBeNull();
+    const rolls = result.rolls!;
     expect(rolls.skillRoll).toBeGreaterThanOrEqual(1);
     expect(rolls.skillRoll).toBeLessThanOrEqual(6);
     expect(rolls.chaosRoll).toBeGreaterThanOrEqual(1);
@@ -351,10 +382,11 @@ describe("calls: dice rolls", () => {
       const r = await h.t
         .withIdentity(asUser(h.ids.gmId))
         .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
-      expect(r!.rolls!.skillRoll).toBe(6);
-      expect(r!.rolls!.skillResult).toBe("success");
-      expect(r!.rolls!.chaosRoll).toBe(4);
-      expect(r!.rolls!.chaosResult).toBeNull();
+      assertMinionHead(r);
+      expect(r.rolls!.skillRoll).toBe(6);
+      expect(r.rolls!.skillResult).toBe("success");
+      expect(r.rolls!.chaosRoll).toBe(4);
+      expect(r.rolls!.chaosResult).toBeNull();
       vi.restoreAllMocks();
     }
 
@@ -370,8 +402,9 @@ describe("calls: dice rolls", () => {
       const r = await h.t
         .withIdentity(asUser(h.ids.gmId))
         .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
-      expect(r!.rolls!.skillRoll).toBe(2);
-      expect(r!.rolls!.skillResult).toBe("failure");
+      assertMinionHead(r);
+      expect(r.rolls!.skillRoll).toBe(2);
+      expect(r.rolls!.skillResult).toBe("failure");
     }
   });
 
@@ -388,8 +421,9 @@ describe("calls: dice rolls", () => {
       const r = await h.t
         .withIdentity(asUser(h.ids.gmId))
         .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
-      expect(r!.rolls!.chaosRoll).toBe(1);
-      expect(r!.rolls!.chaosResult).toBe("failure");
+      assertMinionHead(r);
+      expect(r.rolls!.chaosRoll).toBe(1);
+      expect(r.rolls!.chaosResult).toBe("failure");
       vi.restoreAllMocks();
     }
 
@@ -405,7 +439,8 @@ describe("calls: dice rolls", () => {
       const r = await h.t
         .withIdentity(asUser(h.ids.gmId))
         .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
-      expect(r!.rolls!.chaosResult).toBeNull();
+      assertMinionHead(r);
+      expect(r.rolls!.chaosResult).toBeNull();
     }
   });
 
@@ -418,8 +453,9 @@ describe("calls: dice rolls", () => {
     const before = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
-    expect(before!.minion._id).toBe(h.ids.minionRavenId);
-    expect(before!.rolls!.skillCount).toBe(2);
+    assertMinionHead(before);
+    expect(before.minion._id).toBe(h.ids.minionRavenId);
+    expect(before.rolls!.skillCount).toBe(2);
 
     // Alice now calls Wraith (1 skill) — replace-in-place at the head.
     await addCall(h, h.ids.aId, h.ids.minionWraithId);
@@ -427,17 +463,18 @@ describe("calls: dice rolls", () => {
     const after = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(after);
     // Same call id (replace-in-place preserves the document).
-    expect(after!.call._id).toBe(before!.call._id);
+    expect(after.call._id).toBe(before.call._id);
     // New minion → new skillCount → new roll set.
-    expect(after!.minion._id).toBe(h.ids.minionWraithId);
-    expect(after!.rolls!.skillCount).toBe(1);
+    expect(after.minion._id).toBe(h.ids.minionWraithId);
+    expect(after.rolls!.skillCount).toBe(1);
 
     // Two roll-set rows now exist for this call (older + newer).
     const stored = await h.t.run(async (ctx) => {
       return await ctx.db
         .query("callRollSets")
-        .withIndex("by_call_created", (q) => q.eq("callId", after!.call._id))
+        .withIndex("by_call_created", (q) => q.eq("callId", after.call._id))
         .collect();
     });
     expect(stored).toHaveLength(2);
@@ -497,9 +534,10 @@ describe("calls: dice rolls", () => {
     const after = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
-    expect(after!.call._id).toBe(bobCallId);
-    expect(after!.rolls).not.toBeNull();
-    expect(after!.rolls!.skillCount).toBe(1); // Wraith has 1 skill
+    assertMinionHead(after);
+    expect(after.call._id).toBe(bobCallId);
+    expect(after.rolls).not.toBeNull();
+    expect(after.rolls!.skillCount).toBe(1); // Wraith has 1 skill
 
     const bobRollsAfter = await h.t.run(async (ctx) => {
       return await ctx.db
@@ -666,5 +704,504 @@ describe("rolls.normaliseExtraRoll", () => {
   test("non-1 values omit `result` when caller passes none", () => {
     const out = normaliseExtraRoll({ kind: "luck", name: "Luck", value: 4 });
     expect(out.result).toBeUndefined();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Custom calls — see `plans/2026-04-28-private-and-custom-calls-v2.md`.
+//
+// The `addOrReplaceCustomCall` mutation is the player-facing entry point
+// for non-minion calls (free-form "Need GM"-style notices and the
+// "Private Call" client shortcut, which is just a custom call with the
+// literal label "Private Call"). Both paths share the same active-row
+// upsert helper as `addOrReplaceCall`, so all the queue-shape invariants
+// (one active row per player, FIFO head, `_id`/`createdAt` preserved on
+// replace-in-place) are exercised across both kinds here.
+// ───────────────────────────────────────────────────────────────────────────
+
+async function addCustomCall(
+  h: Harness,
+  caller: Id<"users">,
+  label: string,
+): Promise<Id<"calls">> {
+  return await h.t
+    .withIdentity(asUser(caller))
+    .mutation(api.calls.addOrReplaceCustomCall, {
+      gameId: h.ids.gameId,
+      label,
+    });
+}
+
+describe("addOrReplaceCustomCall", () => {
+  test("inserts a custom row when no active call exists", async () => {
+    const h = await createHarness();
+    await startGame(h);
+    const id = await addCustomCall(h, h.ids.aId, "Need GM");
+    const row = await h.t.run((ctx) => ctx.db.get(id));
+    expect(row).not.toBeNull();
+    expect(row!.kind).toBe("custom");
+    expect(row!.label).toBe("Need GM");
+    expect(row!.minionId).toBeUndefined();
+    expect(row!.isActive).toBe(true);
+  });
+
+  test("`Private Call` is a custom call with that exact label", async () => {
+    const h = await createHarness();
+    await startGame(h);
+    const id = await addCustomCall(h, h.ids.aId, "Private Call");
+    const row = await h.t.run((ctx) => ctx.db.get(id));
+    expect(row!.kind).toBe("custom");
+    expect(row!.label).toBe("Private Call");
+    expect(row!.minionId).toBeUndefined();
+  });
+
+  test("trims whitespace at the mutation boundary", async () => {
+    const h = await createHarness();
+    await startGame(h);
+    const id = await addCustomCall(h, h.ids.aId, "   Need GM   ");
+    const row = await h.t.run((ctx) => ctx.db.get(id));
+    expect(row!.label).toBe("Need GM");
+  });
+
+  test("same-label resubmission is a no-op (no new row, unchanged createdAt)", async () => {
+    const h = await createHarness();
+    await startGame(h);
+    const id = await addCustomCall(h, h.ids.aId, "Need GM");
+    const before = await h.t.run((ctx) => ctx.db.get(id));
+    await new Promise((r) => setTimeout(r, 5));
+    const id2 = await addCustomCall(h, h.ids.aId, "Need GM");
+    const after = await h.t.run((ctx) => ctx.db.get(id));
+    expect(id2).toBe(id);
+    expect(after!.createdAt).toBe(before!.createdAt);
+
+    // Only one row exists for Alice.
+    const allForAlice = await h.t.run((ctx) =>
+      ctx.db
+        .query("calls")
+        .withIndex("by_game_player_active", (q) =>
+          q
+            .eq("gameId", h.ids.gameId)
+            .eq("playerId", h.ids.playerAId)
+            .eq("isActive", true),
+        )
+        .collect(),
+    );
+    expect(allForAlice).toHaveLength(1);
+  });
+
+  test("replace minion → custom preserves _id and createdAt, flips kind, clears minionId", async () => {
+    const h = await createHarness();
+    await startGame(h);
+    const minionCallId = await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    const before = await h.t.run((ctx) => ctx.db.get(minionCallId));
+    expect(before!.kind).toBe("minion");
+    expect(before!.minionId).toBe(h.ids.minionRavenId);
+
+    const id2 = await addCustomCall(h, h.ids.aId, "Need GM");
+    expect(id2).toBe(minionCallId);
+
+    const after = await h.t.run((ctx) => ctx.db.get(minionCallId));
+    expect(after!._id).toBe(before!._id);
+    expect(after!.createdAt).toBe(before!.createdAt);
+    expect(after!.kind).toBe("custom");
+    expect(after!.label).toBe("Need GM");
+    expect(after!.minionId).toBeUndefined();
+  });
+
+  test("replace custom → minion preserves _id and createdAt, flips kind, clears label", async () => {
+    const h = await createHarness();
+    await startGame(h);
+    const customCallId = await addCustomCall(h, h.ids.aId, "Need GM");
+    const before = await h.t.run((ctx) => ctx.db.get(customCallId));
+    expect(before!.kind).toBe("custom");
+    expect(before!.label).toBe("Need GM");
+
+    const id2 = await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    expect(id2).toBe(customCallId);
+
+    const after = await h.t.run((ctx) => ctx.db.get(customCallId));
+    expect(after!._id).toBe(before!._id);
+    expect(after!.createdAt).toBe(before!.createdAt);
+    expect(after!.kind).toBe("minion");
+    expect(after!.minionId).toBe(h.ids.minionRavenId);
+    expect(after!.label).toBeUndefined();
+  });
+
+  test("rejects empty / whitespace-only labels", async () => {
+    const h = await createHarness();
+    await startGame(h);
+    await expect(addCustomCall(h, h.ids.aId, "")).rejects.toThrow(/empty/i);
+    await expect(addCustomCall(h, h.ids.aId, "   ")).rejects.toThrow(/empty/i);
+  });
+
+  test("rejects labels longer than 80 characters", async () => {
+    const h = await createHarness();
+    await startGame(h);
+    await expect(addCustomCall(h, h.ids.aId, "x".repeat(81))).rejects.toThrow(
+      /80/,
+    );
+  });
+
+  test("rejects non-Player callers (GM, outsider, anonymous)", async () => {
+    const h = await createHarness();
+    await startGame(h);
+    await expect(addCustomCall(h, h.ids.gmId, "Need GM")).rejects.toThrow();
+    await expect(
+      addCustomCall(h, h.ids.outsiderId, "Need GM"),
+    ).rejects.toThrow();
+    await expect(
+      h.t.mutation(api.calls.addOrReplaceCustomCall, {
+        gameId: h.ids.gameId,
+        label: "Need GM",
+      }),
+    ).rejects.toThrow();
+  });
+
+  test("rejects when game.state is not 'playing'", async () => {
+    // ready
+    {
+      const h = await createHarness();
+      await expect(addCustomCall(h, h.ids.aId, "Need GM")).rejects.toThrow(
+        /playing/i,
+      );
+    }
+    // archived
+    {
+      const h = await createHarness();
+      await startGame(h);
+      await h.t
+        .withIdentity(asUser(h.ids.gmId))
+        .mutation(api.games.transitionState, {
+          gameId: h.ids.gameId,
+          target: "archived",
+        });
+      await expect(addCustomCall(h, h.ids.aId, "Need GM")).rejects.toThrow(
+        /playing/i,
+      );
+    }
+  });
+});
+
+describe("calls: dice rolls (cross-kind)", () => {
+  test("custom head call generates no roll set", async () => {
+    const h = await createHarness();
+    await startGame(h);
+    const id = await addCustomCall(h, h.ids.aId, "Need GM");
+
+    const stored = await h.t.run((ctx) =>
+      ctx.db
+        .query("callRollSets")
+        .withIndex("by_call_created", (q) => q.eq("callId", id))
+        .collect(),
+    );
+    expect(stored).toHaveLength(0);
+  });
+
+  test("replace-in-place across kinds: minion → custom does not roll, custom → minion fires `became_head`, minion → minion(diff) fires `minion_replaced`", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    // Step 1: minion(Raven) head — fires `became_head`.
+    const callId = await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    {
+      const rolls = await h.t.run((ctx) =>
+        ctx.db
+          .query("callRollSets")
+          .withIndex("by_call_created", (q) => q.eq("callId", callId))
+          .collect(),
+      );
+      expect(rolls).toHaveLength(1);
+      expect(rolls[0].createdReason).toBe("became_head");
+    }
+
+    // Step 2: replace minion → custom (in-place). No new roll set.
+    await addCustomCall(h, h.ids.aId, "Need GM");
+    {
+      const rolls = await h.t.run((ctx) =>
+        ctx.db
+          .query("callRollSets")
+          .withIndex("by_call_created", (q) => q.eq("callId", callId))
+          .collect(),
+      );
+      // Still exactly the original `became_head` row.
+      expect(rolls).toHaveLength(1);
+      expect(rolls[0].createdReason).toBe("became_head");
+    }
+
+    // Step 3: replace custom → minion(Wraith). Fresh roll set with
+    // `became_head` because the prior head's kind was `custom` (the
+    // row's minion is becoming a head minion for the first time on
+    // this row's lifetime; `minion_replaced` requires a *prior minion*
+    // on the same row).
+    await addCall(h, h.ids.aId, h.ids.minionWraithId);
+    {
+      const rolls = await h.t.run((ctx) =>
+        ctx.db
+          .query("callRollSets")
+          .withIndex("by_call_created", (q) => q.eq("callId", callId))
+          .order("desc")
+          .collect(),
+      );
+      expect(rolls).toHaveLength(2);
+      // newest is the one we just added
+      expect(rolls[0].createdReason).toBe("became_head");
+    }
+
+    // Step 4: replace minion(Wraith) → minion(Raven) on the same row.
+    // This is the only path that produces `minion_replaced` and must
+    // remain unchanged from today.
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    {
+      const rolls = await h.t.run((ctx) =>
+        ctx.db
+          .query("callRollSets")
+          .withIndex("by_call_created", (q) => q.eq("callId", callId))
+          .order("desc")
+          .collect(),
+      );
+      expect(rolls).toHaveLength(3);
+      expect(rolls[0].createdReason).toBe("minion_replaced");
+    }
+  });
+
+  test("removal advancing to a custom new head fires no roll set", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    // [minion(Raven) for Alice (head), custom for Bob]
+    const aliceCallId = await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    await new Promise((r) => setTimeout(r, 5));
+    const bobCallId = await addCustomCall(h, h.ids.bId, "Need GM");
+
+    // GM removes Alice's head. Bob's custom advances.
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.removeCall, { callId: aliceCallId });
+
+    const bobRolls = await h.t.run((ctx) =>
+      ctx.db
+        .query("callRollSets")
+        .withIndex("by_call_created", (q) => q.eq("callId", bobCallId))
+        .collect(),
+    );
+    expect(bobRolls).toHaveLength(0);
+  });
+
+  test("removal advancing from a custom head to a minion call fires `became_head`", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    // [custom for Alice (head), minion(Wraith) for Bob]
+    const aliceCallId = await addCustomCall(h, h.ids.aId, "Need GM");
+    await new Promise((r) => setTimeout(r, 5));
+    const bobCallId = await addCall(h, h.ids.bId, h.ids.minionWraithId);
+
+    // Bob's call is mid-queue, no roll yet.
+    {
+      const bobRolls = await h.t.run((ctx) =>
+        ctx.db
+          .query("callRollSets")
+          .withIndex("by_call_created", (q) => q.eq("callId", bobCallId))
+          .collect(),
+      );
+      expect(bobRolls).toHaveLength(0);
+    }
+
+    // GM removes Alice's custom head. Bob's minion advances and rolls.
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.removeCall, { callId: aliceCallId });
+
+    const bobRolls = await h.t.run((ctx) =>
+      ctx.db
+        .query("callRollSets")
+        .withIndex("by_call_created", (q) => q.eq("callId", bobCallId))
+        .collect(),
+    );
+    expect(bobRolls).toHaveLength(1);
+    expect(bobRolls[0].createdReason).toBe("became_head");
+  });
+});
+
+describe("calls.getCurrentCallDetails: kind variants", () => {
+  test("custom head returns kind:'custom' with caller name + label and no minion/syndicate/rolls keys", async () => {
+    const h = await createHarness();
+    await startGame(h);
+    await addCustomCall(h, h.ids.aId, "Need GM");
+
+    const result = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertCustomHead(result);
+    expect(result.call.playerId).toBe(h.ids.playerAId);
+    expect(result.call.playerName).toBe("Alice");
+    expect(result.label).toBe("Need GM");
+
+    // No minion/syndicate/rolls keys are present (asserted via
+    // hasOwnProperty so a `null`/`undefined` value would still fail).
+    expect(Object.prototype.hasOwnProperty.call(result, "minion")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(result, "syndicate")).toBe(
+      false,
+    );
+    expect(Object.prototype.hasOwnProperty.call(result, "rolls")).toBe(false);
+  });
+
+  test("minion head still returns kind:'minion' with the existing fields (regression guard)", async () => {
+    const h = await createHarness();
+    await startGame(h);
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+
+    const result = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(result);
+    expect(result.minion._id).toBe(h.ids.minionRavenId);
+    expect(result.syndicate._id).toBe(h.ids.syndicateId);
+    expect(Object.prototype.hasOwnProperty.call(result, "label")).toBe(false);
+  });
+});
+
+describe("calls.activeCalls + recentlyRemovedCalls: kind discrimination", () => {
+  test("activeCalls projects custom rows with `label` (not `minionName`) and minion rows with `minionName` (not `label`)", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    // Alice posts custom; Bob calls a minion.
+    await addCustomCall(h, h.ids.aId, "Need GM");
+    await new Promise((r) => setTimeout(r, 5));
+    await addCall(h, h.ids.bId, h.ids.minionWraithId);
+
+    const list = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.activeCalls, { gameId: h.ids.gameId });
+    expect(list).toHaveLength(2);
+
+    const alice = list.find((c) => c.playerName === "Alice")!;
+    const bob = list.find((c) => c.playerName === "Bob")!;
+
+    expect(alice.kind).toBe("custom");
+    expect(Object.prototype.hasOwnProperty.call(alice, "label")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(alice, "minionName")).toBe(
+      false,
+    );
+    expect(Object.prototype.hasOwnProperty.call(alice, "minionId")).toBe(false);
+
+    expect(bob.kind).toBe("minion");
+    expect(Object.prototype.hasOwnProperty.call(bob, "minionName")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(bob, "label")).toBe(false);
+  });
+
+  test("Player payload omits the `rolls` key on both minion and custom rows", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    await addCustomCall(h, h.ids.aId, "Need GM");
+    await new Promise((r) => setTimeout(r, 5));
+    await addCall(h, h.ids.bId, h.ids.minionWraithId);
+
+    const list = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.calls.activeCalls, { gameId: h.ids.gameId });
+    expect(list).toHaveLength(2);
+    for (const row of list) {
+      expect(Object.prototype.hasOwnProperty.call(row, "rolls")).toBe(false);
+    }
+  });
+
+  test("recentlyRemovedCalls projects kind discriminator with the right shape", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    // Alice posts custom, then GM removes; Bob calls minion, then GM removes.
+    const aliceCallId = await addCustomCall(h, h.ids.aId, "Need GM");
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.removeCall, { callId: aliceCallId });
+
+    const bobCallId = await addCall(h, h.ids.bId, h.ids.minionWraithId);
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.removeCall, { callId: bobCallId });
+
+    const removed = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.recentlyRemovedCalls, { gameId: h.ids.gameId });
+    expect(removed).toHaveLength(2);
+
+    const alice = removed.find((c) => c.playerName === "Alice")!;
+    const bob = removed.find((c) => c.playerName === "Bob")!;
+
+    expect(alice.kind).toBe("custom");
+    expect(Object.prototype.hasOwnProperty.call(alice, "label")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(alice, "minionName")).toBe(
+      false,
+    );
+    expect(Object.prototype.hasOwnProperty.call(alice, "minionId")).toBe(false);
+
+    expect(bob.kind).toBe("minion");
+    expect(Object.prototype.hasOwnProperty.call(bob, "minionName")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(bob, "label")).toBe(false);
+  });
+
+  test("legacy back-compat: rows without a `kind` field project as kind:'minion' and idempotent re-call is a no-op", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    // Insert a `calls` row directly with no `kind` field, mirroring rows
+    // written before this plan shipped (Risk 1 mitigation).
+    const legacyCallId = await h.t.run(async (ctx) => {
+      return await ctx.db.insert("calls", {
+        gameId: h.ids.gameId,
+        playerId: h.ids.playerAId,
+        minionId: h.ids.minionRavenId,
+        createdAt: Date.now(),
+        isActive: true,
+      });
+    });
+
+    // activeCalls projects the legacy row as kind:'minion'.
+    const active = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.activeCalls, { gameId: h.ids.gameId });
+    expect(active).toHaveLength(1);
+    expect(active[0].kind).toBe("minion");
+    expect(active[0]._id).toBe(legacyCallId);
+    if (active[0].kind === "minion") {
+      expect(active[0].minionName).toBe("Raven");
+    }
+
+    // Idempotent re-call: same minionId on the same legacy row is a
+    // no-op even though `existing.kind === undefined` in the helper.
+    const before = await h.t.run((ctx) => ctx.db.get(legacyCallId));
+    await new Promise((r) => setTimeout(r, 5));
+    const id2 = await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    expect(id2).toBe(legacyCallId);
+    const after = await h.t.run((ctx) => ctx.db.get(legacyCallId));
+    expect(after!.createdAt).toBe(before!.createdAt);
+
+    // No rolls were added for the legacy row by the no-op path.
+    // (The legacy row never went through a `became_head` event because
+    // it was inserted directly.)
+    const rolls = await h.t.run((ctx) =>
+      ctx.db
+        .query("callRollSets")
+        .withIndex("by_call_created", (q) => q.eq("callId", legacyCallId))
+        .collect(),
+    );
+    expect(rolls).toHaveLength(0);
+
+    // Now soft-delete and verify recentlyRemovedCalls also projects
+    // the legacy row as kind:'minion'.
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.removeCall, { callId: legacyCallId });
+    const removed = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.recentlyRemovedCalls, { gameId: h.ids.gameId });
+    expect(removed).toHaveLength(1);
+    expect(removed[0].kind).toBe("minion");
+    if (removed[0].kind === "minion") {
+      expect(removed[0].minionName).toBe("Raven");
+    }
   });
 });

@@ -16,6 +16,7 @@ import type * as goals from "../goals.js";
 import type * as http from "../http.js";
 import type * as ledger from "../ledger.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_calls from "../lib/calls.js";
 import type * as lib_rolls from "../lib/rolls.js";
 import type * as minionBuys from "../minionBuys.js";
 import type * as minions from "../minions.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   ledger: typeof ledger;
   "lib/auth": typeof lib_auth;
+  "lib/calls": typeof lib_calls;
   "lib/rolls": typeof lib_rolls;
   minionBuys: typeof minionBuys;
   minions: typeof minions;

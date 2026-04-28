@@ -140,10 +140,32 @@ export default defineSchema({
     .index("by_game_player_minion", ["gameId", "playerId", "minionId"]),
 
   // Rule 22: Call Queue.
+  //
+  // Discriminated by `kind`:
+  //   - `"minion"` (default; legacy rows with `kind === undefined` project
+  //     to this kind for back-compat) — `minionId` is required, `label`
+  //     absent. Generates dice rolls per the dice-rolls v3 plan.
+  //   - `"custom"` — free-form text label call. `label` is required,
+  //     `minionId` absent. Does NOT generate dice rolls. The Private
+  //     Call button is a client-side shortcut for a custom call with
+  //     the literal label `"Private Call"`; the server has no concept
+  //     of "private" — call visibility is unchanged.
+  // See `plans/2026-04-28-private-and-custom-calls-v2.md`.
   calls: defineTable({
     gameId: v.id("games"),
     playerId: v.id("players"),
-    minionId: v.id("minions"),
+    // Optional: required when kind === "minion", absent when "custom".
+    // `undefined` is also valid for legacy rows written before the
+    // kind discriminator existed; readers project them as "minion".
+    minionId: v.optional(v.id("minions")),
+    // `undefined` projects to `"minion"` for back-compat with rows
+    // written before this field existed.
+    kind: v.optional(
+      v.union(v.literal("minion"), v.literal("custom")),
+    ),
+    // Required when kind === "custom"; absent when "minion". Trimmed
+    // and validated server-side (≤ 80 chars; non-empty after trim).
+    label: v.optional(v.string()),
     createdAt: v.number(),
     isActive: v.boolean(), // kept in sync with removedAt
     removedAt: v.optional(v.number()),

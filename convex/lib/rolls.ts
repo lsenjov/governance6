@@ -168,6 +168,18 @@ export async function generateRollSetForCall(
     return null;
   }
 
+  // Defensive: custom calls (kind === "custom") have no minionId and
+  // do not roll dice. Trigger sites in `convex/calls.ts` already gate
+  // on kind, but we double-check here so a future caller that forgets
+  // the gate fails closed (no row written) rather than crashing on
+  // `ctx.db.get(undefined)`.
+  if (!call.minionId) {
+    console.warn(
+      `generateRollSetForCall: call ${args.callId} has no minionId (custom call?); skipping.`,
+    );
+    return null;
+  }
+
   const minion = await ctx.db.get(call.minionId);
   if (!minion) {
     console.warn(
