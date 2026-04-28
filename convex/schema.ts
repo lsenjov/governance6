@@ -262,13 +262,30 @@ export default defineSchema({
     .index("by_game_call", ["gameId", "callId"]),
 
   // Notes — per-game textual annotations on the game, a syndicate, or a
-  // minion. Immutable once created. GM-only delete. Visibility: private
-  // (author + GM) or public (all participants).
+  // minion. Author-immutable once created (body, visibility, target,
+  // author, attachedRollSetId all frozen). GM-only delete. Visibility:
+  // private (author + GM) or public (all participants).
   //
   // `attachedRollSetId` (dice rolls v1) is set on minion-target notes
   // authored while that minion was the head of the call queue,
   // freezing the live roll set onto the note. Players never see the
   // field — `listNotesForTarget` strips it for non-GM viewers.
+  //
+  // `timer` (note timers v1, plans/2026-04-28-2026-04-28-note-timers-v1.md)
+  // is the SOLE mutable field on a note post-creation, and it can only
+  // ever be cycled by the GM via `cycleNoteTimer`. Three discriminated
+  // shapes:
+  //   - `{ kind: "ticking", dueAt }` — countdown is live; UI derives
+  //     "running" vs "overdue" from `Date.now()` vs `dueAt`. The only
+  //     write that produces this shape is `createNote` itself; once
+  //     left, the timer never returns to ticking.
+  //   - `{ kind: "done" }` — GM marked the note resolved; styled as
+  //     a passed roll, no value rendered.
+  //   - `{ kind: "due_manual" }` — GM marked the note overdue without
+  //     a live clock; styled as a failed roll, single `!` rendered in
+  //     place of mm:ss. Done ↔ DueManual is a binary toggle.
+  // Players never see this field — `listNotesForTarget` strips it for
+  // non-GM viewers, exactly like `attachedRollSetId`.
   notes: defineTable({
     gameId: v.id("games"),
     targetKind: v.union(
@@ -283,6 +300,16 @@ export default defineSchema({
     body: v.string(),
     createdAt: v.number(),
     attachedRollSetId: v.optional(v.id("callRollSets")),
+    timer: v.optional(
+      v.union(
+        v.object({
+          kind: v.literal("ticking"),
+          dueAt: v.number(),
+        }),
+        v.object({ kind: v.literal("done") }),
+        v.object({ kind: v.literal("due_manual") }),
+      ),
+    ),
   })
     .index("by_game_kind_created", ["gameId", "targetKind", "createdAt"])
     .index("by_game_syndicate_created", [

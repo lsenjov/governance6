@@ -1122,3 +1122,26 @@ body:has(.sign-in-wrapper) {
   color: var(--bg-elevated);
 }
 
+/* Note timers v1: when the timer cell renders as a `<button>` for the
+ * GM, neutralise button-element defaults (font inheritance, the
+ * pointer cursor) without overriding the brutalist `.roll-cell` look.
+ * Players see the same cell as a `<div>` (no clickable class) so this
+ * rule is GM-scoped by structure. */
+button.roll-cell.note-timer-cell-clickable {
+  font: inherit;
+  cursor: pointer;
+}
+
+button.roll-cell.note-timer-cell-clickable:hover {
+  /* Brutalist hover: invert background only, leave the 2px border
+   * + top/bottom rules intact so failure/success styling still reads. */
+  background: var(--fg);
+  color: var(--bg-elevated);
+}
+
+button.roll-cell.note-timer-cell-clickable:hover .roll-cell-caption,
+button.roll-cell.note-timer-cell-clickable:hover .roll-cell-value,
+button.roll-cell.note-timer-cell-clickable:hover .roll-cell-footer {
+  color: inherit;
+}
+

@@ -2192,6 +2192,12 @@ function CurrentCallSection({
   );
   const removeCall = useMutation(api.calls.removeCall);
   const deleteNote = useMutation(api.notes.deleteNote);
+  // Note timers v1: cycle the timer state on the GM-only timer cell.
+  // The server enforces GM-only via `requireGameGm`, so this hook is
+  // safe to call from the Player branch's mounted-but-unused state
+  // (the early `if (!viewerIsGm) return null` below short-circuits
+  // the JSX path before the mutation can ever fire).
+  const cycleNoteTimer = useMutation(api.notes.cycleNoteTimer);
 
   // Notes only attach to a minion-kind head. Gate on `data.kind` so a
   // custom head doesn't subscribe `listNotesForTarget` against an
@@ -2228,6 +2234,15 @@ function CurrentCallSection({
       await deleteNote({ noteId });
     } catch (e) {
       setNoteErr(e instanceof Error ? e.message : "Failed to delete note.");
+    }
+  }
+
+  async function handleCycleTimer(noteId: Id<"notes">) {
+    setNoteErr(null);
+    try {
+      await cycleNoteTimer({ noteId });
+    } catch (e) {
+      setNoteErr(e instanceof Error ? e.message : "Failed to cycle timer.");
     }
   }
 
@@ -2459,6 +2474,7 @@ function CurrentCallSection({
               <NoteList
                 notes={visibleNotes}
                 onDelete={handleDeleteNote}
+                onCycleTimer={handleCycleTimer}
                 hideManagementControls={hideManagementControls}
               />
               {olderCount > 0 && (
@@ -2476,6 +2492,12 @@ function CurrentCallSection({
               <NoteCreateForm
                 gameId={gameId}
                 target={{ kind: "minion", minionId: data.minion._id }}
+                /* The Current Call section only renders for the GM, and
+                   the head minion is by definition the active head, so
+                   timer eligibility is always true here. The server
+                   re-validates so this gate is a UX optimisation, not
+                   a security boundary. */
+                timerEligible={true}
               />
             </div>
           </div>

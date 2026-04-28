@@ -2,7 +2,9 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { TIMER_PRESET_MINUTES } from "../../convex/notes";
 import { RollSetDisplay, type RollSet } from "./RollSetDisplay";
+import { NoteTimerCell, type NoteTimerState } from "./NoteTimerCell";
 
 /**
  * Discriminated target for any note-bearing entity in a game.
@@ -36,6 +38,13 @@ export type NoteListItem = {
    * pinned a roll set.
    */
   attachedRolls?: RollSet | null;
+  /**
+   * Note timers v1: GM-only. Present only when the note has a timer
+   * sub-object on the server row. Key omitted entirely for non-GM
+   * viewers and for notes that never had a timer attached. See
+   * `plans/2026-04-28-2026-04-28-note-timers-v1.md`.
+   */
+  timer?: NoteTimerState;
 };
 
 type NoteIconProps = {
@@ -134,6 +143,16 @@ function NotesPopover({
   const queryArgs = buildListArgs(gameId, target);
   const notes = useQuery(api.notes.listNotesForTarget, queryArgs);
   const remove = useMutation(api.notes.deleteNote);
+  const cycleTimer = useMutation(api.notes.cycleNoteTimer);
+  // Note timers v1: subscribes for the GM-only duration buttons. The
+  // server returns `{ viewerIsGm: false, timerEligible: false }` for
+  // Players, so non-GM popovers carry no extra UI from this query.
+  const timerCtx = useQuery(
+    api.notes.getTimerCreateContext,
+    target.kind === "minion"
+      ? { gameId, targetKind: "minion", targetMinionId: target.minionId }
+      : { gameId, targetKind: target.kind },
+  );
 
   const [err, setErr] = useState<string | null>(null);
   const [placement, setPlacement] = useState<{
@@ -212,6 +231,15 @@ function NotesPopover({
     }
   }
 
+  async function handleCycleTimer(noteId: Id<"notes">) {
+    setErr(null);
+    try {
+      await cycleTimer({ noteId });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to cycle timer.");
+    }
+  }
+
   return (
     <div
       ref={popoverRef}
@@ -245,13 +273,19 @@ function NotesPopover({
         <NoteList
           notes={notes}
           onDelete={handleDelete}
+          onCycleTimer={handleCycleTimer}
           hideManagementControls={hideManagementControls}
         />
       </div>
 
       {err && <div className="error-text">{err}</div>}
 
-      <NoteCreateForm gameId={gameId} target={target} className="notes-popover-form" />
+      <NoteCreateForm
+        gameId={gameId}
+        target={target}
+        className="notes-popover-form"
+        timerEligible={timerCtx?.timerEligible ?? false}
+      />
     </div>
   );
 }
@@ -264,18 +298,31 @@ function NotesPopover({
  * component will render a "Loading…" placeholder and avoid flashing the
  * empty state. `onDelete` is called only when `note.canDelete` is true; the
  * caller is responsible for confirming + invoking the delete mutation.
+ *
+ * `onCycleTimer` is called when the GM clicks a note's timer cell. Pass
+ * `undefined` (or omit) when the surrounding context cannot cycle
+ * timers (e.g. read-only previews); the cell will still render but be
+ * a no-op when clicked. Player payloads never carry `timer`, so the
+ * cell never renders for them regardless of this prop.
  */
 export function NoteList({
   notes,
   onDelete,
+  onCycleTimer,
   hideManagementControls = false,
 }: {
   notes: NoteListItem[] | undefined;
   onDelete: (noteId: Id<"notes">) => void | Promise<void>;
+  onCycleTimer?: (noteId: Id<"notes">) => void | Promise<void>;
   /**
    * When `true`, hides the "Delete" button on each listed note. Used by
    * the per-game "Hide management controls" toggle so GMs can show the
    * notes UI without exposing destructive affordances.
+   *
+   * Note: the timer cell is intentionally NOT gated by this flag — the
+   * timer is gameplay state, not a destructive management affordance,
+   * so it remains clickable while management controls are hidden
+   * (per the v1 spec).
    */
   hideManagementControls?: boolean;
 }) {
@@ -323,10 +370,57 @@ export function NoteList({
               roll set, display the GM-only readout above the body.
               Server omits the key entirely for non-GMs and for notes
               with no pinned roll set, so this never renders for
-              Players. */}
-          {n.attachedRolls !== undefined && (
+              Players.
+
+              Note timers v1: when the note also has a `timer`, render
+              the clock cell inside the same `.roll-set` flex container
+              (via `RollSetDisplay`'s `trailing` prop) so it sits
+              inline with the dice (Skill, Chaos, drawbacks, clock).
+              The container's `flex-wrap` rule handles narrow viewports
+              gracefully. Server strips `timer` for non-GMs, so a
+              Player path never reaches this branch.
+
+              Edge case: a note may have a `timer` but no
+              `attachedRolls` (in theory; gating prevents it in
+              practice). Render the timer in a standalone `.roll-set`
+              wrapper to preserve layout. */}
+          {(n.attachedRolls !== undefined || n.timer !== undefined) && (
             <div style={{ marginTop: "0.4rem" }}>
-              <RollSetDisplay rolls={n.attachedRolls} size="sm" />
+              {n.attachedRolls !== undefined ? (
+                <RollSetDisplay
+                  rolls={n.attachedRolls}
+                  size="sm"
+                  trailing={
+                    n.timer !== undefined ? (
+                      <NoteTimerCell
+                        timer={n.timer}
+                        viewerIsGm={n.canDelete}
+                        onCycle={
+                          onCycleTimer
+                            ? () => onCycleTimer(n._id)
+                            : undefined
+                        }
+                        size="sm"
+                      />
+                    ) : null
+                  }
+                />
+              ) : (
+                <div className="roll-set" aria-label="Note timer (GM)">
+                  {n.timer !== undefined && (
+                    <NoteTimerCell
+                      timer={n.timer}
+                      viewerIsGm={n.canDelete}
+                      onCycle={
+                        onCycleTimer
+                          ? () => onCycleTimer(n._id)
+                          : undefined
+                      }
+                      size="sm"
+                    />
+                  )}
+                </div>
+              )}
             </div>
           )}
           <div className="note-item-body">{n.body}</div>
@@ -348,10 +442,22 @@ export function NoteCreateForm({
   gameId,
   target,
   className,
+  timerEligible = false,
 }: {
   gameId: Id<"games">;
   target: NoteTarget;
   className?: string;
+  /**
+   * Note timers v1: when `true`, render a row of duration buttons
+   * (2/5/10/15/30 minutes) next to the "Post" submit. Each button
+   * submits the note in one shot with `timerMinutes` set, which the
+   * server validates against the same eligibility rule before
+   * persisting. Caller is expected to derive this flag from
+   * `api.notes.getTimerCreateContext` so the gate is GM-only and
+   * requires the target to be the current head minion. The server
+   * re-validates so a forged client cannot bypass the gate.
+   */
+  timerEligible?: boolean;
 }) {
   const create = useMutation(api.notes.createNote);
   const [body, setBody] = useState("");
@@ -363,7 +469,7 @@ export function NoteCreateForm({
   const bodyId = `note-body-${reactId}`;
   const visibilityId = `note-visibility-${reactId}`;
 
-  async function submit() {
+  async function submit(timerMinutes?: number) {
     setErr(null);
     const trimmed = body.trim();
     if (trimmed.length === 0) {
@@ -380,6 +486,7 @@ export function NoteCreateForm({
         targetMinionId: target.kind === "minion" ? target.minionId : undefined,
         body: trimmed,
         visibility,
+        ...(timerMinutes !== undefined ? { timerMinutes } : {}),
       });
       setBody("");
       setVisibility("private");
@@ -427,9 +534,29 @@ export function NoteCreateForm({
           />
           <span style={{ color: "var(--fg)" }}>Public</span>
         </label>
-        <button type="submit" disabled={busy || body.trim().length === 0}>
-          {busy ? "Posting…" : "Post"}
-        </button>
+        <div className="row" style={{ gap: "0.25rem", flexWrap: "wrap" }}>
+          {/* Note timers v1: GM-only duration buttons. Each submits the
+              form in one shot with `timerMinutes` set. The label is
+              just the number of minutes per the spec. The "Post"
+              button remains for the no-timer path. Server re-validates
+              eligibility regardless of which button was used. */}
+          {timerEligible &&
+            TIMER_PRESET_MINUTES.map((mins) => (
+              <button
+                key={mins}
+                type="button"
+                disabled={busy || body.trim().length === 0}
+                onClick={() => void submit(mins)}
+                title={`Post with ${mins}-minute timer`}
+                aria-label={`Post with ${mins}-minute timer`}
+              >
+                {mins}
+              </button>
+            ))}
+          <button type="submit" disabled={busy || body.trim().length === 0}>
+            {busy ? "Posting…" : "Post"}
+          </button>
+        </div>
       </div>
       {err && <div className="error-text">{err}</div>}
       <div className="muted" style={{ fontSize: "0.75rem" }}>

@@ -930,3 +930,415 @@ describe("notes: attached dice rolls", () => {
     }
   });
 });
+
+/**
+ * Note timers v1 — see `plans/2026-04-28-2026-04-28-note-timers-v1.md`.
+ *
+ * GM-only feature. The timer rides on minion-target notes that pin a
+ * roll set; the wire format is stripped for non-GMs identically to
+ * `attachedRolls`. The cycle mutation is one-way out of `ticking` and
+ * toggles between `done` and `due_manual` thereafter.
+ *
+ * The shared `preparePlayingGame` helper above promotes the harness
+ * game to `playing` and pre-marks Raven (the seeded minion) as bought,
+ * so the same fixture can place Raven on the head of the call queue.
+ */
+describe("notes: timers", () => {
+  /** Local copy of the helper from the previous describe block. */
+  async function preparePlayingGame(h: Harness, playerUserId: Id<"users">) {
+    const playerId = await h.t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("players")
+        .withIndex("by_game_user", (q) =>
+          q.eq("gameId", h.ids.gameId).eq("userId", playerUserId),
+        )
+        .unique();
+      if (!row) throw new Error("player row not found");
+      return row._id;
+    });
+    await h.t.run(async (ctx) => {
+      const allPlayers = await ctx.db
+        .query("players")
+        .withIndex("by_game_user", (q) => q.eq("gameId", h.ids.gameId))
+        .collect();
+      for (const row of allPlayers) {
+        if (!row.selectedSyndicateId) {
+          await ctx.db.patch(row._id, {
+            selectedSyndicateId: h.ids.syndicateId,
+          });
+        }
+      }
+    });
+    await h.t.run(async (ctx) => {
+      await ctx.db.insert("gamePlayerMinions", {
+        gameId: h.ids.gameId,
+        playerId,
+        minionId: h.ids.minionId,
+        bought: true,
+        boughtAt: Date.now(),
+        pricePaid: 0,
+      });
+    });
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.games.transitionState, {
+        gameId: h.ids.gameId,
+        target: "playing",
+      });
+    return {
+      placeOnHead: async () => {
+        return await h.t
+          .withIdentity(asUser(playerUserId))
+          .mutation(api.calls.addOrReplaceCall, {
+            gameId: h.ids.gameId,
+            minionId: h.ids.minionId,
+          });
+      },
+    };
+  }
+
+  test("createNote with timerMinutes rejects Players (GM-only)", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    await ctl.placeOnHead();
+    await expect(
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+        body: "player tries to set a timer",
+        timerMinutes: 5,
+      }),
+    ).rejects.toThrow(/only the gm/i);
+  });
+
+  test("createNote with timerMinutes rejects GM on non-minion targets", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    await ctl.placeOnHead();
+    // Game-target: ineligible.
+    await expect(
+      h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "game",
+        body: "no skill check on a game note",
+        timerMinutes: 5,
+      }),
+    ).rejects.toThrow(/skill check/i);
+    // Syndicate-target: ineligible.
+    await expect(
+      h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "syndicate",
+        targetSyndicateId: h.ids.syndicateId,
+        body: "no skill check on a syndicate note",
+        timerMinutes: 5,
+      }),
+    ).rejects.toThrow(/skill check/i);
+  });
+
+  test("createNote with timerMinutes rejects when minion is not the head", async () => {
+    const h = await createHarness();
+    // No placeOnHead — queue is empty.
+    await preparePlayingGame(h, h.ids.aId);
+    await expect(
+      h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+        body: "no live call",
+        timerMinutes: 5,
+      }),
+    ).rejects.toThrow(/skill check/i);
+  });
+
+  test("createNote rejects unsupported preset minutes (e.g. 7)", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    await ctl.placeOnHead();
+    await expect(
+      h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+        body: "off-list duration",
+        timerMinutes: 7,
+      }),
+    ).rejects.toThrow(/2, 5, 10, 15, 30/);
+    // Spot-check zero and negatives are rejected by the same preset gate.
+    await expect(
+      h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+        body: "negative",
+        timerMinutes: -5,
+      }),
+    ).rejects.toThrow(/2, 5, 10, 15, 30/);
+  });
+
+  test("createNote with valid preset writes a ticking timer with dueAt ≈ now + minutes", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    await ctl.placeOnHead();
+    const before = Date.now();
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+        body: "ticking 5",
+        timerMinutes: 5,
+      });
+    const after = Date.now();
+
+    const list = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+      });
+    expect(list).toHaveLength(1);
+    const note = list[0] as {
+      timer?: { kind: string; dueAt?: number };
+    };
+    expect(note.timer).toBeDefined();
+    expect(note.timer!.kind).toBe("ticking");
+    // 5 minutes ≈ 300_000 ms; allow a generous skew for the test runner.
+    expect(note.timer!.dueAt).toBeGreaterThanOrEqual(before + 5 * 60_000);
+    expect(note.timer!.dueAt).toBeLessThanOrEqual(after + 5 * 60_000);
+  });
+
+  test("listNotesForTarget strips `timer` from Player payloads and includes it for the GM", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    await ctl.placeOnHead();
+    // GM authors a public timer note so Alice (a Player) can also see
+    // the row at all.
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "minion",
+      targetMinionId: h.ids.minionId,
+      body: "public ticking note",
+      visibility: "public",
+      timerMinutes: 2,
+    });
+
+    const gmList = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+      });
+    expect(gmList).toHaveLength(1);
+    expect(Object.prototype.hasOwnProperty.call(gmList[0], "timer")).toBe(
+      true,
+    );
+
+    const playerList = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+      });
+    expect(playerList).toHaveLength(1);
+    expect(
+      Object.prototype.hasOwnProperty.call(playerList[0], "timer"),
+    ).toBe(false);
+  });
+
+  test("notes without a timer omit the `timer` key entirely (GM payload)", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    await ctl.placeOnHead();
+    // Note without timerMinutes — must NOT carry a `timer` key.
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "minion",
+      targetMinionId: h.ids.minionId,
+      body: "no timer",
+    });
+    const list = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+      });
+    expect(list).toHaveLength(1);
+    expect(Object.prototype.hasOwnProperty.call(list[0], "timer")).toBe(
+      false,
+    );
+  });
+
+  test("cycleNoteTimer rejects Players and non-participants", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    await ctl.placeOnHead();
+    const noteId = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+        body: "ticking",
+        visibility: "public",
+        timerMinutes: 5,
+      });
+    await expect(
+      h.t
+        .withIdentity(asUser(h.ids.aId))
+        .mutation(api.notes.cycleNoteTimer, { noteId }),
+    ).rejects.toThrow(/Game Master/i);
+    await expect(
+      h.t
+        .withIdentity(asUser(h.ids.outsiderId))
+        .mutation(api.notes.cycleNoteTimer, { noteId }),
+    ).rejects.toThrow();
+  });
+
+  test("cycleNoteTimer rejects when no timer exists on the note", async () => {
+    const h = await createHarness();
+    const noteId = await createGameNote(h, h.ids.aId, "no timer here");
+    await expect(
+      h.t
+        .withIdentity(asUser(h.ids.gmId))
+        .mutation(api.notes.cycleNoteTimer, { noteId }),
+    ).rejects.toThrow(/no timer/i);
+  });
+
+  test("cycleNoteTimer cycles ticking → done → due_manual → done; never reaches ticking", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    await ctl.placeOnHead();
+    const noteId = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+        body: "cycle me",
+        timerMinutes: 5,
+      });
+
+    async function readKind(): Promise<string> {
+      const list = await h.t
+        .withIdentity(asUser(h.ids.gmId))
+        .query(api.notes.listNotesForTarget, {
+          gameId: h.ids.gameId,
+          targetKind: "minion",
+          targetMinionId: h.ids.minionId,
+        });
+      const r = list[0] as { timer?: { kind: string } };
+      return r.timer!.kind;
+    }
+    expect(await readKind()).toBe("ticking");
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.cycleNoteTimer, { noteId });
+    expect(await readKind()).toBe("done");
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.cycleNoteTimer, { noteId });
+    expect(await readKind()).toBe("due_manual");
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.cycleNoteTimer, { noteId });
+    expect(await readKind()).toBe("done");
+
+    // Cycle several more times — never returns to ticking.
+    for (let i = 0; i < 10; i++) {
+      await h.t
+        .withIdentity(asUser(h.ids.gmId))
+        .mutation(api.notes.cycleNoteTimer, { noteId });
+      expect(await readKind()).not.toBe("ticking");
+    }
+  });
+
+  test("cycleNoteTimer leaves body / visibility / target / attachedRollSetId untouched", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    await ctl.placeOnHead();
+    const noteId = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+        body: "frozen content",
+        visibility: "public",
+        timerMinutes: 5,
+      });
+
+    const before = await h.t.run(async (ctx) => ctx.db.get(noteId));
+    expect(before).not.toBeNull();
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.cycleNoteTimer, { noteId });
+    const after = await h.t.run(async (ctx) => ctx.db.get(noteId));
+    expect(after).not.toBeNull();
+
+    expect(after!.body).toBe(before!.body);
+    expect(after!.visibility).toBe(before!.visibility);
+    expect(after!.targetKind).toBe(before!.targetKind);
+    expect(after!.targetMinionId).toBe(before!.targetMinionId);
+    expect(after!.targetSyndicateId).toBe(before!.targetSyndicateId);
+    expect(after!.authorUserId).toBe(before!.authorUserId);
+    expect(after!.createdAt).toBe(before!.createdAt);
+    expect(after!.attachedRollSetId).toBe(before!.attachedRollSetId);
+    // Only `timer` changed.
+    expect(after!.timer?.kind).toBe("done");
+  });
+
+  test("getTimerCreateContext: GM gets timerEligible=true on head minion, false otherwise", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+
+    // Before head is set: minion-target query returns timerEligible=false.
+    const beforeHead = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.getTimerCreateContext, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+      });
+    expect(beforeHead).toEqual({ viewerIsGm: true, timerEligible: false });
+
+    // Place on head: timerEligible flips to true for the GM.
+    await ctl.placeOnHead();
+    const onHead = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.getTimerCreateContext, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+      });
+    expect(onHead).toEqual({ viewerIsGm: true, timerEligible: true });
+
+    // Non-minion target: always false even with a head live.
+    const gameTarget = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.getTimerCreateContext, {
+        gameId: h.ids.gameId,
+        targetKind: "game",
+      });
+    expect(gameTarget).toEqual({ viewerIsGm: true, timerEligible: false });
+
+    // Player viewer: viewerIsGm=false and timerEligible=false even on head.
+    const playerView = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.notes.getTimerCreateContext, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+      });
+    expect(playerView).toEqual({ viewerIsGm: false, timerEligible: false });
+  });
+});

@@ -16,6 +16,8 @@
  * the `rolls` payload, so the component never renders for them.
  */
 
+import type { ReactNode } from "react";
+
 export type RollExtra = {
   kind: string;
   name: string;
@@ -68,9 +70,18 @@ function ResultBadge({ result }: { result: Effective }) {
 export function RollSetDisplay({
   rolls,
   size = "md",
+  trailing,
 }: {
   rolls: RollSet | null;
   size?: Size;
+  /**
+   * Optional additional cells rendered inside the same `.roll-set`
+   * flex container, after the Skill / Chaos / extras cells. Used by
+   * note timers v1 to render the clock cell inline with the dice row.
+   * Pass JSX that renders `.roll-cell`-shaped children for visual
+   * consistency.
+   */
+  trailing?: ReactNode;
 }) {
   // Race-only branch: roll generation runs in the same mutation
   // transaction as the call insert, so external readers should never
@@ -89,6 +100,7 @@ export function RollSetDisplay({
           <span className="roll-cell-value">—</span>
           <span className="roll-cell-footer">Pending</span>
         </div>
+        {trailing}
       </div>
     );
   }
@@ -146,6 +158,7 @@ export function RollSetDisplay({
           </div>
         );
       })}
+      {trailing}
     </div>
   );
 }
