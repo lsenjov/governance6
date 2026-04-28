@@ -1130,13 +1130,21 @@ body:has(.sign-in-wrapper) {
 button.roll-cell.note-timer-cell-clickable {
   font: inherit;
   cursor: pointer;
+  /* Suppress the global `button` 4px hard shadow — the timer cell is
+   * supposed to mirror the flat `<div>`-based dice cells in
+   * `RollSetDisplay`, not float like an action button. */
+  box-shadow: none;
 }
 
 button.roll-cell.note-timer-cell-clickable:hover {
   /* Brutalist hover: invert background only, leave the 2px border
-   * + top/bottom rules intact so failure/success styling still reads. */
+   * + top/bottom rules intact so failure/success styling still reads.
+   * Also cancel the global `button:hover` shadow-drop + translate so
+   * the cell stays aligned with its dice-cell neighbours. */
   background: var(--fg);
   color: var(--bg-elevated);
+  box-shadow: none;
+  transform: none;
 }
 
 button.roll-cell.note-timer-cell-clickable:hover .roll-cell-caption,
