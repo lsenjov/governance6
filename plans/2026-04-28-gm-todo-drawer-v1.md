@@ -14,7 +14,10 @@ buried inside per-target note popovers. The drawer must:
 - For each entry, render the existing clock cell (cycling on click,
   same UX as inside the notes popover) plus enough context for the GM
   to know which player / syndicate / minion the timer belongs to.
-- Update live as Players add notes and as the GM cycles clocks.
+- Update live as the GM creates timers and cycles clocks. (Only the
+  GM can create timer-bearing notes — `convex/notes.ts:165-216` gates
+  the `timerMinutes` arg behind `requireGameGm` — so Player writes
+  never enter this surface.)
 - Strip every shred of the feature from non-GM payloads (button hidden,
   query refuses non-GM callers, drawer never mounts on Player
   sessions) — Rule 24 server-side authority, mirroring the existing
@@ -77,11 +80,17 @@ buried inside per-target note popovers. The drawer must:
   1. The clock cell via `<NoteTimerCell>` (size `sm`,
      `viewerIsGm={true}`, `onCycle={() => cycle({ noteId })}`).
   2. The target context line (see "Target context" below).
-  3. The note body (single-line truncated with the full body in a
+  3. The pinned skill-check roll set (the same `<RollSetDisplay>` the
+     popover renders inline next to a note's body), so the GM can see
+     at a glance WHAT skill check this clock is timing without
+     opening the popover. Every timer-bearing note has an attached
+     roll set by construction (`convex/notes.ts:207-211`), so this
+     column is never empty.
+  4. The note body (single-line truncated with the full body in a
      tooltip / `title` attr — full body is just one click away in the
      existing popover so we don't need to render a multi-line block
      in this overview drawer).
-  4. Right-aligned secondary metadata: author display name +
+  5. Right-aligned secondary metadata: author display name +
      visibility badge + relative createdAt timestamp.
 - Empty state: "No clocks running." in the existing `.muted` style.
 - Loading state: "Loading…" `.muted`, matching `<NoteList>`'s
@@ -109,18 +118,36 @@ rows don't jitter when the player slot is null.
 
 ### Sort order
 
-Sort the joined list with a stable, GM-friendly priority:
+The GM scanning the drawer wants the screaming-overdue items at the
+top; recently-completed items sink so the list is a working queue,
+not a chronological log. The boundary between overdue and
+future-ticking depends on wall-clock time, which is **not** a
+reactive dependency in Convex queries — calling `Date.now()` inside
+a query handler captures a snapshot at execution time but does not
+cause the query to re-run as time passes. Sorting that boundary
+server-side would freeze the order until an unrelated mutation
+triggers a re-query, which directly defeats the drawer's purpose.
 
-1. `ticking` past `dueAt` (overdue), most overdue first.
-2. `ticking` future `dueAt`, soonest first.
-3. `due_manual` (manually flagged overdue), newest `createdAt` first.
-4. `done`, newest `createdAt` first.
+**Server-side ordering** (Task 1) is therefore time-independent:
 
-Rationale: the GM scanning the drawer wants the screaming-overdue
-items at the top; recently-completed items sink so the list is a
-working queue, not a chronological log. Comparison uses `Date.now()`
-on the client so the boundary is always live without the server
-having to re-stamp on every read.
+1. `ticking` (any), secondary key `dueAt` ascending.
+2. `due_manual` (manually flagged overdue), `createdAt` descending.
+3. `done`, `createdAt` descending.
+
+**Client-side refinement** (Task 8) splits tier 1 against
+`Date.now()` on each tick:
+
+1a. `ticking` past `dueAt` (overdue), most overdue first.
+1b. `ticking` future `dueAt`, soonest first.
+2.  `due_manual`, `createdAt` descending.
+3.  `done`, `createdAt` descending.
+
+The re-evaluation rides the same 1Hz heartbeat that
+`<NoteTimerCell>` already uses for its countdown
+(`src/components/NoteTimerCell.tsx:122-126`). The drawer subscribes
+to a single 1Hz tick state at the parent level and recomputes the
+ordered array via `useMemo`, so we do not multiply the per-cell
+intervals.
 
 ## Persistence model
 
@@ -160,7 +187,11 @@ verbatim for the click-to-cycle behaviour.
       author ids,
     - `callRollSets` for every distinct `attachedRollSetId` (reuse
       the bulk-load + dedupe pattern from
-      `convex/notes.ts:425-444`; reuse `projectRollSet`).
+      `convex/notes.ts:425-444`; reuse `projectRollSet`). The
+      drawer renders this inline (see "Drawer body"), so the field
+      is never decorative — every timer-bearing note has an
+      attached roll set by server gating
+      (`convex/notes.ts:207-211`).
   - Project a flat row per timer-bearing note:
     ```
     {
@@ -175,20 +206,25 @@ verbatim for the click-to-cycle behaviour.
     ```
     `playerId` / `playerDisplayName` are present only when a player
     in this game has selected the relevant syndicate.
-  - Order: sort the projected array by the four-tier priority
-    described in "Sort order". Doing the sort server-side keeps the
-    client trivially renderable; the `now`-dependent boundary uses
-    `Date.now()` (Convex `now()` is fine — both branches just need
-    a consistent reference point per query result, and reactivity
-    re-runs the query whenever any underlying note changes anyway).
-  - Return type: `Promise<GmTodoRow[]>` where `GmTodoRow` is exported
-    from `convex/notes.ts` for client reuse.
+  - Order: sort the projected array by the time-independent ordering
+    described in "Sort order" (tier 1 = `ticking` by `dueAt` asc,
+    tier 2 = `due_manual` by `createdAt` desc, tier 3 = `done` by
+    `createdAt` desc). Do **not** call `Date.now()` in the handler:
+    the overdue / future split is refined client-side because the
+    Convex query is not reactive on wall-clock time. Sorting on the
+    server still removes the bulk of the work and keeps the client
+    handler trivial.
+  - Return type: `Promise<GmTodoNoteRow[]>` where `GmTodoNoteRow` is
+    exported from `convex/notes.ts` for client reuse. Naming chosen
+    for parallelism with `NoteListItem`; leaves the unqualified
+    `GmTodoRow` symbol available for a future v2 that aggregates
+    non-note items into the same drawer.
   - Rationale: a single GM-only query with denormalised joins is the
     minimum surface area for the new drawer. No new indices, no
     schema delta, no new mutation.
 
-- [ ] **Task 2.** Export the `GmTodoRow` type from `convex/notes.ts`
-  next to the existing `NoteListItem` type
+- [ ] **Task 2.** Export the `GmTodoNoteRow` type from
+  `convex/notes.ts` next to the existing `NoteListItem` type
   (`convex/notes.ts:337-354`). Re-use `NoteTimer`, `RollSetView`, and
   the `Id<...>` aliases already in scope. Rationale: clients consume
   the same shape the server projects without redefining a parallel
@@ -206,10 +242,13 @@ verbatim for the click-to-cycle behaviour.
     `playerDisplayName`.
   - For the same minion's syndicate when no player has selected it,
     `playerId` / `playerDisplayName` are absent.
-  - Sort order: an overdue-ticking row precedes a future-ticking row;
-    a future-ticking row with the soonest `dueAt` precedes one with a
-    later `dueAt`; `due_manual` precedes `done`; within each band,
-    the documented secondary key holds.
+  - Server-side sort order: a `ticking` row precedes a `due_manual`
+    row precedes a `done` row; within the `ticking` band, the row
+    with the soonest `dueAt` is first; within `due_manual` and
+    `done`, `createdAt` descending. The overdue-vs-future split
+    inside `ticking` is intentionally NOT exercised here — it lives
+    in the client refinement (Task 8) and is covered by client
+    tests (Task 13).
   - Author display name is resolved from `users.displayName` /
     `users.email` / `"Unknown"` exactly like the existing
     `listNotesForTarget` code path.
@@ -236,12 +275,14 @@ verbatim for the click-to-cycle behaviour.
   drawer.
 
 - [ ] **Task 6.** Implement `GmTodoDrawer` as a new component in
-  `src/pages/GameDetailPage.tsx` (co-located alongside
-  `GmToolsDrawer` for symmetry; the existing file is the canonical
-  home for game-detail drawers) OR as
-  `src/components/GmTodoDrawer.tsx` if the file size is becoming
-  unwieldy. Decision in a follow-up review — co-location is the
-  default. The component:
+  `src/components/GmTodoDrawer.tsx`. Extraction is preferred over
+  co-location with `GmToolsDrawer` because `GameDetailPage.tsx` is
+  already 4000+ lines (Risk 8); adding another in-file drawer makes
+  the situation worse. The drawer imports the in-file `Drawer`
+  primitive from `GameDetailPage.tsx` for consistency — if that
+  primitive is later promoted to a shared component, this drawer
+  picks up the new import path along with `GmToolsDrawer` and
+  `GameLogDrawer`. The component:
   - Uses `useQuery(api.notes.listGameNotesWithTimers, { gameId })`.
   - Uses `useMutation(api.notes.cycleNoteTimer)` for the cell click
     handler. Errors surfaced via a local `setErr` channel (mirrors
@@ -265,10 +306,22 @@ verbatim for the click-to-cycle behaviour.
   - missing player slot: render `(unassigned)` literal (use the
     existing `.muted` token).
 
-- [ ] **Task 8.** Sorting on the client. The server already returns
-  pre-sorted rows (Task 1), so the client mounts them in array order.
-  Document the contract in a comment on top of the component so a
-  later refactor doesn't accidentally re-sort.
+- [ ] **Task 8.** Client-side sort refinement. The server returns
+  rows in the time-independent ordering documented in "Sort order"
+  (Task 1). The drawer:
+  - Maintains a `now` state initialised to `Date.now()` and updated
+    every 1000ms via `setInterval` while mounted (the same cadence
+    `<NoteTimerCell>` uses internally; see
+    `src/components/NoteTimerCell.tsx:122-126`). One interval at
+    the drawer level, not one per row.
+  - Derives the rendered order via `useMemo(rows, now)`: tier-1
+    `ticking` rows are partitioned into overdue (`now >= dueAt`,
+    most-overdue first) and future (`now < dueAt`, soonest first);
+    tiers 2 and 3 are kept in the server's order.
+  - Document the split-of-responsibility contract in a doc comment
+    at the top of the component so a later refactor doesn't
+    accidentally re-sort on the server (which would be reactivity-
+    broken — see "Sort order" rationale).
 
 - [ ] **Task 9.** Click semantics on the timer cell mirror the
   popover (running → done, done → due_manual, due_manual → done).
@@ -290,12 +343,16 @@ verbatim for the click-to-cycle behaviour.
   delivers the primary action ("mark done"). Mark this task explicit
   as **deferred** in v1.
 
-- [ ] **Task 12.** Optional badge on the "GM Todo" button showing
-  the count of `ticking` (running or overdue) + `due_manual` rows
-  whenever > 0. The count derives from the same query already in
-  flight. If the badge styling already exists for `<NoteIcon>`
-  (`src/components/NoteIcon.tsx:91-93`), reuse the markup; otherwise
-  defer. Mark as **optional in v1**.
+- [ ] **Task 12.** **Deferred — out of scope for v1.** A numeric
+  badge on the "GM Todo" button showing the count of `ticking` +
+  `due_manual` rows would be useful, but the existing
+  `.note-icon-badge` class (`src/components/NoteIcon.tsx:91-93`) is
+  positioned for the 16×16 svg in `NoteGlyph`
+  (`src/components/NoteIcon.tsx:108-124`); pasting it onto a
+  `secondary` text button needs new CSS to look right. The HUD
+  button is GM-only and immediately adjacent to the drawer it opens,
+  so the cost/value ratio of styling work doesn't clear v1. Revisit
+  in a follow-up if field reports show GMs missing overdue clocks.
 
 - [ ] **Task 13.** Client unit tests (vitest):
   - `formatGmTodoTarget(row)` renders the four branches above with
@@ -306,6 +363,12 @@ verbatim for the click-to-cycle behaviour.
     `noteId` (mock `useMutation`).
   - The drawer never mounts when `viewerIsGm` is false (component
     invariant test on the parent).
+  - Client sort refinement: given three `ticking` rows whose `dueAt`
+    straddle a fixed `now`, the overdue rows precede the future
+    rows, and within each sub-band the ordering matches the
+    documented secondary key. Use a fake-timer harness or pass
+    `now` as a prop / context override to keep the test
+    deterministic.
 
 ### Documentation / housekeeping
 
@@ -331,8 +394,8 @@ verbatim for the click-to-cycle behaviour.
   "No clocks running." empty state.
 - A GM creates a 5-minute timer on a minion-target note while a
   player has selected that syndicate. Opening "GM Todo" shows the
-  row with `Player • Syndicate • Minion`, the clock counting down,
-  and the body excerpted into the row.
+  row with `Player • Syndicate • Minion`, the pinned roll set, the
+  clock counting down, and the body excerpted into the row.
 - Clicking the clock cell from inside the drawer cycles the timer
   identically to the popover (ticking → done → due_manual → done).
 - A second GM session viewing the same drawer sees the cycle in real
@@ -346,7 +409,10 @@ verbatim for the click-to-cycle behaviour.
   exists, despite the server's gating today) renders with
   `Player • Syndicate` and no minion slot.
 - Sort sanity: with three timers — one overdue, one running, one
-  done — the drawer lists overdue, then running, then done.
+  done — the drawer lists overdue, then running, then done. Crossing
+  a `dueAt` boundary while the drawer is open re-sorts the list
+  within ~1s without requiring an unrelated mutation to land
+  (verifies the client-side refinement, Task 8).
 - The popover-side notes UX (`NoteIcon`) is unchanged; the drawer
   renders timers in addition, never instead.
 - No `console.error` / `console.warn` from the per-second
@@ -409,16 +475,24 @@ verbatim for the click-to-cycle behaviour.
 
 8. **`GameDetailPage.tsx` already exceeds 4000 lines; adding another
    drawer worsens it.**
-   Mitigation: if reviewer prefers, extract the new drawer into
-   `src/components/GmTodoDrawer.tsx`. The plan is agnostic — Task 6
-   notes both options. Default is co-location for symmetry with
-   `GmToolsDrawer` and `GameLogDrawer`; a follow-up clean-up could
-   extract all three together.
+   Mitigation: Task 6 commits to extracting the new drawer into
+   `src/components/GmTodoDrawer.tsx` from the start. A follow-up
+   clean-up can extract `GmToolsDrawer` and `GameLogDrawer` to match;
+   the new drawer is built the right way so it doesn't add to that
+   debt.
 
 9. **Adding a per-row "Open in popover" deep-link is non-trivial
    (Task 11).**
    Mitigation: explicitly deferred in v1. The cycle action alone
    delivers the primary value; "Open" is a future polish.
+
+10. **Convex query reactivity does not extend to wall-clock time.**
+    A query that branches on `Date.now()` captures a single
+    timestamp at execution and freezes until an unrelated read
+    triggers a re-run. Mitigation: the server query is
+    time-independent (Task 1) and the overdue/future split lives
+    client-side on a 1Hz tick (Task 8). See "Sort order" for the
+    full split-of-responsibility rationale.
 
 ## Alternative Approaches
 
