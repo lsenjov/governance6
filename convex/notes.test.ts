@@ -1012,44 +1012,55 @@ describe("notes: timers", () => {
     ).rejects.toThrow(/only the gm/i);
   });
 
-  test("createNote with timerMinutes rejects GM on non-minion targets", async () => {
+  test("createNote with timerMinutes succeeds for GM on non-minion targets (Task 0b)", async () => {
     const h = await createHarness();
     const ctl = await preparePlayingGame(h, h.ids.aId);
     await ctl.placeOnHead();
-    // Game-target: ineligible.
-    await expect(
-      h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+    // Game-target: timer stands alone; row carries `ticking`, no roll set.
+    const gameNoteId = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
         gameId: h.ids.gameId,
         targetKind: "game",
-        body: "no skill check on a game note",
+        body: "game-wide timer",
         timerMinutes: 5,
-      }),
-    ).rejects.toThrow(/skill check/i);
-    // Syndicate-target: ineligible.
-    await expect(
-      h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      });
+    const gameNote = await h.t.run(async (ctx) => ctx.db.get(gameNoteId));
+    expect(gameNote!.timer?.kind).toBe("ticking");
+    expect(gameNote!.attachedRollSetId).toBeUndefined();
+
+    // Syndicate-target: same — timer stands alone.
+    const syndNoteId = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
         gameId: h.ids.gameId,
         targetKind: "syndicate",
         targetSyndicateId: h.ids.syndicateId,
-        body: "no skill check on a syndicate note",
+        body: "syndicate timer",
         timerMinutes: 5,
-      }),
-    ).rejects.toThrow(/skill check/i);
+      });
+    const syndNote = await h.t.run(async (ctx) => ctx.db.get(syndNoteId));
+    expect(syndNote!.timer?.kind).toBe("ticking");
+    expect(syndNote!.attachedRollSetId).toBeUndefined();
   });
 
-  test("createNote with timerMinutes rejects when minion is not the head", async () => {
+  test("createNote with timerMinutes succeeds when minion is not the head (Task 0b)", async () => {
     const h = await createHarness();
-    // No placeOnHead — queue is empty.
+    // No placeOnHead — queue is empty, so the minion is NOT the head.
     await preparePlayingGame(h, h.ids.aId);
-    await expect(
-      h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+    const noteId = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
         gameId: h.ids.gameId,
         targetKind: "minion",
         targetMinionId: h.ids.minionId,
         body: "no live call",
         timerMinutes: 5,
-      }),
-    ).rejects.toThrow(/skill check/i);
+      });
+    const note = await h.t.run(async (ctx) => ctx.db.get(noteId));
+    expect(note!.timer?.kind).toBe("ticking");
+    // Row pins NO roll set — there's no head call to attach.
+    expect(note!.attachedRollSetId).toBeUndefined();
   });
 
   test("createNote rejects unsupported preset minutes (e.g. 7)", async () => {
@@ -1340,5 +1351,416 @@ describe("notes: timers", () => {
         targetMinionId: h.ids.minionId,
       });
     expect(playerView).toEqual({ viewerIsGm: false, timerEligible: false });
+  });
+});
+
+/**
+ * GM Todo Drawer — `listGameNotesWithTimers`.
+ *
+ * Plan: `plans/2026-04-28-gm-todo-drawer-v1.md` Task 3.
+ *
+ * GM-only aggregation. Returns one row per timer-bearing note in the
+ * game with denormalised join names (minion / syndicate / selecting
+ * player / author). Sort is server-side time-INDEPENDENT (tier:
+ * ticking < due_manual < done; ticking by `dueAt` asc; non-ticking
+ * by `createdAt` desc); the overdue/future split inside `ticking`
+ * lives client-side and is covered by the client tests in Task 13.
+ */
+describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
+  /** Same fixture skeleton used by `notes: timers`. */
+  async function preparePlayingGame(h: Harness, playerUserId: Id<"users">) {
+    const playerId = await h.t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("players")
+        .withIndex("by_game_user", (q) =>
+          q.eq("gameId", h.ids.gameId).eq("userId", playerUserId),
+        )
+        .unique();
+      if (!row) throw new Error("player row not found");
+      return row._id;
+    });
+    await h.t.run(async (ctx) => {
+      const allPlayers = await ctx.db
+        .query("players")
+        .withIndex("by_game_user", (q) => q.eq("gameId", h.ids.gameId))
+        .collect();
+      for (const row of allPlayers) {
+        if (!row.selectedSyndicateId) {
+          await ctx.db.patch(row._id, {
+            selectedSyndicateId: h.ids.syndicateId,
+          });
+        }
+      }
+    });
+    await h.t.run(async (ctx) => {
+      await ctx.db.insert("gamePlayerMinions", {
+        gameId: h.ids.gameId,
+        playerId,
+        minionId: h.ids.minionId,
+        bought: true,
+        boughtAt: Date.now(),
+        pricePaid: 0,
+      });
+    });
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.games.transitionState, {
+        gameId: h.ids.gameId,
+        target: "playing",
+      });
+    return {
+      placeOnHead: async () => {
+        return await h.t
+          .withIdentity(asUser(h.ids.aId))
+          .mutation(api.calls.addOrReplaceCall, {
+            gameId: h.ids.gameId,
+            minionId: h.ids.minionId,
+          });
+      },
+    };
+  }
+
+  test("rejects Players — Rule 24 server-side authoritative", async () => {
+    const h = await createHarness();
+    await expect(
+      h.t
+        .withIdentity(asUser(h.ids.aId))
+        .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId }),
+    ).rejects.toThrow();
+    await expect(
+      h.t
+        .withIdentity(asUser(h.ids.outsiderId))
+        .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId }),
+    ).rejects.toThrow();
+  });
+
+  test("returns [] when no notes carry a timer", async () => {
+    const h = await createHarness();
+    // Author a non-timer note so we have notes-without-timer in the
+    // working set.
+    await createGameNote(h, h.ids.gmId, "no clock");
+    const rows = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+    expect(rows).toEqual([]);
+  });
+
+  test("filters out non-timer notes; includes only timer-bearing rows", async () => {
+    const h = await createHarness();
+    await preparePlayingGame(h, h.ids.aId);
+    // Two non-timer notes (author varies) + one game-timer note.
+    await createGameNote(h, h.ids.aId, "alice non-timer", "public");
+    await createGameNote(h, h.ids.gmId, "gm non-timer");
+    const timerNoteId = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "game",
+        body: "game-wide timer",
+        timerMinutes: 5,
+      });
+    const rows = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+    expect(rows.map((r) => r._id)).toEqual([timerNoteId]);
+  });
+
+  test("minion-target row carries minionName, syndicateName, playerId, playerDisplayName", async () => {
+    const h = await createHarness();
+    const ctl = await preparePlayingGame(h, h.ids.aId);
+    await ctl.placeOnHead();
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+        body: "head-call timer",
+        timerMinutes: 5,
+      });
+    const rows = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+    expect(rows).toHaveLength(1);
+    const row = rows[0];
+    expect(row.targetKind).toBe("minion");
+    expect(row.minionName).toBe("Raven");
+    expect(row.syndicateName).toBe("Alice's Syndicate");
+    expect(row.playerId).toBeDefined();
+    expect(row.playerDisplayName).toBe("Alice");
+    // Head call is live, so `attachedRolls` key is present.
+    expect(Object.prototype.hasOwnProperty.call(row, "attachedRolls")).toBe(
+      true,
+    );
+    expect(row.attachedRolls).not.toBeNull();
+  });
+
+  test("syndicate-target row carries syndicateName + player; no minionName; no attachedRolls key", async () => {
+    const h = await createHarness();
+    await preparePlayingGame(h, h.ids.aId);
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "syndicate",
+        targetSyndicateId: h.ids.syndicateId,
+        body: "syndicate timer",
+        timerMinutes: 5,
+      });
+    const rows = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+    expect(rows).toHaveLength(1);
+    const row = rows[0];
+    expect(row.targetKind).toBe("syndicate");
+    expect(row.syndicateName).toBe("Alice's Syndicate");
+    expect(row.minionName).toBeUndefined();
+    expect(row.playerDisplayName).toBe("Alice");
+    expect(Object.prototype.hasOwnProperty.call(row, "attachedRolls")).toBe(
+      false,
+    );
+  });
+
+  test("game-target row has no minionName, syndicateName, playerId, or attachedRolls key", async () => {
+    const h = await createHarness();
+    await preparePlayingGame(h, h.ids.aId);
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "game",
+        body: "game-wide timer",
+        timerMinutes: 5,
+      });
+    const rows = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+    expect(rows).toHaveLength(1);
+    const row = rows[0];
+    expect(row.targetKind).toBe("game");
+    expect(row.minionName).toBeUndefined();
+    expect(row.syndicateName).toBeUndefined();
+    expect(row.playerId).toBeUndefined();
+    expect(row.playerDisplayName).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(row, "attachedRolls")).toBe(
+      false,
+    );
+  });
+
+  test("minion-target NOT on head: row has minionName + syndicateName, no attachedRolls key", async () => {
+    const h = await createHarness();
+    // No placeOnHead — queue empty.
+    await preparePlayingGame(h, h.ids.aId);
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "minion",
+        targetMinionId: h.ids.minionId,
+        body: "off-head timer",
+        timerMinutes: 5,
+      });
+    const rows = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+    expect(rows).toHaveLength(1);
+    const row = rows[0];
+    expect(row.minionName).toBe("Raven");
+    expect(row.syndicateName).toBe("Alice's Syndicate");
+    // Player who selected the syndicate is still resolved.
+    expect(row.playerDisplayName).toBe("Alice");
+    // No head call ⇒ no attached roll set ⇒ key omitted.
+    expect(Object.prototype.hasOwnProperty.call(row, "attachedRolls")).toBe(
+      false,
+    );
+  });
+
+  test("syndicate-target with NO selecting Player: playerId and playerDisplayName absent", async () => {
+    const h = await createHarness();
+    // Build a second syndicate that no one in the game has selected.
+    const orphanSyndicateId = await h.t.run(async (ctx) => {
+      return await ctx.db.insert("syndicates", {
+        name: "Orphan Cabal",
+        leader: "Nobody",
+        description: "",
+        played: false,
+        isShared: true,
+        ownerId: h.ids.gmId,
+      });
+    });
+    await preparePlayingGame(h, h.ids.aId);
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "syndicate",
+        targetSyndicateId: orphanSyndicateId,
+        body: "no selector",
+        timerMinutes: 5,
+      });
+    const rows = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+    expect(rows).toHaveLength(1);
+    const row = rows[0];
+    expect(row.syndicateName).toBe("Orphan Cabal");
+    expect(row.playerId).toBeUndefined();
+    expect(row.playerDisplayName).toBeUndefined();
+  });
+
+  test("server-side sort: ticking by dueAt asc, then due_manual, then done by createdAt desc", async () => {
+    const h = await createHarness();
+    await preparePlayingGame(h, h.ids.aId);
+    // Create a clutch of timer-bearing notes spanning all three tiers.
+    // We control persisted timer states via direct ctx.db.patch for
+    // the post-creation cycles (the public mutation only walks the
+    // documented state machine).
+    const ids = {
+      tickFar: await h.t
+        .withIdentity(asUser(h.ids.gmId))
+        .mutation(api.notes.createNote, {
+          gameId: h.ids.gameId,
+          targetKind: "game",
+          body: "tick FAR",
+          timerMinutes: 30,
+        }),
+      tickNear: await h.t
+        .withIdentity(asUser(h.ids.gmId))
+        .mutation(api.notes.createNote, {
+          gameId: h.ids.gameId,
+          targetKind: "game",
+          body: "tick NEAR",
+          timerMinutes: 2,
+        }),
+      doneOlder: await h.t
+        .withIdentity(asUser(h.ids.gmId))
+        .mutation(api.notes.createNote, {
+          gameId: h.ids.gameId,
+          targetKind: "game",
+          body: "done OLDER",
+          timerMinutes: 5,
+        }),
+      doneNewer: await h.t
+        .withIdentity(asUser(h.ids.gmId))
+        .mutation(api.notes.createNote, {
+          gameId: h.ids.gameId,
+          targetKind: "game",
+          body: "done NEWER",
+          timerMinutes: 5,
+        }),
+      dueManual: await h.t
+        .withIdentity(asUser(h.ids.gmId))
+        .mutation(api.notes.createNote, {
+          gameId: h.ids.gameId,
+          targetKind: "game",
+          body: "due_manual ROW",
+          timerMinutes: 5,
+        }),
+    };
+    // Patch the non-ticking rows directly into their target states.
+    // Also pin distinct `createdAt` timestamps so the desc tiebreaker
+    // is exercised — sequential `createNote` calls within a single
+    // test tick can land on the same `Date.now()` reading in
+    // edge-runtime, in which case the stable sort would preserve
+    // insertion order and mask a regression.
+    await h.t.run(async (ctx) => {
+      await ctx.db.patch(ids.doneOlder, {
+        timer: { kind: "done" },
+        createdAt: 1_000,
+      });
+      await ctx.db.patch(ids.doneNewer, {
+        timer: { kind: "done" },
+        createdAt: 2_000,
+      });
+      await ctx.db.patch(ids.dueManual, { timer: { kind: "due_manual" } });
+    });
+
+    const rows = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+    const order = rows.map((r) => r._id);
+    // Tier 1: tickNear (dueAt sooner) before tickFar.
+    // Tier 2: dueManual.
+    // Tier 3: done newer before done older (createdAt desc).
+    expect(order).toEqual([
+      ids.tickNear,
+      ids.tickFar,
+      ids.dueManual,
+      ids.doneNewer,
+      ids.doneOlder,
+    ]);
+  });
+
+  test("authorDisplayName resolves to displayName, falling back to email then 'Unknown'", async () => {
+    const h = await createHarness();
+    // Build a GM whose `displayName` is empty so the fallback chain
+    // is exercised. Replace the GM on the existing game.
+    const emailOnlyGmId = await h.t.run(async (ctx) => {
+      const id = await ctx.db.insert("users", {
+        displayName: "",
+        email: "no-display@test",
+      });
+      await ctx.db.patch(h.ids.gameId, { gmId: id });
+      return id;
+    });
+    await h.t
+      .withIdentity(asUser(emailOnlyGmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "game",
+        body: "by email-only GM",
+        timerMinutes: 5,
+      });
+    const rows = await h.t
+      .withIdentity(asUser(emailOnlyGmId))
+      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+    expect(rows[0].authorDisplayName).toBe("");
+    // Note: the chain is `displayName ?? email ?? "Unknown"`. Empty
+    // string is a valid `displayName`, so it wins. This documents
+    // the behaviour — `??` treats only `null`/`undefined` as
+    // missing. The fallback to email kicks in only when displayName
+    // is genuinely missing on the user document.
+  });
+
+  test("cross-game isolation: timer notes in another game do not leak into this game's drawer", async () => {
+    const h = await createHarness();
+    await preparePlayingGame(h, h.ids.aId);
+    // Build a second game with its own GM and a timer note.
+    const otherGameId = await h.t.run(async (ctx) => {
+      const otherGmId = await ctx.db.insert("users", {
+        displayName: "Other GM",
+        email: "other-gm@test",
+      });
+      const otherGame = await ctx.db.insert("games", {
+        name: "Other Game",
+        gmId: otherGmId,
+        state: "ready",
+      });
+      // Stash the GM id on the row so we can act as them via
+      // `withIdentity` outside the run() block.
+      return { otherGame, otherGmId };
+    });
+    await h.t
+      .withIdentity(asUser(otherGameId.otherGmId))
+      .mutation(api.notes.createNote, {
+        gameId: otherGameId.otherGame,
+        targetKind: "game",
+        body: "other game timer",
+        timerMinutes: 5,
+      });
+    // Author one timer in this game too so the result is non-empty.
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "game",
+        body: "this game timer",
+        timerMinutes: 5,
+      });
+    const rows = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].body).toBe("this game timer");
   });
 });

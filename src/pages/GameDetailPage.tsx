@@ -16,6 +16,8 @@ import { useRosterExpandedSet } from "../hooks/useRosterExpandedSet";
 import { useHideManagementControls } from "../hooks/useHideManagementControls";
 import { NoteIcon, NoteList, NoteCreateForm, buildListArgs } from "../components/NoteIcon";
 import { RollSetDisplay } from "../components/RollSetDisplay";
+import { Drawer } from "../components/Drawer";
+import { GmTodoDrawer } from "../components/GmTodoDrawer";
 
 type GameId = Id<"games">;
 type PlayerId = Id<"players">;
@@ -254,6 +256,7 @@ function GameHud({
 }) {
   const [logOpen, setLogOpen] = useState(false);
   const [gmToolsOpen, setGmToolsOpen] = useState(false);
+  const [gmTodoOpen, setGmTodoOpen] = useState(false);
   return (
     <>
       <header className="game-hud">
@@ -289,6 +292,15 @@ function GameHud({
             GM Tools
           </button>
         )}
+        {viewerIsGm && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setGmTodoOpen(true)}
+          >
+            GM Todo
+          </button>
+        )}
         <NoteIcon
           gameId={gameId}
           target={{ kind: "game" }}
@@ -315,6 +327,12 @@ function GameHud({
           hideManagementControls={hideManagementControls}
           onHideManagementControlsChange={onHideManagementControlsChange}
           onClose={() => setGmToolsOpen(false)}
+        />
+      )}
+      {viewerIsGm && gmTodoOpen && (
+        <GmTodoDrawer
+          gameId={gameId}
+          onClose={() => setGmTodoOpen(false)}
         />
       )}
     </>
@@ -789,56 +807,11 @@ function ActionPopover({
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Drawer primitive + Game log
+// Game log drawer
+//
+// Drawer primitive itself lives in `src/components/Drawer.tsx` so other
+// drawer consumers can reuse it without importing this 4000-line module.
 // ───────────────────────────────────────────────────────────────────────────
-
-function Drawer({
-  onClose,
-  title,
-  bottom,
-  children,
-}: {
-  onClose: () => void;
-  title: string;
-  bottom?: boolean;
-  children: React.ReactNode;
-}) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return (
-    <>
-      <div className="drawer-backdrop" onClick={onClose} />
-      <aside
-        role="dialog"
-        aria-label={title}
-        className={`drawer${bottom ? " bottom" : ""}`}
-      >
-        <div className="drawer-header">
-          <h3>{title}</h3>
-          <button
-            type="button"
-            className="secondary"
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              marginLeft: "auto",
-              padding: "0.125rem 0.5rem",
-              fontSize: "0.85rem",
-            }}
-          >
-            ✕
-          </button>
-        </div>
-        {children}
-      </aside>
-    </>
-  );
-}
 
 /**
  * Game log drawer.

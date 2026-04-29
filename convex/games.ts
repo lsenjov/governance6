@@ -90,6 +90,13 @@ export const removePlayer = mutation({
  * - Game must be `ready`.
  * - Syndicate must be owned by caller OR `isShared=true`.
  * - `syndicateId === null` clears the selection.
+ * - Within-game uniqueness (added by GM Todo Drawer v1, Task 0d):
+ *   no two Players in the same game may have the same Syndicate
+ *   selected. Re-selecting a Syndicate the caller already has is
+ *   idempotent. Note: this is a mutation-level invariant, not a
+ *   schema constraint — existing test fixtures that bypass this
+ *   mutation by direct `ctx.db.insert("players", …)` continue to
+ *   load.
  */
 export const selectSyndicate = mutation({
   args: {
@@ -105,14 +112,31 @@ export const selectSyndicate = mutation({
       await ctx.db.patch(player._id, { selectedSyndicateId: undefined });
       return;
     }
-    const syndicate = await ctx.db.get(args.syndicateId);
+    const targetSyndicateId = args.syndicateId;
+    const syndicate = await ctx.db.get(targetSyndicateId);
     if (!syndicate) throw new Error("Syndicate not found.");
     if (syndicate.ownerId !== player.userId && !syndicate.isShared) {
       throw new Error(
         "You may only select a Syndicate you own or one that is shared.",
       );
     }
-    await ctx.db.patch(player._id, { selectedSyndicateId: args.syndicateId });
+    // Within-game uniqueness (Task 0d). Walk the index for this
+    // syndicateId and reject if any OTHER player in this game has it
+    // selected. Self-match is idempotent.
+    const existingSelectors = await ctx.db
+      .query("players")
+      .withIndex("by_selected_syndicate", (q) =>
+        q.eq("selectedSyndicateId", targetSyndicateId),
+      )
+      .collect();
+    for (const other of existingSelectors) {
+      if (other.gameId === args.gameId && other._id !== player._id) {
+        throw new Error(
+          "Another Player in this game has already selected that Syndicate.",
+        );
+      }
+    }
+    await ctx.db.patch(player._id, { selectedSyndicateId: targetSyndicateId });
   },
 });
 

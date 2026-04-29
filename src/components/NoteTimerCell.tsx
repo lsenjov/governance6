@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useNow } from "../lib/useNow";
 
 /**
  * Note timer cell — brutalist GM-only countdown.
@@ -30,9 +30,13 @@ import { useEffect, useState } from "react";
  * `cycleNoteTimer` mutation enforces this. See
  * `plans/2026-04-28-2026-04-28-note-timers-v1.md`.
  *
- * Clock-tick scope: when in `ticking`, an internal `setInterval(1000)`
- * forces a re-render so the value updates. The interval is cleared on
- * unmount and on `kind` change so non-ticking states never re-render.
+ * Clock-tick scope (`plans/2026-04-28-gm-todo-drawer-v1.md` Task 0c):
+ * the cell subscribes unconditionally to the shared `useNow()`
+ * heartbeat so EVERY visible cell ticks on the same second-boundary.
+ * `done` / `due_manual` cells will re-render once per second alongside
+ * `ticking` cells — the work per re-render is trivial (a few static
+ * spans) and the simplification keeps the GM Todo drawer's sort
+ * refinement on the same heartbeat for free.
  *
  * Visibility / role: this component is rendered ONLY by GM-side code
  * paths (`NoteList` checks `note.canDelete` before passing `viewerIsGm`).
@@ -115,17 +119,12 @@ export function NoteTimerCell({
   onCycle?: () => void | Promise<void>;
   size?: Size;
 }) {
-  // Tick driver: only mounts a 1Hz interval while we're actually
-  // ticking. Done / due_manual cells never re-render after their
-  // initial paint.
-  const [, force] = useState(0);
-  useEffect(() => {
-    if (timer.kind !== "ticking") return;
-    const id = setInterval(() => force((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, [timer.kind]);
+  // Tick driver: subscribe to the shared 1Hz heartbeat. Every visible
+  // cell on the page re-renders on the same second-boundary; see the
+  // docblock above for the trade-off rationale.
+  const now = useNow();
 
-  const effective = deriveTimerState(timer, Date.now());
+  const effective = deriveTimerState(timer, now);
 
   // Compute cell variant + body content + badge per state.
   const classNames = ["roll-cell"];
@@ -140,7 +139,7 @@ export function NoteTimerCell({
   let valueNode: React.ReactNode = null;
   if (effective === "running" || effective === "overdue") {
     const remaining =
-      timer.kind === "ticking" ? timer.dueAt - Date.now() : 0;
+      timer.kind === "ticking" ? timer.dueAt - now : 0;
     // Stack mm on the top line and ss on the line below. When the
     // timer is overdue the leading `-` is already part of `mm`, so
     // it stays on the top line beside the minutes. Wrapping both

@@ -27,11 +27,21 @@ import {
  *  - Only the GM of the owning game may delete a note (moderation).
  *  - Listings are ordered newest-first (`createdAt` descending).
  *
- * Note Timers (plans/2026-04-28-2026-04-28-note-timers-v1.md): the
- * `timer` sub-object is the SOLE post-creation-mutable field. It is
- * GM-authored at create time and GM-cycled via `cycleNoteTimer`. Wire
- * format is GM-only — the field is stripped from non-GM payloads next
- * to `attachedRollSetId`.
+ * Note Timers (plans/2026-04-28-2026-04-28-note-timers-v1.md, with
+ * scope broadened by plans/2026-04-28-gm-todo-drawer-v1.md Task 0b):
+ * the `timer` sub-object is the SOLE post-creation-mutable field. It
+ * is GM-authored at create time and GM-cycled via `cycleNoteTimer`.
+ * Wire format is GM-only — the field is stripped from non-GM payloads
+ * next to `attachedRollSetId`. The GM may attach a timer to ANY note
+ * kind they author (game / syndicate / minion target, head call or
+ * not); when the note pins a live skill check the timer accompanies
+ * the pinned roll set, otherwise the timer stands alone.
+ *
+ * GM Todo (plans/2026-04-28-gm-todo-drawer-v1.md): the
+ * `listGameNotesWithTimers` query is the GM-only aggregation that
+ * powers the GM Todo drawer. Like `attachedRollSetId` and `timer`,
+ * the projected payload never reaches Player sessions — the handler
+ * gates on `requireGameGm` before reading any rows.
  */
 
 const BODY_MIN = 1;
@@ -93,10 +103,12 @@ export const createNote = mutation({
     targetMinionId: v.optional(v.id("minions")),
     body: v.string(),
     visibility: v.optional(v.union(v.literal("private"), v.literal("public"))),
-    // Note Timers v1: GM-only, only valid when the resulting note
-    // would attach a roll set (i.e. minion-target + minion is the
-    // current head). Server-side enforced regardless of UI gating —
-    // see `plans/2026-04-28-2026-04-28-note-timers-v1.md`.
+    // Note Timers (broadened by GM Todo Drawer v1, Task 0b): GM-only.
+    // The minute value must be one of `TIMER_PRESET_MINUTES`. The
+    // resulting note's target is unconstrained — a timer may stand
+    // alone on a game- or syndicate-target note as well as ride
+    // alongside a pinned roll set on a minion-target head-call note.
+    // Server-side enforced regardless of UI gating.
     timerMinutes: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -178,18 +190,23 @@ export const createNote = mutation({
       }
     }
 
-    // Note timers v1: validate `timerMinutes` BEFORE the insert.
-    // Three layered checks (Rule 24 — server-side authoritative):
+    // Note timers: validate `timerMinutes` BEFORE the insert.
+    // Two layered checks (Rule 24 — server-side authoritative):
     //   1. Caller is the GM of this game. Players are rejected even
     //      if they somehow forge the arg client-side.
     //   2. The minute value is in the preset list. Anything else
     //      (negative, zero, fractional, novel int) is rejected so the
     //      server can never carry an unsanctioned duration.
-    //   3. The resulting note will actually attach a roll set, i.e.
-    //      it's a minion-target note on the current head call. The
-    //      timer is meaningless without a skill check to clock; this
-    //      gate keeps the UI's "only on skill checks" guarantee
-    //      authoritative on the wire.
+    //
+    // The GM may attach a timer to any note they author. When the
+    // note pins a live skill check (minion-target on the head call,
+    // resolved above) the timer accompanies the pinned roll set; on
+    // game- or syndicate-target notes (and on minion-target notes
+    // whose minion was not the head call at create time) the timer
+    // stands alone. The GM Todo drawer projects all such rows
+    // uniformly. See `plans/2026-04-28-gm-todo-drawer-v1.md` Task 0b
+    // for the rationale of relaxing the original "timer ⇒ pinned roll
+    // set" invariant.
     let timer: NoteTimer | undefined;
     if (args.timerMinutes !== undefined) {
       if (role !== "gm") {
@@ -202,11 +219,6 @@ export const createNote = mutation({
       ) {
         throw new Error(
           `Timer duration must be one of ${TIMER_PRESET_MINUTES.join(", ")} minutes.`,
-        );
-      }
-      if (attachedRollSetId === undefined) {
-        throw new Error(
-          "A note timer can only be attached when the note pins a live skill check.",
         );
       }
       timer = {
@@ -352,6 +364,287 @@ type NoteListItem = {
   // never see the field at all (key absent, not `null`).
   timer?: NoteTimer;
 };
+
+/**
+ * GM Todo Drawer (`plans/2026-04-28-gm-todo-drawer-v1.md`) — projected
+ * row shape for `listGameNotesWithTimers`. One row per timer-bearing
+ * note in the game, denormalised with the joined entity names so the
+ * drawer can render a `Player • Syndicate • Minion` context line
+ * without further client-side queries.
+ *
+ *  - `timer` is always present (the query post-filters
+ *    `n.timer !== undefined`).
+ *  - `attachedRolls` follows the same omit-when-absent rule as
+ *    `NoteListItem`: the KEY IS OMITTED when the note has no
+ *    `attachedRollSetId`. After Task 0b that includes every
+ *    game-target and syndicate-target timer-bearing note plus
+ *    minion-target rows whose minion was not the head call at create
+ *    time. The `null` value is reserved for the rare case where the
+ *    pinned roll set was deleted out from under the note.
+ *  - `playerId` / `playerDisplayName` are present only when a Player
+ *    in this game has selected the relevant syndicate. Task 0d's
+ *    mutation-level invariant means production data has at most one
+ *    such Player per `(gameId, syndicateId)`; for resilience against
+ *    test fixtures that bypass `selectSyndicate` by direct insert,
+ *    the projection picks the matching Player with the lowest
+ *    `joinedAt`, ties broken by `_id` ascending.
+ *  - `minionName` / `syndicateName` are denormalised at the server so
+ *    the drawer renders without per-row joins.
+ *
+ * Naming chosen for parallelism with `NoteListItem`; leaves the
+ * unqualified `GmTodoRow` symbol available for a future v2 that
+ * aggregates non-note items into the same drawer.
+ */
+export type GmTodoNoteRow = {
+  _id: Id<"notes">;
+  createdAt: number;
+  body: string;
+  visibility: "private" | "public";
+  authorUserId: Id<"users">;
+  authorDisplayName: string;
+  timer: NoteTimer;
+  attachedRolls?: RollSetView | null;
+  targetKind: "game" | "syndicate" | "minion";
+  targetSyndicateId?: Id<"syndicates">;
+  targetMinionId?: Id<"minions">;
+  minionName?: string;
+  syndicateName?: string;
+  playerId?: Id<"players">;
+  playerDisplayName?: string;
+};
+
+/**
+ * GM-only aggregation that powers the GM Todo drawer. Returns every
+ * timer-bearing note in `gameId`, denormalised with the joined entity
+ * names (minion / syndicate / selecting player + author) so the
+ * drawer can render a row without further round-trips.
+ *
+ * Sort order is time-INDEPENDENT (Convex queries do not react to
+ * wall-clock changes — calling `Date.now()` inside a query handler
+ * captures a snapshot at execution time and freezes until an
+ * unrelated mutation triggers a re-run). The four-tier ordering is:
+ *
+ *   1. `ticking`     — by `dueAt` ascending (soonest first).
+ *   2. `due_manual`  — by `createdAt` descending.
+ *   3. `done`        — by `createdAt` descending.
+ *
+ * `due_manual` outranks `done` on purpose: cycling done → due_manual
+ * is the GM's deliberate "this needs attention again" toggle, so
+ * those rows belong above resolved work.
+ *
+ * The overdue-vs-future split inside the `ticking` band is refined
+ * client-side on a 1Hz heartbeat (`src/lib/useNow.ts`); the server
+ * leaves both halves of `ticking` adjacent in `dueAt`-ascending
+ * order so the client refinement is just a single partition step.
+ *
+ * Read amplification: minions, syndicates, players, users, and roll
+ * sets are bulk-resolved with deduplicated per-id reads (one dedupe
+ * pass per kind, then a `for (const id of unique) await ctx.db.get`
+ * loop — Convex has no `getMany`). No new indices are introduced;
+ * the in-memory `n.timer !== undefined` filter is appropriate for
+ * the bounded per-game working set.
+ *
+ * GM-only — Rule 24, server-side authoritative. The handler gates
+ * on `requireGameGm` before reading any rows so a forged direct
+ * call from a Player session is rejected with the same error
+ * surface as `cycleNoteTimer`.
+ */
+export const listGameNotesWithTimers = query({
+  args: { gameId: v.id("games") },
+  handler: async (ctx, args): Promise<GmTodoNoteRow[]> => {
+    // GM-only — Rule 24. Defence in depth alongside the client-side
+    // mount gate; a Player forging a direct call gets the same error
+    // surface as `cycleNoteTimer`.
+    await requireGameGm(ctx, args.gameId);
+
+    // Walk every note for this game (range over the gameId prefix of
+    // `by_game_kind_created`). Per-game working sets are bounded —
+    // notes are GM-driven and per-skill-check — so a single index
+    // walk + in-memory filter is fine. A dedicated
+    // `(gameId, hasTimer)` index would not cover the optionality of
+    // a sub-object cheaply; rejected in the plan's Alternative #2.
+    const allNotes = await ctx.db
+      .query("notes")
+      .withIndex("by_game_kind_created", (q) => q.eq("gameId", args.gameId))
+      .collect();
+    const timerNotes = allNotes.filter((n) => n.timer !== undefined);
+
+    // ── Bulk-resolve auxiliaries with deduplicated per-id reads ───
+    // Pattern: collect distinct ids, fetch once each, build a Map for
+    // O(1) lookup during projection. Mirrors the existing roll-set
+    // join in `listNotesForTarget`.
+
+    // Minions (only minion-target rows reference `targetMinionId`).
+    const minionIds = Array.from(
+      new Set(
+        timerNotes
+          .map((n) => n.targetMinionId)
+          .filter((id): id is Id<"minions"> => id !== undefined),
+      ),
+    );
+    const minionById = new Map<string, Doc<"minions">>();
+    for (const id of minionIds) {
+      const row = await ctx.db.get(id);
+      if (row) minionById.set(row._id as string, row);
+    }
+
+    // Syndicates: union of `targetSyndicateId` (syndicate-target
+    // rows) and the loaded minions' `syndicateId` (minion-target
+    // rows project the parent syndicate too).
+    const syndicateIdSet = new Set<string>();
+    for (const n of timerNotes) {
+      if (n.targetSyndicateId) syndicateIdSet.add(n.targetSyndicateId as string);
+    }
+    for (const m of minionById.values()) {
+      syndicateIdSet.add(m.syndicateId as string);
+    }
+    const syndicateById = new Map<string, Doc<"syndicates">>();
+    for (const idStr of syndicateIdSet) {
+      const row = await ctx.db.get(idStr as Id<"syndicates">);
+      if (row) syndicateById.set(idStr, row);
+    }
+
+    // Selecting players per syndicate, restricted to this game. Walk
+    // the `by_selected_syndicate` index for each distinct syndicate
+    // id, in-memory filter to `p.gameId === args.gameId`, then pick
+    // the deterministic match (lowest `joinedAt`, ties by `_id`
+    // ascending). Task 0d makes this a single hit in production data
+    // created via `selectSyndicate`; the tiebreaker is for resilience
+    // against test fixtures that bypass the mutation.
+    const playerBySyndicateId = new Map<string, Doc<"players">>();
+    for (const idStr of syndicateIdSet) {
+      const candidates = await ctx.db
+        .query("players")
+        .withIndex("by_selected_syndicate", (q) =>
+          q.eq("selectedSyndicateId", idStr as Id<"syndicates">),
+        )
+        .collect();
+      const inGame = candidates.filter((p) => p.gameId === args.gameId);
+      if (inGame.length === 0) continue;
+      inGame.sort((a, b) => {
+        if (a.joinedAt !== b.joinedAt) return a.joinedAt - b.joinedAt;
+        return (a._id as string).localeCompare(b._id as string);
+      });
+      playerBySyndicateId.set(idStr, inGame[0]);
+    }
+
+    // Users: union of every author user id and every selecting
+    // player's user id. One bulk pass.
+    const userIdSet = new Set<string>();
+    for (const n of timerNotes) userIdSet.add(n.authorUserId as string);
+    for (const p of playerBySyndicateId.values()) {
+      userIdSet.add(p.userId as string);
+    }
+    const userById = new Map<string, Doc<"users">>();
+    for (const idStr of userIdSet) {
+      const row = await ctx.db.get(idStr as Id<"users">);
+      if (row) userById.set(idStr, row);
+    }
+
+    // Roll sets: deduplicate `attachedRollSetId`s and project once.
+    // Mirrors the existing GM-only decoration in `listNotesForTarget`.
+    const rollSetIds = Array.from(
+      new Set(
+        timerNotes
+          .map((n) => n.attachedRollSetId)
+          .filter((id): id is Id<"callRollSets"> => id !== undefined)
+          .map((id) => id as string),
+      ),
+    );
+    const rollSetById = new Map<string, RollSetView>();
+    for (const idStr of rollSetIds) {
+      const row = await ctx.db.get(idStr as Id<"callRollSets">);
+      if (row) rollSetById.set(idStr, projectRollSet(row));
+    }
+
+    // ── Project rows ───────────────────────────────────────────
+    function userDisplay(userId: Id<"users">): string {
+      const u = userById.get(userId as string);
+      return u?.displayName ?? u?.email ?? "Unknown";
+    }
+
+    const projected: GmTodoNoteRow[] = timerNotes.map((n) => {
+      // Resolve the joined syndicate id for this row: direct on
+      // syndicate-target, parent on minion-target, undefined on
+      // game-target.
+      const syndId: Id<"syndicates"> | undefined =
+        n.targetKind === "syndicate"
+          ? n.targetSyndicateId
+          : n.targetKind === "minion" && n.targetMinionId
+            ? minionById.get(n.targetMinionId as string)?.syndicateId
+            : undefined;
+
+      const row: GmTodoNoteRow = {
+        _id: n._id,
+        createdAt: n.createdAt,
+        body: n.body,
+        visibility: n.visibility,
+        authorUserId: n.authorUserId,
+        authorDisplayName: userDisplay(n.authorUserId),
+        // `timerNotes` is filtered to `n.timer !== undefined`, so the
+        // `!` here is sound. Convex's typed Doc<"notes"> still carries
+        // `timer?` because it's optional in the schema.
+        timer: n.timer!,
+        targetKind: n.targetKind,
+      };
+
+      if (n.targetKind === "syndicate" && n.targetSyndicateId) {
+        row.targetSyndicateId = n.targetSyndicateId;
+      }
+      if (n.targetKind === "minion" && n.targetMinionId) {
+        row.targetMinionId = n.targetMinionId;
+        const m = minionById.get(n.targetMinionId as string);
+        if (m) row.minionName = m.name;
+      }
+
+      if (syndId) {
+        const s = syndicateById.get(syndId as string);
+        if (s) row.syndicateName = s.name;
+        const p = playerBySyndicateId.get(syndId as string);
+        if (p) {
+          row.playerId = p._id;
+          row.playerDisplayName = userDisplay(p.userId);
+        }
+      }
+
+      // `attachedRolls` follows the GM-only invariant of
+      // `listNotesForTarget`: KEY OMITTED when there's no
+      // `attachedRollSetId`; KEY PRESENT (with `null` fallback) when
+      // there is one.
+      if (n.attachedRollSetId) {
+        row.attachedRolls =
+          rollSetById.get(n.attachedRollSetId as string) ?? null;
+      }
+      return row;
+    });
+
+    // ── Server-side time-INDEPENDENT sort ─────────────────────
+    // Tier rank: ticking < due_manual < done. Ties within ticking
+    // by `dueAt` asc; within due_manual / done by `createdAt` desc.
+    function tierOf(t: NoteTimer): number {
+      switch (t.kind) {
+        case "ticking":
+          return 0;
+        case "due_manual":
+          return 1;
+        case "done":
+          return 2;
+      }
+    }
+    projected.sort((a, b) => {
+      const ta = tierOf(a.timer);
+      const tb = tierOf(b.timer);
+      if (ta !== tb) return ta - tb;
+      if (a.timer.kind === "ticking" && b.timer.kind === "ticking") {
+        return a.timer.dueAt - b.timer.dueAt;
+      }
+      // Both in the same non-ticking tier — newest first.
+      return b.createdAt - a.createdAt;
+    });
+
+    return projected;
+  },
+});
 
 export const listNotesForTarget = query({
   args: {
