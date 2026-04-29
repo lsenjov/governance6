@@ -691,6 +691,7 @@ function LedgerButton({ gameId }: { gameId: GameId }) {
           anchorRef={anchorRef}
           onClose={() => setOpen(false)}
           title="My ledger"
+          wide
         >
           {entries === undefined ? (
             <div className="muted">Loading…</div>
@@ -712,11 +713,13 @@ function ActionPopover({
   onClose,
   title,
   children,
+  wide = false,
 }: {
   anchorRef: React.RefObject<HTMLDivElement | null>;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  wide?: boolean;
 }) {
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const [placement, setPlacement] = useState<{
@@ -778,7 +781,7 @@ function ActionPopover({
       ref={popoverRef}
       role="dialog"
       aria-label={title}
-      className="action-popover"
+      className={`action-popover${wide ? " wide" : ""}`}
       style={{
         top: placement.vertical === "below" ? "calc(100% + 6px)" : "auto",
         bottom: placement.vertical === "above" ? "calc(100% + 6px)" : "auto",

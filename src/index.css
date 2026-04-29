@@ -781,6 +781,14 @@ body:has(.sign-in-wrapper) {
   gap: 0.5rem;
 }
 
+.action-popover.wide {
+  width: min(40rem, 92vw);
+}
+
+.action-popover.wide table {
+  width: 100%;
+}
+
 .action-popover h4 {
   margin: 0;
   font-size: 0.85rem;
