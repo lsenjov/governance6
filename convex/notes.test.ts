@@ -1361,10 +1361,9 @@ describe("notes: timers", () => {
  *
  * GM-only aggregation. Returns one row per timer-bearing note in the
  * game with denormalised join names (minion / syndicate / selecting
- * player / author). Sort is server-side time-INDEPENDENT (tier:
- * ticking < due_manual < done; ticking by `dueAt` asc; non-ticking
- * by `createdAt` desc); the overdue/future split inside `ticking`
- * lives client-side and is covered by the client tests in Task 13.
+ * player / author). Sort is server-side and time-INDEPENDENT —
+ * `createdAt` descending (newest-first), matching the rest of the
+ * notes UI.
  */
 describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
   /** Same fixture skeleton used by `notes: timers`. */
@@ -1608,13 +1607,12 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
     expect(row.playerDisplayName).toBeUndefined();
   });
 
-  test("server-side sort: ticking by dueAt asc, then due_manual, then done by createdAt desc", async () => {
+  test("server-side sort: createdAt desc across all timer states", async () => {
     const h = await createHarness();
     await preparePlayingGame(h, h.ids.aId);
-    // Create a clutch of timer-bearing notes spanning all three tiers.
-    // We control persisted timer states via direct ctx.db.patch for
-    // the post-creation cycles (the public mutation only walks the
-    // documented state machine).
+    // Create a clutch of timer-bearing notes spanning all three timer
+    // states. Order should be purely by `createdAt` descending —
+    // independent of `kind` (ticking / due_manual / done) or `dueAt`.
     const ids = {
       tickFar: await h.t
         .withIdentity(asUser(h.ids.gmId))
@@ -1657,37 +1655,43 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
           timerMinutes: 5,
         }),
     };
-    // Patch the non-ticking rows directly into their target states.
-    // Also pin distinct `createdAt` timestamps so the desc tiebreaker
-    // is exercised — sequential `createNote` calls within a single
-    // test tick can land on the same `Date.now()` reading in
-    // edge-runtime, in which case the stable sort would preserve
-    // insertion order and mask a regression.
+    // Patch the non-ticking rows directly into their target states
+    // and pin distinct, deliberately scrambled `createdAt` timestamps
+    // so the desc ordering is exercised independently of insertion
+    // order — sequential `createNote` calls within a single test
+    // tick can land on the same `Date.now()` reading in edge-runtime,
+    // in which case the stable sort would preserve insertion order
+    // and mask a regression.
     await h.t.run(async (ctx) => {
+      await ctx.db.patch(ids.tickFar, { createdAt: 1_000 });
       await ctx.db.patch(ids.doneOlder, {
-        timer: { kind: "done" },
-        createdAt: 1_000,
-      });
-      await ctx.db.patch(ids.doneNewer, {
         timer: { kind: "done" },
         createdAt: 2_000,
       });
-      await ctx.db.patch(ids.dueManual, { timer: { kind: "due_manual" } });
+      await ctx.db.patch(ids.dueManual, {
+        timer: { kind: "due_manual" },
+        createdAt: 3_000,
+      });
+      await ctx.db.patch(ids.tickNear, { createdAt: 4_000 });
+      await ctx.db.patch(ids.doneNewer, {
+        timer: { kind: "done" },
+        createdAt: 5_000,
+      });
     });
 
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
     const order = rows.map((r) => r._id);
-    // Tier 1: tickNear (dueAt sooner) before tickFar.
-    // Tier 2: dueManual.
-    // Tier 3: done newer before done older (createdAt desc).
+    // Strict createdAt-desc, regardless of timer kind:
+    //   doneNewer (5_000), tickNear (4_000), dueManual (3_000),
+    //   doneOlder (2_000), tickFar (1_000).
     expect(order).toEqual([
-      ids.tickNear,
-      ids.tickFar,
-      ids.dueManual,
       ids.doneNewer,
+      ids.tickNear,
+      ids.dueManual,
       ids.doneOlder,
+      ids.tickFar,
     ]);
   });
 

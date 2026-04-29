@@ -419,23 +419,11 @@ export type GmTodoNoteRow = {
  * names (minion / syndicate / selecting player + author) so the
  * drawer can render a row without further round-trips.
  *
- * Sort order is time-INDEPENDENT (Convex queries do not react to
- * wall-clock changes — calling `Date.now()` inside a query handler
- * captures a snapshot at execution time and freezes until an
- * unrelated mutation triggers a re-run). The four-tier ordering is:
- *
- *   1. `ticking`     — by `dueAt` ascending (soonest first).
- *   2. `due_manual`  — by `createdAt` descending.
- *   3. `done`        — by `createdAt` descending.
- *
- * `due_manual` outranks `done` on purpose: cycling done → due_manual
- * is the GM's deliberate "this needs attention again" toggle, so
- * those rows belong above resolved work.
- *
- * The overdue-vs-future split inside the `ticking` band is refined
- * client-side on a 1Hz heartbeat (`src/lib/useNow.ts`); the server
- * leaves both halves of `ticking` adjacent in `dueAt`-ascending
- * order so the client refinement is just a single partition step.
+ * Sort order: `createdAt` descending (newest-first). This matches
+ * the rest of the notes UI (`listNotesForTarget`) and is fully
+ * time-INDEPENDENT — Convex queries do not react to wall-clock
+ * changes, and `createdAt` is frozen at insert time so the order is
+ * stable until a new note is created or an existing one is deleted.
  *
  * Read amplification: minions, syndicates, players, users, and roll
  * sets are bulk-resolved with deduplicated per-id reads (one dedupe
@@ -619,28 +607,11 @@ export const listGameNotesWithTimers = query({
     });
 
     // ── Server-side time-INDEPENDENT sort ─────────────────────
-    // Tier rank: ticking < due_manual < done. Ties within ticking
-    // by `dueAt` asc; within due_manual / done by `createdAt` desc.
-    function tierOf(t: NoteTimer): number {
-      switch (t.kind) {
-        case "ticking":
-          return 0;
-        case "due_manual":
-          return 1;
-        case "done":
-          return 2;
-      }
-    }
-    projected.sort((a, b) => {
-      const ta = tierOf(a.timer);
-      const tb = tierOf(b.timer);
-      if (ta !== tb) return ta - tb;
-      if (a.timer.kind === "ticking" && b.timer.kind === "ticking") {
-        return a.timer.dueAt - b.timer.dueAt;
-      }
-      // Both in the same non-ticking tier — newest first.
-      return b.createdAt - a.createdAt;
-    });
+    // Newest-first by `createdAt`. `createdAt` is frozen at insert
+    // time so the order is stable until a new timer-bearing note is
+    // created or an existing one is deleted — no wall-clock reads,
+    // no client refinement.
+    projected.sort((a, b) => b.createdAt - a.createdAt);
 
     return projected;
   },

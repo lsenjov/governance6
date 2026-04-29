@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -6,7 +6,6 @@ import type { GmTodoNoteRow } from "../../convex/notes";
 import { Drawer } from "./Drawer";
 import { NoteTimerCell } from "./NoteTimerCell";
 import { RollSetDisplay } from "./RollSetDisplay";
-import { useNow } from "../lib/useNow";
 
 /**
  * GM Todo drawer — at-a-glance "todo list" of every note in the
@@ -18,22 +17,10 @@ import { useNow } from "../lib/useNow";
  * its own pinned roll set when present. Cycling a clock reuses
  * `cycleNoteTimer` verbatim — there is no parallel write path.
  *
- * Sort split-of-responsibility (Task 1 + Task 8):
- *   - Server returns rows in time-INDEPENDENT order (ticking by
- *     `dueAt` asc, then `due_manual` newest first, then `done`
- *     newest first). Convex queries do not react to wall-clock
- *     time, so the overdue/future split inside the `ticking` band
- *     CANNOT live on the server — calling `Date.now()` inside a
- *     query handler captures one snapshot at execution time.
- *   - Client refines the ticking band on each 1Hz heartbeat: rows
- *     past `dueAt` (overdue, most-overdue first) precede rows with
- *     `dueAt` in the future (soonest first). Both halves keep the
- *     server's `dueAt`-ascending order, so the partition is a
- *     single split at the first index where `dueAt > now`.
- *
- * Future contributors: do NOT move the overdue/future split to the
- * server. Doing so freezes the boundary until an unrelated mutation
- * lands, which defeats the drawer's purpose.
+ * Sort order: server returns rows newest-first by `createdAt`. The
+ * order is fully time-INDEPENDENT — `createdAt` is frozen at insert
+ * time, so the drawer order only changes when a timer-bearing note
+ * is added or removed. No client-side refinement is needed.
  *
  * Visibility — GM only. The button gate, the conditional mount in
  * `GameDetailPage`, and the server-side `requireGameGm` form three
@@ -55,17 +42,6 @@ export function GmTodoDrawer({
   const cycleTimer = useMutation(api.notes.cycleNoteTimer);
   const [err, setErr] = useState<string | null>(null);
 
-  // Subscribe to the shared 1Hz heartbeat for the client-side sort
-  // refinement. The same hook drives every visible `<NoteTimerCell>`
-  // so the drawer's ordering and each cell's countdown stay in
-  // lockstep without a drawer-local interval.
-  const now = useNow();
-
-  const ordered = useMemo(
-    () => (rows === undefined ? undefined : refineOrder(rows, now)),
-    [rows, now],
-  );
-
   async function handleCycle(noteId: Id<"notes">): Promise<void> {
     setErr(null);
     try {
@@ -82,7 +58,7 @@ export function GmTodoDrawer({
           {err}
         </div>
       )}
-      <GmTodoBody rows={ordered} onCycle={handleCycle} />
+      <GmTodoBody rows={rows} onCycle={handleCycle} />
     </Drawer>
   );
 }
@@ -181,8 +157,8 @@ function GmTodoRow({
  * Render the target context line for a GM Todo row. JSX so individual
  * segments can carry the existing `.muted` separator class.
  *
- *   - minion-target: `Player • Syndicate • Minion`
- *   - syndicate-target: `Player • Syndicate`
+ *   - minion-target: `Minion • Syndicate • Player`
+ *   - syndicate-target: `Syndicate • Player`
  *   - game-target: `Game-wide`
  *
  * Missing player slot renders `(unassigned)` (muted) so the column
@@ -207,9 +183,9 @@ export function formatGmTodoTarget(row: GmTodoNoteRow): React.ReactNode {
   if (row.targetKind === "syndicate") {
     return (
       <>
-        {playerSegment}
-        {sep}
         <span>{row.syndicateName ?? "(unknown syndicate)"}</span>
+        {sep}
+        {playerSegment}
       </>
     );
   }
@@ -217,58 +193,11 @@ export function formatGmTodoTarget(row: GmTodoNoteRow): React.ReactNode {
   // minion-target
   return (
     <>
-      {playerSegment}
+      <span>{row.minionName ?? "(unknown minion)"}</span>
       {sep}
       <span>{row.syndicateName ?? "(unknown syndicate)"}</span>
       {sep}
-      <span>{row.minionName ?? "(unknown minion)"}</span>
+      {playerSegment}
     </>
   );
-}
-
-/**
- * Client-side sort refinement (Task 8). Splits the server's
- * `dueAt`-ascending `ticking` band against `now`: rows past `dueAt`
- * (overdue) precede rows with `dueAt` in the future (running). Both
- * halves stay in the server's order. Tiers 2 (`due_manual`) and 3
- * (`done`) are passed through as-is.
- *
- * The split is a single linear scan because the server already sorted
- * `ticking` rows by `dueAt`. We pull tiers 2/3 out of the array
- * unchanged.
- *
- * Exported for unit tests (Task 13).
- */
-export function refineOrder(
-  rows: readonly GmTodoNoteRow[],
-  now: number,
-): GmTodoNoteRow[] {
-  const ticking: GmTodoNoteRow[] = [];
-  const rest: GmTodoNoteRow[] = [];
-  for (const r of rows) {
-    if (r.timer.kind === "ticking") ticking.push(r);
-    else rest.push(r);
-  }
-  // Server sorted `ticking` by `dueAt` asc. The first index where
-  // `dueAt > now` is the boundary; everything before is overdue,
-  // everything from there is future. Both halves stay in their
-  // existing ascending order, which is exactly what we want:
-  //
-  //   - Overdue half: `dueAt` asc = furthest-past first =
-  //     most-overdue first.
-  //   - Future half:  `dueAt` asc = soonest first.
-  //
-  // No reversal — see `plans/2026-04-28-gm-todo-drawer-v1.md`
-  // "Sort order" rationale (Task 8).
-  let firstFuture = ticking.length;
-  for (let i = 0; i < ticking.length; i++) {
-    const t = ticking[i].timer;
-    if (t.kind === "ticking" && t.dueAt > now) {
-      firstFuture = i;
-      break;
-    }
-  }
-  const overdue = ticking.slice(0, firstFuture);
-  const future = ticking.slice(firstFuture);
-  return [...overdue, ...future, ...rest];
 }
