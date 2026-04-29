@@ -114,9 +114,15 @@ participant (GM + Players). Behaviour:
    yet seen a user interaction), surfaces a small persistent banner:
    "Click anywhere to enable game sounds." Once any click anywhere
    in the document fires, the banner clears and subsequent plays
-   succeed. Implementation: a `pointerdown` listener on `document`
-   that calls a silent priming `Audio` element; from that point
-   forward `play()` will resolve.
+   succeed. Implementation: a one-shot `pointerdown` listener on
+   `document` that synchronously calls `.play()` on a tiny inline
+   silent-audio data URI (a hard-coded `data:audio/wav;base64,...`
+   constant for a 1-frame silent WAV) inside the user-gesture
+   stack. This unlocks the audio context across browsers (Chrome
+   relaxes the policy on any user gesture; Safari requires a real
+   `play()` of an audio element from inside the gesture handler —
+   the silent data URI satisfies both). The listener detaches
+   itself after firing.
 5. Multiple events arriving in quick succession (rare, but possible
    if the GM mashes buttons): each new event id swaps the active
    `Audio` element — there is no overlap; the previous clip is
@@ -144,8 +150,7 @@ soundEvents: defineTable({
   // the row + a single signed-URL call (avoids a second hop).
   storageId: v.id("_storage"),
   triggeredByUserId: v.id("users"),
-  triggeredAt: v.number(),
-}).index("by_game_time", ["gameId", "triggeredAt"]),
+}).index("by_game", ["gameId"]),
 ```
 
 Rationale:
@@ -157,6 +162,11 @@ Rationale:
   dedicated table keeps audit history (the GM can see in a future
   v2 a "sounds played" log) and cleanly separates the trigger from
   the catalogue.
+- Ordering uses Convex's auto-populated `_creationTime` (read with
+  `.order("desc").first()` over the `by_game` index). No
+  denormalised `triggeredAt` column — `_creationTime` already
+  provides the same monotonic-per-mutation ordering and avoids a
+  redundant write.
 - Storing `storageId` denormalised on the event row keeps the
   reactive `latestEvent` query a single index walk + one
   `ctx.storage.getUrl` call. If a site admin later deletes the
@@ -175,7 +185,7 @@ the standard Convex pattern:
 1. `presetSounds.generateUploadUrl` (mutation, site-admin gated)
    returns an upload URL via `await ctx.storage.generateUploadUrl()`.
 2. The `/admin` page POSTs the file directly to that URL.
-3. On success, the page calls `presetSounds.create` with the
+3. On success, the page calls `presetSounds.add` with the
    returned `storageId`, the chosen `name`, and the file's
    `contentType`.
 
@@ -187,14 +197,20 @@ shim, no proxy.
 
 - `presetSounds.list` (query, any authenticated user): returns rows
   sorted by name. Mirrors `presetSkills.list`
-  (`convex/presetSkills.ts:30-38`).
+  (`convex/presetSkills.ts:30-38`). Implementation uses
+  `.collect()` + JS-side sort because the catalogue is bounded by
+  admin curation; same precedent as `presetSkills` /
+  `presetDrawbacks`.
 - `presetSounds.generateUploadUrl` (mutation, site-admin only):
   returns the upload URL.
-- `presetSounds.create` (mutation, site-admin only): args
+- `presetSounds.add` (mutation, site-admin only): args
   `{ name, storageId, contentType? }`. Validates name (non-empty,
-  ≤120 chars, case-insensitive unique), ensures the storage object
-  exists (`ctx.db.system.get("_storage", storageId)` returns
-  non-null), and inserts the row.
+  ≤120 chars, case-insensitive unique), validates
+  `contentType` (when provided, must start with `audio/`),
+  ensures the storage object exists
+  (`ctx.db.system.get("_storage", storageId)` returns non-null),
+  and inserts the row. Named `add` (not `create`) to match the
+  existing `presetSkills.add` / `presetDrawbacks.add` precedent.
 - `presetSounds.update` (mutation, site-admin only): rename only;
   uploads are immutable (admin removes + reuploads to swap audio).
 - `presetSounds.remove` (mutation, site-admin only): deletes the row
@@ -208,14 +224,17 @@ shim, no proxy.
   id.
 - `soundboard.latestEvent` (query, any participant via
   `requireGameParticipant`): returns the most-recently-inserted
-  `soundEvents` row for the game with `url` resolved via
-  `ctx.storage.getUrl(storageId)`. Returns `null` when the game has
-  no events. Projection:
+  `soundEvents` row for the game (read via the `by_game` index in
+  descending `_creationTime` order with `.first()`) with `url`
+  resolved via `ctx.storage.getUrl(storageId)`. Returns `null` when
+  the game has no events. Projection:
   ```
   {
     _id, presetSoundId, name, url, triggeredAt, triggeredByUserId
   } | null
   ```
+  where `triggeredAt` is sourced from the row's system
+  `_creationTime` field.
   `name` is joined from the preset row at query time so the client
   can display "Bellringer just played: Air horn." without an extra
   round trip.
@@ -268,13 +287,21 @@ Defence in depth: the GM-only UI gate is a courtesy; the
 
 - [ ] **Task 2.** Add `convex/presetSounds.ts` modelled on
   `convex/presetSkills.ts:1-87`. Implement `list`,
-  `generateUploadUrl`, `create`, `update` (rename only), and
-  `remove`. `remove` MUST also call `ctx.storage.delete(storageId)`
-  inside the same mutation transaction so the blob and the row drop
-  atomically; document this contract in a doc comment so a later
-  refactor doesn't split them. Use the same `normalizeName` helper
-  shape (trim, max 120 chars, case-insensitive uniqueness) as
-  `presetSkills`.
+  `generateUploadUrl`, `add`, `update` (rename only), and
+  `remove`. Naming follows the established
+  `presetSkills.add` / `presetDrawbacks.add` precedent (NOT
+  `create`). `add` MUST validate `contentType` when present —
+  reject with a clear error when it does not start with
+  `audio/` (defence in depth against an admin uploading a non-audio
+  file; see Risk 8). `remove` MUST also call
+  `ctx.storage.delete(storageId)` inside the same mutation
+  transaction so the blob and the row drop atomically; document this
+  contract in a doc comment so a later refactor doesn't split them.
+  Use the same `normalizeName` helper shape (trim, max 120 chars,
+  case-insensitive uniqueness) as `presetSkills`. The `list` query
+  uses `.collect()` + JS-side sort — add a one-line comment noting
+  the catalogue is bounded by admin curation, same precedent as
+  `convex/presetSkills.ts:34`.
 
 - [ ] **Task 3.** Add `convex/soundboard.ts` containing two
   functions:
@@ -282,26 +309,30 @@ Defence in depth: the GM-only UI gate is a courtesy; the
     preset, copies its `storageId`, inserts a `soundEvents` row,
     returns the new id.
   - `latestEvent` (query): gates on `requireGameParticipant`; reads
-    the `by_game_time` index in descending order with `.first()`
-    (or `.take(1)`); joins the preset by id for the `name` field;
+    the `by_game` index in descending `_creationTime` order with
+    `.first()`; joins the preset by id for the `name` field;
     resolves `url` via `ctx.storage.getUrl(storageId)`; projects
-    the public shape; returns `null` when the game has no events.
-    Document inline why we chose a "latest pointer" projection over
-    streaming the full history (only the most recent event drives
-    UX, the table itself is the audit trail).
+    the public shape (mapping the row's `_creationTime` onto the
+    public `triggeredAt` field); returns `null` when the game has
+    no events. Document inline why we chose a "latest pointer"
+    projection over streaming the full history (only the most
+    recent event drives UX, the table itself is the audit trail).
 
 ### Server tests
 
 - [ ] **Task 4.** Tests in `convex/presetSounds.test.ts` (mirror the
   shape of `convex/presetDrawbacks.test.ts`):
   - `list` succeeds for any authenticated user; rejects unauthed.
-  - `create` rejects non-admins; succeeds for site admin; rejects
+  - `add` rejects non-admins; succeeds for site admin; rejects
     duplicate names case-insensitively; rejects empty / overlong
     names.
+  - `add` rejects when `contentType` is provided and does not start
+    with `audio/` (e.g. `"image/png"`); succeeds when omitted or
+    when `contentType` is `"audio/mpeg"`.
   - `remove` deletes the row AND removes the underlying storage
     blob (assert via `ctx.storage` being mocked or by querying the
     `_storage` system table after the mutation).
-  - `update` rename collision check matches `create`.
+  - `update` rename collision check matches `add`.
 
 - [ ] **Task 5.** Tests in `convex/soundboard.test.ts`:
   - `trigger` rejects callers who are not the GM of the supplied
@@ -313,8 +344,8 @@ Defence in depth: the GM-only UI gate is a courtesy; the
   - `latestEvent` rejects non-participants of the game.
   - `latestEvent` returns `null` for a game with no events.
   - `latestEvent` returns the most recent event regardless of
-    creation order (insert two events out of `triggeredAt` order
-    and assert the higher-timestamp one wins).
+    insertion ordering (insert two events with `t.run` and assert
+    the second-inserted one wins per `_creationTime` descending).
   - `latestEvent` resolves `url` to a non-null string when the
     storage blob exists; resolves `url` to `null` when the blob has
     been deleted underneath it (verifies the catalogue-removal
@@ -331,7 +362,7 @@ Defence in depth: the GM-only UI gate is a courtesy; the
     `audio/*`). On submit, calls
     `api.presetSounds.generateUploadUrl`, POSTs the file to the
     returned URL with a `Content-Type` header derived from
-    `file.type`, then calls `api.presetSounds.create` with the
+    `file.type`, then calls `api.presetSounds.add` with the
     returned `storageId`, the trimmed name, and `file.type` as
     `contentType`.
   - `<PresetSoundRow>`: shows the name, an inline `<audio
@@ -364,8 +395,12 @@ Defence in depth: the GM-only UI gate is a courtesy; the
     returns `null` when `viewerIsGm === false` (defence in depth
     against accidental mounts in non-GM render paths).
   - Reads `api.presetSounds.list`. Empty state: a card with
-    "No sounds in catalogue. Site admins can add sounds in" + a
-    `<Link to="/admin">Admin</Link>`.
+    "No sounds in catalogue." When the viewer is also a site admin
+    (read via `useQuery(api.users.getMe)`; `me.isSiteAdmin === true`),
+    append "Site admins can add sounds in" + a
+    `<Link to="/admin">Admin</Link>`. For non-admin GMs the link
+    is omitted to avoid sending them to the "You do not have site
+    admin privileges" guard at `src/pages/AdminPage.tsx:22-32`.
   - Renders one button per row with `font-family:
     var(--font-display)`, uppercase label, theme primary button
     treatment.
@@ -392,12 +427,33 @@ Defence in depth: the GM-only UI gate is a courtesy; the
     (NotAllowedError), set the flag true and render a small
     persistent banner: "Click anywhere to enable game sounds."
     Attach a one-shot `pointerdown` listener on `document` that
-    creates a silent priming Audio element, calls `.play()` on it,
-    flips the flag back to false, and detaches itself.
+    synchronously constructs an `Audio` element with a hard-coded
+    inline `data:audio/wav;base64,...` silent 1-frame WAV source,
+    calls `.play()` on it inside the gesture handler (this
+    satisfies Safari's "play from user gesture" requirement; on
+    Chrome any user gesture relaxes the autoplay policy, so this
+    is belt-and-braces), flips the flag back to false, and
+    detaches itself. Define the silent-WAV data URI as a
+    module-level constant with a comment so future readers
+    understand why it exists.
   - Cleans up on unmount: pause the active Audio, detach any
     listeners.
   - The component renders the banner only; the Audio element is
     purely imperative (not in the React tree).
+  - Extract the playback decision logic and the autoplay-state
+    transitions into pure helper functions exported from the
+    component module so they can be unit-tested in the
+    edge-runtime environment without a DOM (see Task 14):
+    - `derivePlaybackAction(prevId, current)` →
+      `{ kind: "none" } | { kind: "play", url, eventId }` — given
+      the previous event id and the current `latestEvent`
+      response, returns whether to trigger playback and with what
+      url/id. Encodes the initial-load suppression and the
+      null-url ignore branches.
+    - `nextAutoplayState(prev, signal)` → next state — given the
+      current `autoplayBlocked` flag and a discrete signal
+      (`"play_rejected"`, `"user_gesture"`), returns the next
+      flag value.
 
 - [ ] **Task 10.** Wire both components into
   `src/pages/GameDetailPage.tsx`:
@@ -438,28 +494,62 @@ Defence in depth: the GM-only UI gate is a courtesy; the
 ### Client tests
 
 - [ ] **Task 13.** Tests in
-  `src/components/SoundboardSection.test.ts`:
-  - Renders nothing when `viewerIsGm === false`.
-  - Renders the empty-state link when `presetSounds` returns `[]`.
-  - Renders one button per preset and invokes
-    `api.soundboard.trigger` with the correct `presetSoundId` on
-    click (mock `useMutation`).
-  - Surfaces a thrown mutation error inline.
+  `src/components/SoundboardSection.test.ts` — pure-function only.
+  The vitest harness runs in `edge-runtime` (`vitest.config.ts:5`)
+  with no DOM and no `@testing-library/react`, mirroring the
+  pure-function approach in `src/components/GmTodoDrawer.test.ts`
+  and `src/components/NoteTimerCell.test.ts`. To keep the test
+  surface meaningful, factor out a small helper from
+  `SoundboardSection.tsx` and export it for testing:
+  - `deriveButtonState(presets, lastTriggeredId, lastTriggeredAt,
+    now)` → array of
+    `{ presetId, name, isPlaying }` — returns the button list with
+    the "playing…" badge resolved against the
+    `lastTriggeredAt + 3000ms` window.
+  Tests:
+  - Empty presets list → returns `[]`.
+  - Non-empty presets list, no recent trigger → every entry has
+    `isPlaying: false`.
+  - `lastTriggeredAt + 3000 > now` for the matching id →
+    `isPlaying: true` exactly on that one entry.
+  - `lastTriggeredAt + 3000 ≤ now` (badge expired) → entry flips
+    back to `isPlaying: false`.
+  - The viewer-is-not-GM render path (component returns `null`) is
+    covered by code review of the early-return guard rather than a
+    DOM-render test — the guard is a single line and the
+    `<SoundboardSection>` is mounted unconditionally with a
+    `viewerIsGm` prop in `GameDetailPage`, so a regression in the
+    early-return surfaces in manual smoke immediately.
 
-- [ ] **Task 14.** Tests in `src/components/SoundPlayer.test.ts`:
-  - On first non-undefined response, no `Audio` is constructed
-    (initial-load suppression).
-  - On a subsequent response with a new event id, `Audio` is
-    constructed with the URL and `.play()` is called. Use a
-    `vi.spyOn(window, "Audio")` or stub the constructor.
-  - Two events arriving back-to-back: the first `Audio` is
-    `.pause()`d before the second is constructed.
-  - When `.play()` rejects with a `NotAllowedError`, the banner
-    renders.
-  - A subsequent `pointerdown` on `document` clears the banner
-    state.
-  - Unmount: the active `Audio` is paused and the document
-    listener is removed (assert via the spy).
+- [ ] **Task 14.** Tests in `src/components/SoundPlayer.test.ts` —
+  pure-function only, same constraint as Task 13. The component
+  exports two pure helpers per Task 9; tests live against those:
+  - `derivePlaybackAction(prevId, current)`:
+    - `current === undefined` (initial load, query loading) →
+      `{ kind: "none" }`.
+    - `current === null` (no events yet, baseline) →
+      `{ kind: "none" }`.
+    - `prevId === null` and `current` is a real event (the
+      "first non-undefined response" baseline-capture branch) →
+      `{ kind: "none" }` (suppress initial-load playback).
+    - `prevId === current._id` (same event, no-op re-run) →
+      `{ kind: "none" }`.
+    - `prevId !== current._id` and `current.url === null` (storage
+      blob deleted) → `{ kind: "none" }` (graceful degradation).
+    - `prevId !== current._id` and `current.url` non-null →
+      `{ kind: "play", url, eventId: current._id }`.
+  - `nextAutoplayState(prev, signal)`:
+    - `(false, "play_rejected")` → `true`.
+    - `(true, "user_gesture")` → `false`.
+    - `(true, "play_rejected")` → `true` (idempotent).
+    - `(false, "user_gesture")` → `false` (idempotent).
+  The imperative wiring (`new Audio(url).play()`, the
+  `pointerdown` listener, the priming silent-WAV data URI) is
+  covered by the verification criteria's manual smoke matrix
+  (rapid double-click, autoplay-policy fallback, late-join
+  silence) rather than by automated tests — these branches all
+  require a real browser audio stack and the existing test
+  harness cannot reach them.
 
 ### Documentation / housekeeping
 
@@ -509,8 +599,10 @@ Defence in depth: the GM-only UI gate is a courtesy; the
   Clicking anywhere clears the banner; subsequent triggers play
   audibly.
 - Rapid double-click: the GM clicks "Air horn" then "Drumroll" within
-  ~200 ms. Both browsers play exactly one sound (Drumroll) — Air
-  horn is interrupted, not queued.
+  ~200 ms. Both browsers end up playing only Drumroll — Air horn is
+  interrupted as soon as the second event arrives (a brief leading
+  edge of Air horn audio is acceptable; v1 chooses
+  play-the-latest-only over queueing).
 - Catalogue removal: a site admin deletes "Air horn" while a player
   is connected. The button disappears from the GM's section. No
   errors in the player's console; if the GM had triggered Air horn
@@ -533,10 +625,14 @@ Defence in depth: the GM-only UI gate is a courtesy; the
 1. **Browser autoplay policy blocks the first sound.**
    Mitigation: the `<SoundPlayer>` component handles the
    `NotAllowedError` from `play()` and surfaces a one-shot
-   "click anywhere" banner. Once the user clicks, a silent priming
-   Audio unlocks the audio context for the rest of the session.
-   The banner reuses the existing `.read-only-banner` styling so
-   no new design tokens are introduced.
+   "click anywhere" banner. The `pointerdown` handler
+   synchronously constructs an `Audio` element with a hard-coded
+   inline silent-WAV data URI and calls `.play()` from inside the
+   gesture stack. This satisfies both Chrome (any user gesture
+   relaxes the policy) and Safari (real audio play call required
+   from inside the handler). The banner reuses the existing
+   `.read-only-banner` styling so no new design tokens are
+   introduced.
 
 2. **Initial-load replay (a player joining mid-session hears every
    historical sound).**
@@ -584,7 +680,7 @@ Defence in depth: the GM-only UI gate is a courtesy; the
    in the admin's own browser before they save the row — it's an
    immediate visual signal. Defence in depth: validate
    `contentType.startsWith("audio/")` server-side in
-   `presetSounds.create`; reject otherwise with a clear error.
+   `presetSounds.add`; reject otherwise with a clear error.
 
 9. **`GameDetailPage.tsx` already exceeds 4000 lines; mounting two
    new components inline could grow it further.**
@@ -595,13 +691,17 @@ Defence in depth: the GM-only UI gate is a courtesy; the
    element mounts.
 
 10. **`latestEvent` projection forces a `ctx.storage.getUrl` call
-    on every reactive query re-run, including no-op re-runs caused
-    by unrelated game writes.**
-    Mitigation: `getUrl` is cheap (Convex caches signed URLs
-    internally for the request lifetime). If profiling shows it's
-    a hotspot, introduce a cached `signedUrl` field on the
-    `soundEvents` row populated at trigger time with a long TTL —
-    but the schema as drafted leaves room for that without a
+    on every reactive query re-run.**
+    Mitigation: Convex reactivity is index-scoped — the query reads
+    only `soundEvents` (`by_game` index for the target game),
+    `presetSounds` (single `db.get` of the joined preset row), and
+    `games` + `players` rows touched by `requireGameParticipant`.
+    Unrelated game writes do NOT invalidate the subscription, so
+    re-runs only happen on actual sound triggers, roster changes,
+    or game-state edits. `getUrl` is cheap on the hot path, and if
+    profiling later shows it as a hotspot the schema as drafted
+    leaves room for a cached `signedUrl` field on the `soundEvents`
+    row populated at trigger time with a long TTL — added without a
     breaking change. v1 stays simple.
 
 ## Alternative Approaches
