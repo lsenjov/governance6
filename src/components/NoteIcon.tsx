@@ -366,8 +366,9 @@ export function NoteList({
               </button>
             )}
           </div>
+          <div className="note-item-body">{n.body}</div>
           {/* Dice rolls v1: when the note was frozen against a call's
-              roll set, display the GM-only readout above the body.
+              roll set, display the GM-only readout below the body.
               Server omits the key entirely for non-GMs and for notes
               with no pinned roll set, so this never renders for
               Players.
@@ -423,7 +424,6 @@ export function NoteList({
               )}
             </div>
           )}
-          <div className="note-item-body">{n.body}</div>
         </div>
       ))}
     </>

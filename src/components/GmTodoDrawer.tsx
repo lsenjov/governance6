@@ -118,7 +118,7 @@ function GmTodoRow({
 }) {
   // Layout mirrors `<NoteList>`'s `.note-item` block so spacing,
   // borders, and metadata typography stay consistent with the
-  // popover. The clock + dice line sits above the body excerpt.
+  // popover. The body excerpt sits above the clock + dice line.
   return (
     <div className="note-item">
       <div className="note-item-meta">
@@ -136,6 +136,17 @@ function GmTodoRow({
           {new Date(row.createdAt).toLocaleString()}
         </span>
         <span style={{ marginLeft: "auto" }}>{formatGmTodoTarget(row)}</span>
+      </div>
+      <div
+        className="note-item-body"
+        title={row.body}
+        style={{
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {row.body}
       </div>
       <div style={{ marginTop: "0.4rem" }}>
         {row.attachedRolls !== undefined && row.attachedRolls !== null ? (
@@ -161,17 +172,6 @@ function GmTodoRow({
             />
           </div>
         )}
-      </div>
-      <div
-        className="note-item-body"
-        title={row.body}
-        style={{
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
-        {row.body}
       </div>
     </div>
   );
