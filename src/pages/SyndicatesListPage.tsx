@@ -1,10 +1,11 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
 export function SyndicatesListPage() {
+  const navigate = useNavigate();
   const syndicates = useQuery(api.syndicates.listMine);
   const create = useMutation(api.syndicates.create);
   const remove = useMutation(api.syndicates.remove);
@@ -21,11 +22,12 @@ export function SyndicatesListPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await create({ name, leader, description });
+      const newId = await create({ name, leader, description });
       setName("");
       setLeader("");
       setDescription("");
       setShowForm(false);
+      navigate(`/syndicates/${newId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create.");
     } finally {
