@@ -1,6 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { assertSyndicateEditable, requireUserId } from "./lib/auth";
+import { assertSyndicateEditableForAdminOrOwner, requireUserId } from "./lib/auth";
 
 /**
  * Minion CRUD — Rule 4.
@@ -91,7 +91,7 @@ export const create = mutation({
     skills: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    await assertSyndicateEditable(ctx, args.syndicateId);
+    await assertSyndicateEditableForAdminOrOwner(ctx, args.syndicateId);
     const name = validateName(args.name);
     const accent = validateAccent(args.accent);
     const description = validateDescription(args.description);
@@ -136,7 +136,7 @@ export const update = mutation({
   handler: async (ctx, args) => {
     const minion = await ctx.db.get(args.minionId);
     if (!minion) throw new Error("Minion not found.");
-    await assertSyndicateEditable(ctx, minion.syndicateId);
+    await assertSyndicateEditableForAdminOrOwner(ctx, minion.syndicateId);
 
     const patch: {
       name?: string;
@@ -181,7 +181,7 @@ export const remove = mutation({
   handler: async (ctx, args) => {
     const minion = await ctx.db.get(args.minionId);
     if (!minion) throw new Error("Minion not found.");
-    await assertSyndicateEditable(ctx, minion.syndicateId);
+    await assertSyndicateEditableForAdminOrOwner(ctx, minion.syndicateId);
 
     // Cascade per-game state rows referring to this minion.
     const gpms = await ctx.db

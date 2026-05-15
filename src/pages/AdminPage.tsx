@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
@@ -38,6 +39,16 @@ export function AdminPage() {
         Manage the preset skill and drawback lists used by the editors'
         autocomplete. Users may still type values that are not in these lists.
       </p>
+
+      <section style={{ marginBottom: "1.5rem" }}>
+        <h3>Syndicates</h3>
+        <p className="muted" style={{ fontSize: "0.9rem" }}>
+          Site admins can view and edit every non-played syndicate in the
+          system. Played syndicates remain permanently read-only for
+          everyone.
+        </p>
+        <Link to="/admin/syndicates">All Syndicates →</Link>
+      </section>
 
       <section>
         <h3>Preset skills ({skills?.length ?? 0})</h3>

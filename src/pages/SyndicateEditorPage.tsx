@@ -36,14 +36,34 @@ export function SyndicateEditorPage() {
 
   return (
     <div>
-      <Link to="/syndicates" className="muted">
-        ← Back to My Syndicates
+      <Link
+        to={data.isAdminView ? "/admin/syndicates" : "/syndicates"}
+        className="muted"
+      >
+        {data.isAdminView
+          ? "← Back to All Syndicates"
+          : "← Back to My Syndicates"}
       </Link>
       <div className="row-wrap" style={{ marginTop: "0.5rem" }}>
         <h2 style={{ marginRight: "auto" }}>{data.name}</h2>
         {data.played && <span className="badge warning">Played (frozen)</span>}
         {data.isShared && <span className="badge accent">Shared</span>}
       </div>
+      {data.isAdminView && (
+        <div className="muted" style={{ fontSize: "0.9rem" }}>
+          Owner: {data.ownerName ?? "Unknown"}
+        </div>
+      )}
+
+      {data.isAdminView && data.canEdit && (
+        <div
+          className="read-only-banner"
+          style={{ borderLeftColor: "var(--accent, currentColor)" }}
+        >
+          Editing as site admin — owned by {data.ownerName ?? "Unknown"}.
+          Changes apply to that user's syndicate.
+        </div>
+      )}
 
       {!data.canEdit && (
         <div className="read-only-banner">
@@ -53,7 +73,10 @@ export function SyndicateEditorPage() {
         </div>
       )}
 
-      <SyndicateCore syndicate={data} canEdit={data.canEdit} isOwner={data.isOwner} />
+      <SyndicateCore
+        syndicate={data}
+        canEdit={data.canEdit}
+      />
 
       <div className="section-grid" style={{ marginTop: "1.5rem" }}>
         <section>
@@ -81,11 +104,9 @@ export function SyndicateEditorPage() {
 function SyndicateCore({
   syndicate,
   canEdit,
-  isOwner,
 }: {
   syndicate: Doc<"syndicates">;
   canEdit: boolean;
-  isOwner: boolean;
 }) {
   const update = useMutation(api.syndicates.update);
   const setIsShared = useMutation(api.syndicates.setIsShared);
@@ -171,7 +192,7 @@ function SyndicateCore({
         <button type="submit" disabled={!canEdit}>
           Save
         </button>
-        {isOwner && canEdit && (
+        {canEdit && (
           <button
             type="button"
             className="secondary"

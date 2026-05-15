@@ -1,6 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { assertSyndicateEditable, requireUserId } from "./lib/auth";
+import { assertSyndicateEditableForAdminOrOwner, requireUserId } from "./lib/auth";
 
 /**
  * Drawback CRUD — Rule 3 (0–5 per Syndicate).
@@ -61,7 +61,7 @@ export const create = mutation({
     isRolled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    await assertSyndicateEditable(ctx, args.syndicateId);
+    await assertSyndicateEditableForAdminOrOwner(ctx, args.syndicateId);
     const name = args.name.trim();
     if (name.length < 1 || name.length > DRAWBACK_NAME_MAX) {
       throw new Error(`Drawback name must be 1–${DRAWBACK_NAME_MAX} characters.`);
@@ -106,7 +106,7 @@ export const update = mutation({
   handler: async (ctx, args) => {
     const drawback = await ctx.db.get(args.drawbackId);
     if (!drawback) throw new Error("Drawback not found.");
-    await assertSyndicateEditable(ctx, drawback.syndicateId);
+    await assertSyndicateEditableForAdminOrOwner(ctx, drawback.syndicateId);
     const patch: Partial<{
       name: string;
       description: string;
@@ -144,7 +144,7 @@ export const remove = mutation({
   handler: async (ctx, args) => {
     const drawback = await ctx.db.get(args.drawbackId);
     if (!drawback) throw new Error("Drawback not found.");
-    await assertSyndicateEditable(ctx, drawback.syndicateId);
+    await assertSyndicateEditableForAdminOrOwner(ctx, drawback.syndicateId);
     await ctx.db.delete(args.drawbackId);
   },
 });

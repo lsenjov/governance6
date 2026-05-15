@@ -10,6 +10,7 @@ import { SharedSyndicatesPage } from "./pages/SharedSyndicatesPage";
 import { GamesListPage } from "./pages/GamesListPage";
 import { GameDetailPage } from "./pages/GameDetailPage";
 import { AdminPage } from "./pages/AdminPage";
+import { AdminSyndicatesListPage } from "./pages/AdminSyndicatesListPage";
 
 function TopNav() {
   const { signOut } = useAuthActions();
@@ -58,6 +59,10 @@ export default function App() {
               <Route path="/games" element={<GamesListPage />} />
               <Route path="/games/:gameId" element={<GameDetailPage />} />
               <Route path="/admin" element={<AdminPage />} />
+              <Route
+                path="/admin/syndicates"
+                element={<AdminSyndicatesListPage />}
+              />
               <Route path="*" element={<Navigate to="/games" replace />} />
             </Routes>
           </main>

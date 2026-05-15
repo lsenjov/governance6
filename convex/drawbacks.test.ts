@@ -239,3 +239,141 @@ describe("drawbacks.listForSyndicate", () => {
     expect(otherView[0].isRolled).toBe(true);
   });
 });
+
+/**
+ * Admin parity (see `plans/2026-05-15-admin-syndicate-access-v1.md`).
+ * A site admin can create / update / remove drawbacks on any non-played
+ * syndicate, even one they don't own. Played syndicates remain frozen
+ * for everyone, including admins.
+ */
+async function createAdminHarness() {
+  const t = convexTest(schema, modules);
+  const ids = await t.run(async (ctx) => {
+    const ownerId = await ctx.db.insert("users", {
+      displayName: "Owner",
+      email: "owner@admin-test",
+    });
+    const adminId = await ctx.db.insert("users", {
+      displayName: "Admin",
+      email: "admin@admin-test",
+      isSiteAdmin: true,
+    });
+    const unplayedId = await ctx.db.insert("syndicates", {
+      name: "Owner Unplayed",
+      leader: "Cap",
+      description: "",
+      played: false,
+      isShared: false,
+      ownerId,
+    });
+    const playedId = await ctx.db.insert("syndicates", {
+      name: "Owner Played",
+      leader: "Cap",
+      description: "",
+      played: true,
+      isShared: false,
+      ownerId,
+    });
+    return { ownerId, adminId, unplayedId, playedId };
+  });
+  return { t, ids };
+}
+
+describe("drawbacks: admin parity", () => {
+  test("admin can create on a non-owned unplayed syndicate", async () => {
+    const h = await createAdminHarness();
+    const drawbackId = await h.t
+      .withIdentity(asUser(h.ids.adminId))
+      .mutation(api.drawbacks.create, {
+        syndicateId: h.ids.unplayedId,
+        name: "Admin Drawback",
+        description: "Inserted by admin",
+      });
+    const row = await h.t.run(async (ctx) => ctx.db.get(drawbackId));
+    expect(row?.name).toBe("Admin Drawback");
+    expect(row?.syndicateId).toBe(h.ids.unplayedId);
+  });
+
+  test("admin can update someone else's drawback", async () => {
+    const h = await createAdminHarness();
+    const drawbackId = await h.t
+      .withIdentity(asUser(h.ids.ownerId))
+      .mutation(api.drawbacks.create, {
+        syndicateId: h.ids.unplayedId,
+        name: "Old",
+        description: "old",
+      });
+    await h.t
+      .withIdentity(asUser(h.ids.adminId))
+      .mutation(api.drawbacks.update, {
+        drawbackId,
+        name: "Admin-edited",
+      });
+    const row = await h.t.run(async (ctx) => ctx.db.get(drawbackId));
+    expect(row?.name).toBe("Admin-edited");
+  });
+
+  test("admin can remove someone else's drawback", async () => {
+    const h = await createAdminHarness();
+    const drawbackId = await h.t
+      .withIdentity(asUser(h.ids.ownerId))
+      .mutation(api.drawbacks.create, {
+        syndicateId: h.ids.unplayedId,
+        name: "Doomed",
+        description: "",
+      });
+    await h.t
+      .withIdentity(asUser(h.ids.adminId))
+      .mutation(api.drawbacks.remove, { drawbackId });
+    const row = await h.t.run(async (ctx) => ctx.db.get(drawbackId));
+    expect(row).toBeNull();
+  });
+
+  test("admin is still locked out of a played syndicate (create)", async () => {
+    const h = await createAdminHarness();
+    await expect(
+      h.t.withIdentity(asUser(h.ids.adminId)).mutation(api.drawbacks.create, {
+        syndicateId: h.ids.playedId,
+        name: "Frozen",
+        description: "",
+      }),
+    ).rejects.toThrow(/played|frozen/i);
+  });
+
+  test("admin is still locked out of a played syndicate (update)", async () => {
+    const h = await createAdminHarness();
+    // Seed a drawback on the played syndicate via direct insert so we
+    // can test that `update` is still rejected.
+    const drawbackId = await h.t.run(async (ctx) =>
+      ctx.db.insert("drawbacks", {
+        syndicateId: h.ids.playedId,
+        name: "Sealed",
+        description: "",
+        order: 0,
+      }),
+    );
+    await expect(
+      h.t.withIdentity(asUser(h.ids.adminId)).mutation(api.drawbacks.update, {
+        drawbackId,
+        name: "Try edit",
+      }),
+    ).rejects.toThrow(/played|frozen/i);
+  });
+
+  test("admin is still locked out of a played syndicate (remove)", async () => {
+    const h = await createAdminHarness();
+    const drawbackId = await h.t.run(async (ctx) =>
+      ctx.db.insert("drawbacks", {
+        syndicateId: h.ids.playedId,
+        name: "Sealed",
+        description: "",
+        order: 0,
+      }),
+    );
+    await expect(
+      h.t
+        .withIdentity(asUser(h.ids.adminId))
+        .mutation(api.drawbacks.remove, { drawbackId }),
+    ).rejects.toThrow(/played|frozen/i);
+  });
+});

@@ -140,6 +140,12 @@ export async function requireSyndicateOwner(
 /**
  * Rule 5 + Rule 7: editable only while `played === false`.
  * Rule 6: `isShared` alone does NOT lock editing.
+ *
+ * STRICT-OWNER variant — preserved for any future caller that genuinely
+ * needs to reject site admins. In the current codebase every mutation
+ * routes through {@link assertSyndicateEditableForAdminOrOwner} instead,
+ * which widens authorisation to site admins while keeping the played
+ * lock identical. See `plans/2026-05-15-admin-syndicate-access-v1.md`.
  */
 export async function assertSyndicateEditable(
   ctx: Ctx,
@@ -152,4 +158,52 @@ export async function assertSyndicateEditable(
     );
   }
   return syndicate;
+}
+
+/**
+ * Admin-aware ownership helper. Returns the syndicate doc when the
+ * caller is either the syndicate owner OR a site admin
+ * (`users.isSiteAdmin === true`). Site admin grant is set only via the
+ * Convex dashboard (no in-app UI grants it). Used by every syndicate /
+ * drawback / minion write path so that admins can manage other users'
+ * content while keeping all validation and cascade logic centralised.
+ *
+ * Note: this helper deliberately reads `user.isSiteAdmin` directly
+ * (rather than wrapping {@link requireSiteAdmin} in a try/catch) so
+ * authorisation never relies on exception-as-control-flow.
+ */
+export async function requireSyndicateOwnerOrAdmin(
+  ctx: Ctx,
+  syndicateId: Id<"syndicates">,
+): Promise<{ syndicate: Doc<"syndicates">; isOwner: boolean; isAdmin: boolean }> {
+  const user = await requireUser(ctx);
+  const syndicate = await ctx.db.get(syndicateId);
+  if (!syndicate) throw new Error("Syndicate not found.");
+  const isOwner = syndicate.ownerId === user._id;
+  const isAdmin = user.isSiteAdmin === true;
+  if (!isOwner && !isAdmin) {
+    throw new Error("Only the owner can modify this Syndicate.");
+  }
+  return { syndicate, isOwner, isAdmin };
+}
+
+/**
+ * Admin-aware editability helper. Caller must be the owner OR a site
+ * admin, AND the syndicate must be unplayed. The `played === true`
+ * lock applies to everyone — including site admins — because
+ * downstream tables (`callRollSets`, `notes.attachedRollSetId`,
+ * `gamePlayerMinions`) rely on the content of played syndicates being
+ * immutable.
+ */
+export async function assertSyndicateEditableForAdminOrOwner(
+  ctx: Ctx,
+  syndicateId: Id<"syndicates">,
+): Promise<{ syndicate: Doc<"syndicates">; isOwner: boolean; isAdmin: boolean }> {
+  const result = await requireSyndicateOwnerOrAdmin(ctx, syndicateId);
+  if (result.syndicate.played) {
+    throw new Error(
+      "This Syndicate has been played and is permanently frozen.",
+    );
+  }
+  return result;
 }

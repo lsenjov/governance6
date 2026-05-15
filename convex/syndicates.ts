@@ -2,8 +2,9 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import {
-  assertSyndicateEditable,
-  requireSyndicateOwner,
+  assertSyndicateEditableForAdminOrOwner,
+  requireSiteAdmin,
+  requireSyndicateOwnerOrAdmin,
   requireUser,
   requireUserId,
 } from "./lib/auth";
@@ -63,7 +64,7 @@ export const update = mutation({
     description: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await assertSyndicateEditable(ctx, args.syndicateId);
+    await assertSyndicateEditableForAdminOrOwner(ctx, args.syndicateId);
     const patch: Partial<{
       name: string;
       leader: string;
@@ -96,7 +97,10 @@ export const setIsShared = mutation({
   },
   handler: async (ctx, args) => {
     // Rule 6: `isShared` toggleable in either direction while played=false.
-    await assertSyndicateEditable(ctx, args.syndicateId);
+    // Site admins (`users.isSiteAdmin`) can toggle share on any non-played
+    // syndicate they don't own — see
+    // `plans/2026-05-15-admin-syndicate-access-v1.md`.
+    await assertSyndicateEditableForAdminOrOwner(ctx, args.syndicateId);
     await ctx.db.patch(args.syndicateId, { isShared: args.value });
   },
 });
@@ -109,7 +113,14 @@ export const setIsShared = mutation({
 export const remove = mutation({
   args: { syndicateId: v.id("syndicates") },
   handler: async (ctx, args) => {
-    const syndicate = await requireSyndicateOwner(ctx, args.syndicateId);
+    // Admin parity: site admins may delete any non-played syndicate.
+    // The cascade below depends only on the syndicate id, not on the
+    // caller's identity, so widening here is safe. The bespoke played
+    // error message is preserved deliberately (see Rule 9).
+    const { syndicate } = await requireSyndicateOwnerOrAdmin(
+      ctx,
+      args.syndicateId,
+    );
     if (syndicate.played) {
       throw new Error(
         "Cannot delete a Syndicate that has been played. Games reference its content.",
@@ -204,11 +215,13 @@ export const listShared = query({
 export const getWithChildren = query({
   args: { syndicateId: v.id("syndicates") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
+    const user = await requireUser(ctx);
     const syndicate = await ctx.db.get(args.syndicateId);
     if (!syndicate) return null;
-    // Visibility: owner OR isShared.
-    if (syndicate.ownerId !== userId && !syndicate.isShared) {
+    const isOwner = syndicate.ownerId === user._id;
+    const isSiteAdmin = user.isSiteAdmin === true;
+    // Visibility: owner OR isShared OR site admin (read-all parity).
+    if (!isOwner && !syndicate.isShared && !isSiteAdmin) {
       return null;
     }
     const [drawbacks, minions] = await Promise.all([
@@ -223,19 +236,83 @@ export const getWithChildren = query({
     ]);
     drawbacks.sort((a, b) => a.order - b.order);
     minions.sort((a, b) => a.order - b.order);
-    const isOwner = syndicate.ownerId === userId;
+    // `isAdminView` is intentionally `isSiteAdmin && !isOwner`: an admin
+    // viewing their own syndicate gets the normal owner experience, not
+    // the "Editing as site admin" notice. The owner display name is
+    // denormalised so the editor can attribute ownership without a
+    // second round-trip.
+    const isAdminView = isSiteAdmin && !isOwner;
+    let ownerName: string | undefined = undefined;
+    if (isAdminView) {
+      const owner = await ctx.db.get(syndicate.ownerId);
+      ownerName = owner?.displayName ?? owner?.email ?? "Unknown";
+    }
     return {
       ...syndicate,
       drawbacks,
       minions,
       isOwner,
-      canEdit: isOwner && !syndicate.played,
+      isAdminView,
+      ownerName,
+      canEdit: (isOwner || isSiteAdmin) && !syndicate.played,
     };
   },
 });
 
 /**
+ * Site-admin-only: every syndicate in the system, decorated with owner
+ * attribution. Sorted by `played` (unplayed first), then most-recent
+ * first. Played rows are included for visibility but remain
+ * permanently read-only everywhere (see
+ * `plans/2026-05-15-admin-syndicate-access-v1.md`).
+ */
+export const listAll = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireSiteAdmin(ctx);
+    const all = await ctx.db.query("syndicates").collect();
+    const ownerIds = Array.from(new Set(all.map((s) => s.ownerId)));
+    const owners: Record<
+      string,
+      { displayName?: string; email?: string }
+    > = {};
+    for (const oid of ownerIds) {
+      const owner = await ctx.db.get(oid);
+      owners[oid] = {
+        displayName: owner?.displayName,
+        email: owner?.email,
+      };
+    }
+    const decorated = all.map((s) => ({
+      ...s,
+      ownerName:
+        owners[s.ownerId]?.displayName ??
+        owners[s.ownerId]?.email ??
+        "Unknown",
+      ownerEmail: owners[s.ownerId]?.email,
+    }));
+    decorated.sort((a, b) => {
+      // Unplayed before played.
+      if (a.played !== b.played) return a.played ? 1 : -1;
+      // Most recently created first.
+      return b._creationTime - a._creationTime;
+    });
+    return decorated;
+  },
+});
+
+/**
  * Rule 13: Syndicates selectable for a Player — own or isShared.
+ *
+ * Note: admin parity (`plans/2026-05-15-admin-syndicate-access-v1.md`)
+ * is intentionally NOT extended here. Site admins acting as a Player
+ * see only the same selectable set as any other user; their wide
+ * visibility power is scoped to the management surface
+ * (`listAll` / `getWithChildren` / mutation paths) only. The
+ * `games.selectSyndicate` mutation (`convex/games.ts:118`) and
+ * `notes.assertSyndicateVisibleInGame` (`convex/notes.ts:792`) both
+ * perform their own owner-or-shared checks and remain untouched for
+ * the same reason.
  */
 export const listSelectable = query({
   args: {},
