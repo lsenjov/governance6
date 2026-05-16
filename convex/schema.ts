@@ -23,10 +23,15 @@ export default defineSchema({
     image: v.optional(v.string()),
     // App-specific:
     displayName: v.optional(v.string()), // Rule 1
-    // Site admin flag. Manageable only directly via the Convex database
-    // (no in-app UI grants this). A site admin can manage the preset
-    // skill list used when authoring Minions.
+    // Both 'isSiteAdmin' and 'passwordResetPending' are manageable only
+    // directly via the Convex database (no in-app UI grants them). A site
+    // admin can manage the preset skill list used when authoring Minions.
+    // Setting 'passwordResetPending' to 'true' authorises one self-serve
+    // password reset via 'auth.resetFlaggedPassword'; the field is then
+    // cleared atomically on consumption. See
+    // plans/2026-05-16-admin-password-reset-flag-v1.md.
     isSiteAdmin: v.optional(v.boolean()),
+    passwordResetPending: v.optional(v.literal(true)),
   }).index("email", ["email"]),
 
   // Preset skill catalogue. Used by the Minion editor's autocomplete.
