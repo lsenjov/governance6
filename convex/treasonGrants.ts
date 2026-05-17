@@ -203,6 +203,14 @@ export const deleteGrant = mutation({
     const grant = await ctx.db.get(args.grantId);
     if (!grant) throw new Error("Treason Grant not found.");
     await assertGrantWritable(ctx, grant.gameId);
+
+    // Cascade notes targeting this grant.
+    const grantNotes = await ctx.db
+      .query("notes")
+      .withIndex("by_grant", (q) => q.eq("targetGrantId", args.grantId))
+      .collect();
+    for (const n of grantNotes) await ctx.db.delete(n._id);
+
     await ctx.db.delete(grant._id);
   },
 });

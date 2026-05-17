@@ -25,17 +25,27 @@ export function resolveNoteCount(
         gameNotes: number;
         bySyndicate: Record<string, number>;
         byMinion: Record<string, number>;
+        byGrant: Record<string, number>;
+        byGoal: Record<string, number>;
       }
     | undefined,
   target:
     | { kind: "game" }
     | { kind: "syndicate"; syndicateId: Id<"syndicates"> }
-    | { kind: "minion"; minionId: Id<"minions"> },
+    | { kind: "minion"; minionId: Id<"minions"> }
+    | { kind: "grant"; grantId: Id<"treasonGrants"> }
+    | { kind: "goal"; goalId: Id<"goals"> },
 ): number {
   if (!counts) return 0;
   if (target.kind === "game") return counts.gameNotes;
   if (target.kind === "syndicate") {
     return counts.bySyndicate[target.syndicateId] ?? 0;
   }
-  return counts.byMinion[target.minionId] ?? 0;
+  if (target.kind === "minion") {
+    return counts.byMinion[target.minionId] ?? 0;
+  }
+  if (target.kind === "grant") {
+    return counts.byGrant[target.grantId] ?? 0;
+  }
+  return counts.byGoal[target.goalId] ?? 0;
 }

@@ -14,7 +14,9 @@ import { NoteTimerCell, type NoteTimerState } from "./NoteTimerCell";
 export type NoteTarget =
   | { kind: "game" }
   | { kind: "syndicate"; syndicateId: Id<"syndicates"> }
-  | { kind: "minion"; minionId: Id<"minions"> };
+  | { kind: "minion"; minionId: Id<"minions"> }
+  | { kind: "grant"; grantId: Id<"treasonGrants"> }
+  | { kind: "goal"; goalId: Id<"goals"> };
 
 /**
  * Result-shape for a single note as returned by `api.notes.listNotesForTarget`.
@@ -151,7 +153,11 @@ function NotesPopover({
     api.notes.getTimerCreateContext,
     target.kind === "minion"
       ? { gameId, targetKind: "minion", targetMinionId: target.minionId }
-      : { gameId, targetKind: target.kind },
+      : target.kind === "grant"
+        ? { gameId, targetKind: "grant", targetGrantId: target.grantId }
+        : target.kind === "goal"
+          ? { gameId, targetKind: "goal", targetGoalId: target.goalId }
+          : { gameId, targetKind: target.kind },
   );
 
   const [err, setErr] = useState<string | null>(null);
@@ -480,6 +486,8 @@ export function NoteCreateForm({
         targetSyndicateId:
           target.kind === "syndicate" ? target.syndicateId : undefined,
         targetMinionId: target.kind === "minion" ? target.minionId : undefined,
+        targetGrantId: target.kind === "grant" ? target.grantId : undefined,
+        targetGoalId: target.kind === "goal" ? target.goalId : undefined,
         body: trimmed,
         visibility,
         ...(timerMinutes !== undefined ? { timerMinutes } : {}),
@@ -578,9 +586,23 @@ export function buildListArgs(gameId: Id<"games">, target: NoteTarget) {
       targetSyndicateId: target.syndicateId,
     };
   }
+  if (target.kind === "minion") {
+    return {
+      gameId,
+      targetKind: "minion" as const,
+      targetMinionId: target.minionId,
+    };
+  }
+  if (target.kind === "grant") {
+    return {
+      gameId,
+      targetKind: "grant" as const,
+      targetGrantId: target.grantId,
+    };
+  }
   return {
     gameId,
-    targetKind: "minion" as const,
-    targetMinionId: target.minionId,
+    targetKind: "goal" as const,
+    targetGoalId: target.goalId,
   };
 }

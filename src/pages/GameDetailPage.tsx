@@ -156,6 +156,7 @@ export function GameDetailPage() {
             gameState={gameState}
             viewerIsGm={viewer.isGm}
             hideManagementControls={hideManagementControls}
+            noteCounts={noteCounts}
           />
 
           <GoalsSection
@@ -164,6 +165,7 @@ export function GameDetailPage() {
             viewerIsGm={viewer.isGm}
             viewerPlayerId={viewer.playerId}
             hideManagementControls={hideManagementControls}
+            noteCounts={noteCounts}
           />
 
           {viewer.isGm && gameState === "ready" && (
@@ -2479,11 +2481,13 @@ function TreasonGrantsSection({
   gameState,
   viewerIsGm,
   hideManagementControls,
+  noteCounts,
 }: {
   gameId: GameId;
   gameState: GameState;
   viewerIsGm: boolean;
   hideManagementControls: boolean;
+  noteCounts: ReturnType<typeof useNotesCountMap>;
 }) {
   // Players never see Grants while the game is still being assembled.
   // GMs always see the panel so they can author grants pre-game.
@@ -2526,9 +2530,11 @@ function TreasonGrantsSection({
             <TreasonGrantRow
               key={g._id}
               grant={g}
+              gameId={gameId}
               viewerIsGm={viewerIsGm}
               gameState={gameState}
               hideManagementControls={hideManagementControls}
+              noteCounts={noteCounts}
             />
           ))}
         </div>
@@ -2643,14 +2649,18 @@ function NewGrantForm({ gameId }: { gameId: GameId }) {
 
 function TreasonGrantRow({
   grant,
+  gameId,
   viewerIsGm,
   gameState,
   hideManagementControls,
+  noteCounts,
 }: {
   grant: GrantRow;
+  gameId: GameId;
   viewerIsGm: boolean;
   gameState: GameState;
   hideManagementControls: boolean;
+  noteCounts: ReturnType<typeof useNotesCountMap>;
 }) {
   const take = useMutation(api.treasonGrants.takeGrant);
   const remove = useMutation(api.treasonGrants.deleteGrant);
@@ -2732,6 +2742,21 @@ function TreasonGrantRow({
           style={{ alignItems: "center", gap: "0.5rem", minWidth: 0 }}
         >
           <strong>{grant.keyword}</strong>
+          <span
+            onClick={(e) => e.stopPropagation()}
+            style={{ display: "inline-flex" }}
+          >
+            <NoteIcon
+              gameId={gameId}
+              target={{ kind: "grant", grantId: grant._id }}
+              count={resolveNoteCount(noteCounts, {
+                kind: "grant",
+                grantId: grant._id,
+              })}
+              label={`Grant: ${grant.keyword}`}
+              hideManagementControls={hideManagementControls}
+            />
+          </span>
           <span className="badge accent" style={{ fontSize: "0.75rem" }}>
             +{grant.power} POWER
           </span>
@@ -3467,12 +3492,14 @@ function GoalsSection({
   viewerIsGm,
   viewerPlayerId,
   hideManagementControls,
+  noteCounts,
 }: {
   gameId: GameId;
   gameState: GameState;
   viewerIsGm: boolean;
   viewerPlayerId: PlayerId | null;
   hideManagementControls: boolean;
+  noteCounts: ReturnType<typeof useNotesCountMap>;
 }) {
   const hidden = !viewerIsGm && gameState === "ready";
   const data = useQuery(
@@ -3513,10 +3540,12 @@ function GoalsSection({
             <GoalRowView
               key={g._id}
               goal={g}
+              gameId={gameId}
               viewerIsGm={viewerIsGm}
               viewerPlayerId={viewerPlayerId}
               eligiblePlayers={data.eligiblePlayers}
               hideManagementControls={hideManagementControls}
+              noteCounts={noteCounts}
             />
           ))}
         </div>
@@ -3728,16 +3757,20 @@ function NewGoalForm({
 
 function GoalRowView({
   goal,
+  gameId,
   viewerIsGm,
   viewerPlayerId,
   eligiblePlayers,
   hideManagementControls,
+  noteCounts,
 }: {
   goal: GoalRow;
+  gameId: GameId;
   viewerIsGm: boolean;
   viewerPlayerId: PlayerId | null;
   eligiblePlayers: GoalsEligiblePlayer[];
   hideManagementControls: boolean;
+  noteCounts: ReturnType<typeof useNotesCountMap>;
 }) {
   const remove = useMutation(api.goals.deleteGoal);
   const [editing, setEditing] = useState(false);
@@ -3784,6 +3817,21 @@ function GoalRowView({
           style={{ alignItems: "center", gap: "0.5rem", minWidth: 0 }}
         >
           <strong>{formatGoalKeyword(goal.keyword, goal.type)}</strong>
+          <span
+            onClick={(e) => e.stopPropagation()}
+            style={{ display: "inline-flex" }}
+          >
+            <NoteIcon
+              gameId={gameId}
+              target={{ kind: "goal", goalId: goal._id }}
+              count={resolveNoteCount(noteCounts, {
+                kind: "goal",
+                goalId: goal._id,
+              })}
+              label={`Goal: ${goal.keyword}`}
+              hideManagementControls={hideManagementControls}
+            />
+          </span>
           <span
             className="badge accent"
             style={{ fontSize: "0.75rem" }}

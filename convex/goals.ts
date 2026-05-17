@@ -461,6 +461,14 @@ export const deleteGoal = mutation({
     const goal = await ctx.db.get(args.goalId);
     if (!goal) throw new Error("Goal not found.");
     await assertGoalWritableByGm(ctx, goal.gameId);
+
+    // Cascade notes targeting this goal.
+    const goalNotes = await ctx.db
+      .query("notes")
+      .withIndex("by_goal", (q) => q.eq("targetGoalId", args.goalId))
+      .collect();
+    for (const n of goalNotes) await ctx.db.delete(n._id);
+
     await ctx.db.delete(goal._id);
   },
 });

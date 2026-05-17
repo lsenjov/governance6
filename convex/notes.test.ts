@@ -1748,3 +1748,804 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
     expect(rows[0].body).toBe("this game timer");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Notes on Treason Grants and Goals
+// (plans/2026-05-17-notes-on-grants-and-goals-v1.md, Tasks 26–38)
+// ─────────────────────────────────────────────────────────────────────────
+
+async function createGrant(
+  h: Harness,
+  fields: { keyword: string; power?: number; description?: string },
+): Promise<Id<"treasonGrants">> {
+  return await h.t
+    .withIdentity(asUser(h.ids.gmId))
+    .mutation(api.treasonGrants.createGrant, {
+      gameId: h.ids.gameId,
+      keyword: fields.keyword,
+      power: fields.power ?? 5,
+      description: fields.description ?? "secret",
+    });
+}
+
+async function createGoal(
+  h: Harness,
+  fields: {
+    keyword: string;
+    description?: string;
+    type?: "regular" | "shared" | "competitive";
+    fromPlayerId?: Id<"players">;
+    toPlayerId?: Id<"players">;
+  },
+): Promise<Id<"goals">> {
+  return await h.t
+    .withIdentity(asUser(h.ids.gmId))
+    .mutation(api.goals.createGoal, {
+      gameId: h.ids.gameId,
+      keyword: fields.keyword,
+      description: fields.description ?? "",
+      type: fields.type ?? "regular",
+      fromPlayerId: fields.fromPlayerId,
+      toPlayerId: fields.toPlayerId,
+    });
+}
+
+async function createGrantNote(
+  h: Harness,
+  actor: Id<"users">,
+  grantId: Id<"treasonGrants">,
+  body: string,
+  visibility: "private" | "public" = "private",
+): Promise<Id<"notes">> {
+  return await h.t.withIdentity(asUser(actor)).mutation(api.notes.createNote, {
+    gameId: h.ids.gameId,
+    targetKind: "grant",
+    targetGrantId: grantId,
+    body,
+    visibility,
+  });
+}
+
+async function createGoalNote(
+  h: Harness,
+  actor: Id<"users">,
+  goalId: Id<"goals">,
+  body: string,
+  visibility: "private" | "public" = "private",
+): Promise<Id<"notes">> {
+  return await h.t.withIdentity(asUser(actor)).mutation(api.notes.createNote, {
+    gameId: h.ids.gameId,
+    targetKind: "goal",
+    targetGoalId: goalId,
+    body,
+    visibility,
+  });
+}
+
+describe("notes on grants/goals: authoring eligibility", () => {
+  test("any participant (GM, Player A, Player B) can author on a grant; outsider rejected", async () => {
+    const h = await createHarness();
+    const grantId = await createGrant(h, { keyword: "Whisper" });
+
+    for (const actor of [h.ids.gmId, h.ids.aId, h.ids.bId]) {
+      const id = await createGrantNote(h, actor, grantId, `by ${actor}`);
+      expect(id).toBeTruthy();
+    }
+
+    await expect(
+      createGrantNote(h, h.ids.outsiderId, grantId, "sneaky"),
+    ).rejects.toThrow(/not a participant/i);
+  });
+
+  test("any participant can author on a goal; outsider rejected", async () => {
+    const h = await createHarness();
+    const goalId = await createGoal(h, { keyword: "Conquer" });
+
+    for (const actor of [h.ids.gmId, h.ids.aId, h.ids.bId]) {
+      const id = await createGoalNote(h, actor, goalId, `by ${actor}`);
+      expect(id).toBeTruthy();
+    }
+
+    await expect(
+      createGoalNote(h, h.ids.outsiderId, goalId, "sneaky"),
+    ).rejects.toThrow(/not a participant/i);
+  });
+
+  test("authoring on an archived-game grant succeeds (parity with minion/syndicate)", async () => {
+    // Plan Task 38.
+    const h = await createHarness();
+    const grantId = await createGrant(h, { keyword: "Late" });
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.games.transitionState, {
+        gameId: h.ids.gameId,
+        target: "archived",
+      });
+    const id = await createGrantNote(h, h.ids.aId, grantId, "post-archive");
+    expect(id).toBeTruthy();
+  });
+});
+
+describe("notes on grants/goals: target consistency", () => {
+  test("grant note requires targetGrantId and rejects sibling ids", async () => {
+    // Plan Task 36.
+    const h = await createHarness();
+    const grantId = await createGrant(h, { keyword: "Whisper" });
+
+    // Missing targetGrantId.
+    await expect(
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        body: "no id",
+      }),
+    ).rejects.toThrow();
+
+    // Stray syndicate id.
+    await expect(
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+        targetSyndicateId: h.ids.syndicateId,
+        body: "mixed",
+      }),
+    ).rejects.toThrow();
+
+    // Stray minion id.
+    await expect(
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+        targetMinionId: h.ids.minionId,
+        body: "mixed",
+      }),
+    ).rejects.toThrow();
+  });
+
+  test("goal note requires targetGoalId and rejects sibling ids", async () => {
+    const h = await createHarness();
+    const goalId = await createGoal(h, { keyword: "Conquer" });
+
+    await expect(
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "goal",
+        body: "no id",
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "goal",
+        targetGoalId: goalId,
+        targetSyndicateId: h.ids.syndicateId,
+        body: "mixed",
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "goal",
+        targetGoalId: goalId,
+        targetGrantId:
+          // Force a real grant id of the right type to be sure the
+          // rejection comes from the consistency check, not validator
+          // shape errors.
+          await createGrant(h, { keyword: "Foil" }),
+        body: "mixed",
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+describe("notes on grants/goals: visibility", () => {
+  test("private grant note is invisible to other players, visible to author and GM", async () => {
+    const h = await createHarness();
+    const grantId = await createGrant(h, { keyword: "Whisper" });
+    await createGrantNote(h, h.ids.aId, grantId, "alice priv", "private");
+
+    const aView = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+      });
+    expect(aView.map((n) => n.body)).toEqual(["alice priv"]);
+
+    const bView = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+      });
+    expect(bView).toHaveLength(0);
+
+    const gmView = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+      });
+    expect(gmView.map((n) => n.body)).toEqual(["alice priv"]);
+  });
+
+  test("public goal note is visible to every participant; outsider rejected on list", async () => {
+    const h = await createHarness();
+    const goalId = await createGoal(h, { keyword: "Conquer" });
+    await createGoalNote(h, h.ids.aId, goalId, "alice pub", "public");
+
+    for (const actor of [h.ids.aId, h.ids.bId, h.ids.gmId]) {
+      const view = await h.t
+        .withIdentity(asUser(actor))
+        .query(api.notes.listNotesForTarget, {
+          gameId: h.ids.gameId,
+          targetKind: "goal",
+          targetGoalId: goalId,
+        });
+      expect(view.map((n) => n.body)).toEqual(["alice pub"]);
+    }
+
+    await expect(
+      h.t
+        .withIdentity(asUser(h.ids.outsiderId))
+        .query(api.notes.listNotesForTarget, {
+          gameId: h.ids.gameId,
+          targetKind: "goal",
+          targetGoalId: goalId,
+        }),
+    ).rejects.toThrow(/not a participant/i);
+  });
+
+  test("two distinct private notes by different authors stay isolated", async () => {
+    const h = await createHarness();
+    const grantId = await createGrant(h, { keyword: "Whisper" });
+    await createGrantNote(h, h.ids.aId, grantId, "alice priv", "private");
+    await createGrantNote(h, h.ids.bId, grantId, "bob priv", "private");
+
+    const aView = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+      });
+    expect(aView.map((n) => n.body)).toEqual(["alice priv"]);
+
+    const bView = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+      });
+    expect(bView.map((n) => n.body)).toEqual(["bob priv"]);
+
+    const gmView = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+      });
+    expect(gmView.map((n) => n.body).sort()).toEqual([
+      "alice priv",
+      "bob priv",
+    ]);
+  });
+
+  test("note body is independent of parent-row description redaction", async () => {
+    // Plan Task 34. A Player who cannot see the grant's description can
+    // still read a public note on it.
+    const h = await createHarness();
+    const grantId = await createGrant(h, {
+      keyword: "Whisper",
+      description: "redacted-for-B",
+    });
+    await createGrantNote(
+      h,
+      h.ids.aId,
+      grantId,
+      "public note body",
+      "public",
+    );
+
+    // Description is redacted to Bob (no ownership).
+    const grantsView = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.treasonGrants.listGrantsForGame, { gameId: h.ids.gameId });
+    expect(grantsView.grants[0].description).toBeNull();
+
+    // But the note body IS visible.
+    const notesView = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+      });
+    expect(notesView.map((n) => n.body)).toEqual(["public note body"]);
+
+    // Same for a goal where Bob is neither from nor to.
+    const goalId = await createGoal(h, {
+      keyword: "Conquer",
+      description: "redacted",
+      fromPlayerId: h.ids.playerAId,
+    });
+    await createGoalNote(
+      h,
+      h.ids.aId,
+      goalId,
+      "public goal note",
+      "public",
+    );
+
+    const goalsView = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.goals.listGoalsForGame, { gameId: h.ids.gameId });
+    const target = goalsView.goals.find((g) => g._id === goalId);
+    expect(target?.description).toBeNull();
+
+    const goalNotesView = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "goal",
+        targetGoalId: goalId,
+      });
+    expect(goalNotesView.map((n) => n.body)).toEqual(["public goal note"]);
+  });
+});
+
+describe("notes on grants/goals: deletion (GM-only)", () => {
+  test("GM can delete a grant note; author and other player cannot", async () => {
+    const h = await createHarness();
+    const grantId = await createGrant(h, { keyword: "Whisper" });
+    const noteId = await createGrantNote(
+      h,
+      h.ids.aId,
+      grantId,
+      "alice pub",
+      "public",
+    );
+
+    await expect(
+      h.t
+        .withIdentity(asUser(h.ids.aId))
+        .mutation(api.notes.deleteNote, { noteId }),
+    ).rejects.toThrow(/Game Master/i);
+    await expect(
+      h.t
+        .withIdentity(asUser(h.ids.bId))
+        .mutation(api.notes.deleteNote, { noteId }),
+    ).rejects.toThrow(/Game Master/i);
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.deleteNote, { noteId });
+
+    const remaining = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+      });
+    expect(remaining).toHaveLength(0);
+  });
+});
+
+describe("notes on grants/goals: ordering and cross-game scoping", () => {
+  test("listNotesForTarget returns newest first (grant + goal)", async () => {
+    // Plan Task 29.
+    const h = await createHarness();
+    const grantId = await createGrant(h, { keyword: "Whisper" });
+    const goalId = await createGoal(h, { keyword: "Conquer" });
+
+    await h.t.run(async (ctx) => {
+      for (const [createdAt, body] of [
+        [1_000, "g1"],
+        [2_000, "g2"],
+        [3_000, "g3"],
+      ] as const) {
+        await ctx.db.insert("notes", {
+          gameId: h.ids.gameId,
+          targetKind: "grant",
+          targetGrantId: grantId,
+          authorUserId: h.ids.aId,
+          visibility: "public",
+          body,
+          createdAt,
+        });
+      }
+      for (const [createdAt, body] of [
+        [10, "go1"],
+        [20, "go2"],
+        [30, "go3"],
+      ] as const) {
+        await ctx.db.insert("notes", {
+          gameId: h.ids.gameId,
+          targetKind: "goal",
+          targetGoalId: goalId,
+          authorUserId: h.ids.aId,
+          visibility: "public",
+          body,
+          createdAt,
+        });
+      }
+    });
+
+    const grantList = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+      });
+    expect(grantList.map((n) => n.body)).toEqual(["g3", "g2", "g1"]);
+
+    const goalList = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "goal",
+        targetGoalId: goalId,
+      });
+    expect(goalList.map((n) => n.body)).toEqual(["go3", "go2", "go1"]);
+  });
+
+  test("cross-game scoping: createNote rejects mismatched gameId, listings don't leak", async () => {
+    // Plan Task 28.
+    const h = await createHarness();
+    const grantA = await createGrant(h, { keyword: "GrantA" });
+    const goalA = await createGoal(h, { keyword: "GoalA" });
+
+    // Author public notes on the game-A grant/goal.
+    await createGrantNote(h, h.ids.aId, grantA, "game A grant note", "public");
+    await createGoalNote(h, h.ids.aId, goalA, "game A goal note", "public");
+
+    // Build a second game (different GM) and a grant + goal in it.
+    const { gameBId, grantB, goalB } = await h.t.run(async (ctx) => {
+      const gmBId = await ctx.db.insert("users", {
+        displayName: "GM2",
+        email: "gm2@test",
+      });
+      const gBId = await ctx.db.insert("games", {
+        name: "Game B",
+        gmId: gmBId,
+        state: "ready",
+      });
+      // Alice is also a participant of game B so she can list notes.
+      await ctx.db.insert("players", {
+        gameId: gBId,
+        userId: h.ids.aId,
+        power: 0,
+        joinedAt: Date.now(),
+      });
+      const grantB = await ctx.db.insert("treasonGrants", {
+        gameId: gBId,
+        keyword: "GrantB",
+        keywordLower: "grantb",
+        power: 5,
+        description: "",
+        createdAt: Date.now(),
+        createdByUserId: gmBId,
+      });
+      const goalB = await ctx.db.insert("goals", {
+        gameId: gBId,
+        keyword: "GoalB",
+        keywordLower: "goalb",
+        description: "",
+        type: "regular",
+        createdAt: Date.now(),
+        createdByUserId: gmBId,
+      });
+      return { gameBId: gBId, grantB, goalB };
+    });
+
+    // Cross-game create on the game-A grant from game-B context is
+    // rejected by the parent-row gameId check.
+    await expect(
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+        gameId: gameBId,
+        targetKind: "grant",
+        targetGrantId: grantA,
+        body: "cross-game grant",
+      }),
+    ).rejects.toThrow(/not in this game/i);
+
+    await expect(
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+        gameId: gameBId,
+        targetKind: "goal",
+        targetGoalId: goalA,
+        body: "cross-game goal",
+      }),
+    ).rejects.toThrow(/not in this game/i);
+
+    // Listing in game B for game-B's grant/goal yields no notes (no
+    // game-A notes leak).
+    const grantBList = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: gameBId,
+        targetKind: "grant",
+        targetGrantId: grantB,
+      });
+    expect(grantBList).toHaveLength(0);
+
+    const goalBList = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: gameBId,
+        targetKind: "goal",
+        targetGoalId: goalB,
+      });
+    expect(goalBList).toHaveLength(0);
+  });
+});
+
+describe("notes on grants/goals: cascade on parent delete", () => {
+  test("deleteGrant removes every note targeting that grant", async () => {
+    // Plan Task 30 (grant).
+    const h = await createHarness();
+    const grant1 = await createGrant(h, { keyword: "Whisper" });
+    const grant2 = await createGrant(h, { keyword: "Echo" });
+    await createGrantNote(h, h.ids.aId, grant1, "g1 note");
+    await createGrantNote(h, h.ids.aId, grant1, "g1 again");
+    await createGrantNote(h, h.ids.aId, grant2, "g2 note");
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.treasonGrants.deleteGrant, { grantId: grant1 });
+
+    const grant1Surviving = await h.t.run(async (ctx) => {
+      return await ctx.db
+        .query("notes")
+        .withIndex("by_grant", (q) => q.eq("targetGrantId", grant1))
+        .collect();
+    });
+    expect(grant1Surviving).toHaveLength(0);
+
+    const grant2Surviving = await h.t.run(async (ctx) => {
+      return await ctx.db
+        .query("notes")
+        .withIndex("by_grant", (q) => q.eq("targetGrantId", grant2))
+        .collect();
+    });
+    expect(grant2Surviving).toHaveLength(1);
+  });
+
+  test("deleteGoal removes every note targeting that goal", async () => {
+    // Plan Task 30 (goal).
+    const h = await createHarness();
+    const goal1 = await createGoal(h, { keyword: "Conquer" });
+    const goal2 = await createGoal(h, { keyword: "Survive" });
+    await createGoalNote(h, h.ids.aId, goal1, "go1 note");
+    await createGoalNote(h, h.ids.bId, goal1, "go1 again");
+    await createGoalNote(h, h.ids.aId, goal2, "go2 note");
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.goals.deleteGoal, { goalId: goal1 });
+
+    const goal1Surviving = await h.t.run(async (ctx) => {
+      return await ctx.db
+        .query("notes")
+        .withIndex("by_goal", (q) => q.eq("targetGoalId", goal1))
+        .collect();
+    });
+    expect(goal1Surviving).toHaveLength(0);
+
+    const goal2Surviving = await h.t.run(async (ctx) => {
+      return await ctx.db
+        .query("notes")
+        .withIndex("by_goal", (q) => q.eq("targetGoalId", goal2))
+        .collect();
+    });
+    expect(goal2Surviving).toHaveLength(1);
+  });
+});
+
+describe("notes on grants/goals: count query", () => {
+  test("getNoteCountsForGameView surfaces byGrant and byGoal per viewer", async () => {
+    // Plan Tasks 31, 37.
+    const h = await createHarness();
+    const grantId = await createGrant(h, { keyword: "Whisper" });
+    const goalId = await createGoal(h, { keyword: "Conquer" });
+
+    // Alice posts a private grant note; Bob posts a public goal note.
+    await createGrantNote(h, h.ids.aId, grantId, "alice priv", "private");
+    await createGoalNote(h, h.ids.bId, goalId, "bob pub", "public");
+
+    const aCounts = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.notes.getNoteCountsForGameView, { gameId: h.ids.gameId });
+    expect(aCounts.byGrant[grantId]).toBe(1);
+    expect(aCounts.byGoal[goalId]).toBe(1);
+
+    const bCounts = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.notes.getNoteCountsForGameView, { gameId: h.ids.gameId });
+    // Bob cannot see Alice's private grant note.
+    expect(bCounts.byGrant[grantId] ?? 0).toBe(0);
+    expect(bCounts.byGoal[goalId]).toBe(1);
+
+    const gmCounts = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.getNoteCountsForGameView, { gameId: h.ids.gameId });
+    expect(gmCounts.byGrant[grantId]).toBe(1);
+    expect(gmCounts.byGoal[goalId]).toBe(1);
+  });
+});
+
+describe("notes on grants/goals: timer eligibility + GM Todo projection", () => {
+  test("getTimerCreateContext returns timerEligible=false for grant and goal", async () => {
+    // Plan Task 33.
+    const h = await createHarness();
+    const grantId = await createGrant(h, { keyword: "Whisper" });
+    const goalId = await createGoal(h, { keyword: "Conquer" });
+
+    const gmGrant = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.getTimerCreateContext, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+      });
+    expect(gmGrant).toEqual({ viewerIsGm: true, timerEligible: false });
+
+    const gmGoal = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.getTimerCreateContext, {
+        gameId: h.ids.gameId,
+        targetKind: "goal",
+        targetGoalId: goalId,
+      });
+    expect(gmGoal).toEqual({ viewerIsGm: true, timerEligible: false });
+
+    const playerGrant = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.notes.getTimerCreateContext, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+      });
+    expect(playerGrant).toEqual({ viewerIsGm: false, timerEligible: false });
+
+    const playerGoal = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.notes.getTimerCreateContext, {
+        gameId: h.ids.gameId,
+        targetKind: "goal",
+        targetGoalId: goalId,
+      });
+    expect(playerGoal).toEqual({ viewerIsGm: false, timerEligible: false });
+  });
+
+  test("server accepts GM-authored timer-bearing note on grant/goal; GM Todo projects keyword + owner", async () => {
+    // Plan Tasks 32, 35.
+    const h = await createHarness();
+    const grantId = await createGrant(h, { keyword: "Whisper" });
+    // Take the grant so it has an ownerPlayerId for the projection.
+    // Ensure Bob has a syndicate so we can transition to playing.
+    await h.t.run(async (ctx) => {
+      const bobSyndicateId = await ctx.db.insert("syndicates", {
+        name: "Bob's Syndicate",
+        leader: "Bob",
+        description: "",
+        played: false,
+        isShared: false,
+        ownerId: h.ids.bId,
+      });
+      await ctx.db.patch(h.ids.playerBId, {
+        selectedSyndicateId: bobSyndicateId,
+      });
+    });
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.games.transitionState, {
+        gameId: h.ids.gameId,
+        target: "playing",
+      });
+    await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.treasonGrants.takeGrant, { grantId });
+
+    const goalId = await createGoal(h, {
+      keyword: "Conquer",
+      fromPlayerId: h.ids.playerAId,
+    });
+
+    // GM authors timer-bearing notes on both targets (server accepts even
+    // though the UI never offers the buttons for these kinds).
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+        body: "grant timer",
+        timerMinutes: 5,
+      });
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "goal",
+        targetGoalId: goalId,
+        body: "goal timer",
+        timerMinutes: 5,
+      });
+
+    const rows = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+    expect(rows).toHaveLength(2);
+
+    const grantRow = rows.find((r) => r.targetKind === "grant");
+    expect(grantRow).toBeDefined();
+    expect(grantRow!.targetGrantId).toBe(grantId);
+    expect(grantRow!.grantKeyword).toBe("Whisper");
+    // Owner of the grant is Alice (player A).
+    expect(grantRow!.playerId).toBe(h.ids.playerAId);
+    expect(grantRow!.playerDisplayName).toBe("Alice");
+
+    const goalRow = rows.find((r) => r.targetKind === "goal");
+    expect(goalRow).toBeDefined();
+    expect(goalRow!.targetGoalId).toBe(goalId);
+    expect(goalRow!.goalKeyword).toBe("Conquer");
+    expect(goalRow!.playerId).toBe(h.ids.playerAId);
+    expect(goalRow!.playerDisplayName).toBe("Alice");
+
+    // Players never see this query.
+    await expect(
+      h.t
+        .withIdentity(asUser(h.ids.aId))
+        .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId }),
+    ).rejects.toThrow();
+  });
+
+  test("GM Todo projection: grant with no owner / goal with no from-player renders (unassigned)", async () => {
+    const h = await createHarness();
+    const grantId = await createGrant(h, { keyword: "Orphan" });
+    const goalId = await createGoal(h, { keyword: "Drifter" });
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+        body: "unowned grant timer",
+        timerMinutes: 5,
+      });
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "goal",
+        targetGoalId: goalId,
+        body: "unowned goal timer",
+        timerMinutes: 5,
+      });
+
+    const rows = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+    const grantRow = rows.find((r) => r.targetKind === "grant");
+    const goalRow = rows.find((r) => r.targetKind === "goal");
+    expect(grantRow!.grantKeyword).toBe("Orphan");
+    expect(grantRow!.playerId).toBeUndefined();
+    expect(grantRow!.playerDisplayName).toBeUndefined();
+    expect(goalRow!.goalKeyword).toBe("Drifter");
+    expect(goalRow!.playerId).toBeUndefined();
+    expect(goalRow!.playerDisplayName).toBeUndefined();
+  });
+});

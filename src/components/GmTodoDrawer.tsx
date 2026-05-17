@@ -159,11 +159,14 @@ function GmTodoRow({
  *
  *   - minion-target: `Minion • Syndicate • Player`
  *   - syndicate-target: `Syndicate • Player`
+ *   - grant-target: `Grant keyword • Owner player`
+ *   - goal-target: `Goal keyword • From player`
  *   - game-target: `Game-wide`
  *
  * Missing player slot renders `(unassigned)` (muted) so the column
  * count stays visually stable even when nobody has selected the
- * syndicate yet.
+ * syndicate yet (or, for grant/goal targets, when the row has no
+ * owner / from-player).
  *
  * Exported for unit tests (Task 13).
  */
@@ -184,6 +187,26 @@ export function formatGmTodoTarget(row: GmTodoNoteRow): React.ReactNode {
     return (
       <>
         <span>{row.syndicateName ?? "(unknown syndicate)"}</span>
+        {sep}
+        {playerSegment}
+      </>
+    );
+  }
+
+  if (row.targetKind === "grant") {
+    return (
+      <>
+        <span>{row.grantKeyword ?? "(unknown grant)"}</span>
+        {sep}
+        {playerSegment}
+      </>
+    );
+  }
+
+  if (row.targetKind === "goal") {
+    return (
+      <>
+        <span>{row.goalKeyword ?? "(unknown goal)"}</span>
         {sep}
         {playerSegment}
       </>

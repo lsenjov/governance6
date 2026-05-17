@@ -376,6 +376,48 @@ describe("treasonGrants: delete", () => {
         .mutation(api.treasonGrants.deleteGrant, { grantId }),
     ).rejects.toThrow(/archived/i);
   });
+
+  test("deleting a grant cascades and removes its notes", async () => {
+    // Plan Task 33.
+    const h = await createHarness();
+    const grantId = await createGrant(h, { keyword: "Whisper", power: 5 });
+
+    // Author a couple of notes on the grant.
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+        body: "n1",
+        visibility: "public",
+      });
+    await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "grant",
+        targetGrantId: grantId,
+        body: "n2",
+        visibility: "public",
+      });
+
+    const beforeAll = await h.t.run(async (ctx) =>
+      ctx.db.query("notes").collect(),
+    );
+    expect(beforeAll.filter((n) => n.targetGrantId === grantId)).toHaveLength(
+      2,
+    );
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.treasonGrants.deleteGrant, { grantId });
+
+    const afterAll = await h.t.run(async (ctx) =>
+      ctx.db.query("notes").collect(),
+    );
+    expect(afterAll.filter((n) => n.targetGrantId === grantId)).toHaveLength(0);
+  });
 });
 
 describe("treasonGrants: clearGrantOwner", () => {

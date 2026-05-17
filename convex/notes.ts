@@ -10,14 +10,21 @@ import {
 } from "./lib/rolls";
 
 /**
- * Notes — per-game textual annotations on the game, a syndicate, or a minion.
+ * Notes — per-game textual annotations on the game, a syndicate, a
+ * minion, a treason grant, or a goal.
  *
- * Design (see `plans/2026-04-20-notes-feature-v3.md`):
+ * Design (see `plans/2026-04-20-notes-feature-v3.md` and
+ * `plans/2026-05-17-notes-on-grants-and-goals-v1.md`):
  *  - Notes are scoped to a single game (`gameId`) and never carry across
- *    games, even when the same syndicate/minion appears again.
+ *    games, even when the same syndicate/minion/grant/goal appears again.
  *  - Any participant (GM or Player) may author a note.
  *  - Visibility is `private` (author + GM only) or `public` (all
  *    participants). GM always sees every note.
+ *  - Note body visibility is independent of the parent row's description
+ *    redaction rules. A `public` note on a grant or goal whose
+ *    description is redacted for the viewer is still fully readable —
+ *    the note is the author's own annotation, not a re-publication of
+ *    the entity body.
  *  - Notes are AUTHOR-IMMUTABLE once created — there is no
  *    `updateNote` mutation. Body, visibility, target, author, and
  *    attachedRollSetId are frozen for the lifetime of the row. The
@@ -98,9 +105,13 @@ export const createNote = mutation({
       v.literal("game"),
       v.literal("syndicate"),
       v.literal("minion"),
+      v.literal("grant"),
+      v.literal("goal"),
     ),
     targetSyndicateId: v.optional(v.id("syndicates")),
     targetMinionId: v.optional(v.id("minions")),
+    targetGrantId: v.optional(v.id("treasonGrants")),
+    targetGoalId: v.optional(v.id("goals")),
     body: v.string(),
     visibility: v.optional(v.union(v.literal("private"), v.literal("public"))),
     // Note Timers (broadened by GM Todo Drawer v1, Task 0b): GM-only.
@@ -121,22 +132,56 @@ export const createNote = mutation({
     if (args.targetKind === "game") {
       if (
         args.targetSyndicateId !== undefined ||
-        args.targetMinionId !== undefined
+        args.targetMinionId !== undefined ||
+        args.targetGrantId !== undefined ||
+        args.targetGoalId !== undefined
       ) {
         throw new Error(
-          "Game-kind notes must not include a syndicate or minion id.",
+          "Game-kind notes must not include a syndicate, minion, grant, or goal id.",
         );
       }
     } else if (args.targetKind === "syndicate") {
-      if (!args.targetSyndicateId || args.targetMinionId !== undefined) {
+      if (
+        !args.targetSyndicateId ||
+        args.targetMinionId !== undefined ||
+        args.targetGrantId !== undefined ||
+        args.targetGoalId !== undefined
+      ) {
         throw new Error(
-          "Syndicate-kind notes require targetSyndicateId and no targetMinionId.",
+          "Syndicate-kind notes require targetSyndicateId and no other target id.",
+        );
+      }
+    } else if (args.targetKind === "minion") {
+      if (
+        !args.targetMinionId ||
+        args.targetSyndicateId !== undefined ||
+        args.targetGrantId !== undefined ||
+        args.targetGoalId !== undefined
+      ) {
+        throw new Error(
+          "Minion-kind notes require targetMinionId and no other target id.",
+        );
+      }
+    } else if (args.targetKind === "grant") {
+      if (
+        !args.targetGrantId ||
+        args.targetSyndicateId !== undefined ||
+        args.targetMinionId !== undefined ||
+        args.targetGoalId !== undefined
+      ) {
+        throw new Error(
+          "Grant-kind notes require targetGrantId and no other target id.",
         );
       }
     } else {
-      if (!args.targetMinionId || args.targetSyndicateId !== undefined) {
+      if (
+        !args.targetGoalId ||
+        args.targetSyndicateId !== undefined ||
+        args.targetMinionId !== undefined ||
+        args.targetGrantId !== undefined
+      ) {
         throw new Error(
-          "Minion-kind notes require targetMinionId and no targetSyndicateId.",
+          "Goal-kind notes require targetGoalId and no other target id.",
         );
       }
     }
@@ -162,6 +207,18 @@ export const createNote = mutation({
         viewerRole: role,
         viewerPlayer: player,
       });
+    } else if (args.targetKind === "grant") {
+      const grant = await ctx.db.get(args.targetGrantId!);
+      if (!grant) throw new Error("Treason Grant not found.");
+      if (grant.gameId !== args.gameId) {
+        throw new Error("That Grant is not in this game.");
+      }
+    } else if (args.targetKind === "goal") {
+      const goal = await ctx.db.get(args.targetGoalId!);
+      if (!goal) throw new Error("Goal not found.");
+      if (goal.gameId !== args.gameId) {
+        throw new Error("That Goal is not in this game.");
+      }
     }
     // `game`-kind: `game` has already been validated by requireGameParticipant.
 
@@ -230,6 +287,12 @@ export const createNote = mutation({
       targetKind: args.targetKind,
       targetSyndicateId: args.targetSyndicateId,
       targetMinionId: args.targetMinionId,
+      ...(args.targetGrantId !== undefined
+        ? { targetGrantId: args.targetGrantId }
+        : {}),
+      ...(args.targetGoalId !== undefined
+        ? { targetGoalId: args.targetGoalId }
+        : {}),
       authorUserId: userId,
       visibility,
       body,
@@ -305,8 +368,12 @@ export const getTimerCreateContext = query({
       v.literal("game"),
       v.literal("syndicate"),
       v.literal("minion"),
+      v.literal("grant"),
+      v.literal("goal"),
     ),
     targetMinionId: v.optional(v.id("minions")),
+    targetGrantId: v.optional(v.id("treasonGrants")),
+    targetGoalId: v.optional(v.id("goals")),
   },
   handler: async (
     ctx,
@@ -402,11 +469,15 @@ export type GmTodoNoteRow = {
   authorDisplayName: string;
   timer: NoteTimer;
   attachedRolls?: RollSetView | null;
-  targetKind: "game" | "syndicate" | "minion";
+  targetKind: "game" | "syndicate" | "minion" | "grant" | "goal";
   targetSyndicateId?: Id<"syndicates">;
   targetMinionId?: Id<"minions">;
+  targetGrantId?: Id<"treasonGrants">;
+  targetGoalId?: Id<"goals">;
   minionName?: string;
   syndicateName?: string;
+  grantKeyword?: string;
+  goalKeyword?: string;
   playerId?: Id<"players">;
   playerDisplayName?: string;
 };
@@ -474,6 +545,34 @@ export const listGameNotesWithTimers = query({
       if (row) minionById.set(row._id as string, row);
     }
 
+    // Treason grants (only grant-target rows reference `targetGrantId`).
+    const grantIds = Array.from(
+      new Set(
+        timerNotes
+          .map((n) => n.targetGrantId)
+          .filter((id): id is Id<"treasonGrants"> => id !== undefined),
+      ),
+    );
+    const grantById = new Map<string, Doc<"treasonGrants">>();
+    for (const id of grantIds) {
+      const row = await ctx.db.get(id);
+      if (row) grantById.set(row._id as string, row);
+    }
+
+    // Goals (only goal-target rows reference `targetGoalId`).
+    const goalIds = Array.from(
+      new Set(
+        timerNotes
+          .map((n) => n.targetGoalId)
+          .filter((id): id is Id<"goals"> => id !== undefined),
+      ),
+    );
+    const goalById = new Map<string, Doc<"goals">>();
+    for (const id of goalIds) {
+      const row = await ctx.db.get(id);
+      if (row) goalById.set(row._id as string, row);
+    }
+
     // Syndicates: union of `targetSyndicateId` (syndicate-target
     // rows) and the loaded minions' `syndicateId` (minion-target
     // rows project the parent syndicate too).
@@ -515,11 +614,30 @@ export const listGameNotesWithTimers = query({
       playerBySyndicateId.set(idStr, inGame[0]);
     }
 
+    // Players: in addition to syndicate-derived players above, grant
+    // rows carry an optional `ownerPlayerId` and goal rows carry an
+    // optional `fromPlayerId`. Collect those for direct lookup.
+    const playerIdSet = new Set<string>();
+    for (const g of grantById.values()) {
+      if (g.ownerPlayerId) playerIdSet.add(g.ownerPlayerId as string);
+    }
+    for (const g of goalById.values()) {
+      if (g.fromPlayerId) playerIdSet.add(g.fromPlayerId as string);
+    }
+    const playerById = new Map<string, Doc<"players">>();
+    for (const idStr of playerIdSet) {
+      const row = await ctx.db.get(idStr as Id<"players">);
+      if (row) playerById.set(idStr, row);
+    }
+
     // Users: union of every author user id and every selecting
     // player's user id. One bulk pass.
     const userIdSet = new Set<string>();
     for (const n of timerNotes) userIdSet.add(n.authorUserId as string);
     for (const p of playerBySyndicateId.values()) {
+      userIdSet.add(p.userId as string);
+    }
+    for (const p of playerById.values()) {
       userIdSet.add(p.userId as string);
     }
     const userById = new Map<string, Doc<"users">>();
@@ -583,6 +701,34 @@ export const listGameNotesWithTimers = query({
         const m = minionById.get(n.targetMinionId as string);
         if (m) row.minionName = m.name;
       }
+      if (n.targetKind === "grant" && n.targetGrantId) {
+        row.targetGrantId = n.targetGrantId;
+        const g = grantById.get(n.targetGrantId as string);
+        if (g) {
+          row.grantKeyword = g.keyword;
+          if (g.ownerPlayerId) {
+            const p = playerById.get(g.ownerPlayerId as string);
+            if (p) {
+              row.playerId = p._id;
+              row.playerDisplayName = userDisplay(p.userId);
+            }
+          }
+        }
+      }
+      if (n.targetKind === "goal" && n.targetGoalId) {
+        row.targetGoalId = n.targetGoalId;
+        const g = goalById.get(n.targetGoalId as string);
+        if (g) {
+          row.goalKeyword = g.keyword;
+          if (g.fromPlayerId) {
+            const p = playerById.get(g.fromPlayerId as string);
+            if (p) {
+              row.playerId = p._id;
+              row.playerDisplayName = userDisplay(p.userId);
+            }
+          }
+        }
+      }
 
       if (syndId) {
         const s = syndicateById.get(syndId as string);
@@ -623,9 +769,13 @@ export const listNotesForTarget = query({
       v.literal("game"),
       v.literal("syndicate"),
       v.literal("minion"),
+      v.literal("grant"),
+      v.literal("goal"),
     ),
     targetSyndicateId: v.optional(v.id("syndicates")),
     targetMinionId: v.optional(v.id("minions")),
+    targetGrantId: v.optional(v.id("treasonGrants")),
+    targetGoalId: v.optional(v.id("goals")),
   },
   handler: async (ctx, args): Promise<NoteListItem[]> => {
     const { userId, role } = await requireGameParticipant(ctx, args.gameId);
@@ -652,7 +802,7 @@ export const listNotesForTarget = query({
         )
         .order("desc")
         .collect();
-    } else {
+    } else if (args.targetKind === "minion") {
       if (!args.targetMinionId) {
         throw new Error("targetMinionId is required for minion notes.");
       }
@@ -662,6 +812,32 @@ export const listNotesForTarget = query({
           q
             .eq("gameId", args.gameId)
             .eq("targetMinionId", args.targetMinionId!),
+        )
+        .order("desc")
+        .collect();
+    } else if (args.targetKind === "grant") {
+      if (!args.targetGrantId) {
+        throw new Error("targetGrantId is required for grant notes.");
+      }
+      rows = await ctx.db
+        .query("notes")
+        .withIndex("by_game_grant_created", (q) =>
+          q
+            .eq("gameId", args.gameId)
+            .eq("targetGrantId", args.targetGrantId!),
+        )
+        .order("desc")
+        .collect();
+    } else {
+      if (!args.targetGoalId) {
+        throw new Error("targetGoalId is required for goal notes.");
+      }
+      rows = await ctx.db
+        .query("notes")
+        .withIndex("by_game_goal_created", (q) =>
+          q
+            .eq("gameId", args.gameId)
+            .eq("targetGoalId", args.targetGoalId!),
         )
         .order("desc")
         .collect();
@@ -753,6 +929,8 @@ export const getNoteCountsForGameView = query({
     gameNotes: number;
     bySyndicate: Record<string, number>;
     byMinion: Record<string, number>;
+    byGrant: Record<string, number>;
+    byGoal: Record<string, number>;
   }> => {
     // Non-participants are rejected. Result is only meaningful inside the
     // game detail page, which already requires participation.
@@ -768,6 +946,8 @@ export const getNoteCountsForGameView = query({
     let gameNotes = 0;
     const bySyndicate: Record<string, number> = {};
     const byMinion: Record<string, number> = {};
+    const byGrant: Record<string, number> = {};
+    const byGoal: Record<string, number> = {};
     for (const n of allGameNotes) {
       if (!canViewNote(n, { userId, role })) continue;
       if (n.targetKind === "game") {
@@ -777,9 +957,13 @@ export const getNoteCountsForGameView = query({
           (bySyndicate[n.targetSyndicateId] ?? 0) + 1;
       } else if (n.targetKind === "minion" && n.targetMinionId) {
         byMinion[n.targetMinionId] = (byMinion[n.targetMinionId] ?? 0) + 1;
+      } else if (n.targetKind === "grant" && n.targetGrantId) {
+        byGrant[n.targetGrantId] = (byGrant[n.targetGrantId] ?? 0) + 1;
+      } else if (n.targetKind === "goal" && n.targetGoalId) {
+        byGoal[n.targetGoalId] = (byGoal[n.targetGoalId] ?? 0) + 1;
       }
     }
-    return { gameNotes, bySyndicate, byMinion };
+    return { gameNotes, bySyndicate, byMinion, byGrant, byGoal };
   },
 });
 

@@ -840,6 +840,48 @@ describe("goals: delete and ledger no-op invariant", () => {
       expect(sum).toBe(player?.power);
     }
   });
+
+  test("deleting a goal cascades and removes its notes", async () => {
+    // Plan Task 33.
+    const h = await createHarness();
+    const goalId = await createGoalAsGm(h, {
+      keyword: "Conquer",
+      fromPlayerId: h.ids.playerAId,
+    });
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "goal",
+        targetGoalId: goalId,
+        body: "n1",
+        visibility: "public",
+      });
+    await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "goal",
+        targetGoalId: goalId,
+        body: "n2",
+        visibility: "public",
+      });
+
+    const before = await h.t.run(async (ctx) =>
+      ctx.db.query("notes").collect(),
+    );
+    expect(before.filter((n) => n.targetGoalId === goalId)).toHaveLength(2);
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.goals.deleteGoal, { goalId });
+
+    const after = await h.t.run(async (ctx) =>
+      ctx.db.query("notes").collect(),
+    );
+    expect(after.filter((n) => n.targetGoalId === goalId)).toHaveLength(0);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
