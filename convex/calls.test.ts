@@ -1569,3 +1569,392 @@ describe("calls.activeCalls + recentlyRemovedCalls: kind discrimination", () => 
     }
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Next minion — see `plans/2026-05-17-next-minion-v1.md`.
+//
+// When a player has a `gamePlayerMinions.isNext === true` row, the GM
+// removing that player's active call auto-enqueues a fresh minion call
+// for the flagged minion at the tail of the FIFO queue, and clears the
+// flag. Replace-in-place mutations (`addOrReplaceCall`,
+// `addOrReplaceCustomCall`) leave the flag untouched.
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Read the (game, player, minion) row directly so tests can assert
+ * on the on-disk `isNext` value (including whether the underlying
+ * field is `undefined` vs `true`).
+ */
+async function getGpm(
+  h: Harness,
+  playerId: Id<"players">,
+  minionId: Id<"minions">,
+) {
+  return await h.t.run(async (ctx) => {
+    return await ctx.db
+      .query("gamePlayerMinions")
+      .withIndex("by_game_player_minion", (q) =>
+        q
+          .eq("gameId", h.ids.gameId)
+          .eq("playerId", playerId)
+          .eq("minionId", minionId),
+      )
+      .unique();
+  });
+}
+
+describe("calls.removeCall: next minion auto-promote", () => {
+  test("auto-promotes when the removed call's queue would otherwise be empty", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    const aliceCallId = await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    const before = await h.t.run((ctx) => ctx.db.get(aliceCallId));
+    expect(before).not.toBeNull();
+
+    // Alice marks Wraith as next via the mutation (active call exists).
+    await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.minionBuys.toggleNextMinion, {
+        gameId: h.ids.gameId,
+        minionId: h.ids.minionWraithId,
+      });
+
+    // GM removes Alice's active call.
+    await new Promise((r) => setTimeout(r, 5));
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.removeCall, { callId: aliceCallId });
+
+    // activeCalls now has exactly one row: Alice / Wraith.
+    const active = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.activeCalls, { gameId: h.ids.gameId });
+    expect(active).toHaveLength(1);
+    const promoted = active[0];
+    expect(promoted.playerId).toBe(h.ids.playerAId);
+    expect(promoted.kind).toBe("minion");
+    if (promoted.kind === "minion") {
+      expect(promoted.minionId).toBe(h.ids.minionWraithId);
+    }
+
+    // The auto-promoted call's createdAt is strictly greater than the
+    // removed call's createdAt.
+    expect(promoted.createdAt).toBeGreaterThan(before!.createdAt);
+
+    // The flag has been cleared (underlying value is `undefined`).
+    const wraithRow = await getGpm(
+      h,
+      h.ids.playerAId,
+      h.ids.minionWraithId,
+    );
+    expect(wraithRow?.isNext === true).toBe(false);
+    expect(wraithRow?.isNext).toBeUndefined();
+
+    // `getCurrentCallDetails` returns a minion head for Wraith with a
+    // non-null roll set (became_head fired).
+    const details = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.getCurrentCallDetails, { gameId: h.ids.gameId });
+    assertMinionHead(details);
+    expect(details.minion._id).toBe(h.ids.minionWraithId);
+    expect(details.rolls).not.toBeNull();
+
+    // Second removal does NOT re-promote: the flag really was cleared.
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.removeCall, { callId: promoted._id });
+    const activeAfter = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.activeCalls, { gameId: h.ids.gameId });
+    expect(activeAfter).toHaveLength(0);
+
+    // No new active call inserted for Alice (the only `calls` rows for
+    // Alice are the two soft-deleted ones).
+    const aliceCalls = await h.t.run(async (ctx) =>
+      ctx.db
+        .query("calls")
+        .withIndex("by_game_player_active", (q) =>
+          q.eq("gameId", h.ids.gameId).eq("playerId", h.ids.playerAId),
+        )
+        .collect(),
+    );
+    expect(aliceCalls.filter((r) => r.isActive)).toHaveLength(0);
+  });
+
+  test("auto-promotes at the tail when another call is ahead in the queue", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    // Alice calls Raven first (becomes head), then Bob calls Wraith.
+    const aliceCallId = await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    await new Promise((r) => setTimeout(r, 5));
+    await addCall(h, h.ids.bId, h.ids.minionWraithId);
+
+    // Alice marks Wraith as next.
+    await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.minionBuys.toggleNextMinion, {
+        gameId: h.ids.gameId,
+        minionId: h.ids.minionWraithId,
+      });
+
+    // GM removes Alice's call (the head).
+    await new Promise((r) => setTimeout(r, 5));
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.removeCall, { callId: aliceCallId });
+
+    // activeCalls is now [Bob/Wraith, Alice/Wraith] in FIFO order.
+    const active = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.activeCalls, { gameId: h.ids.gameId });
+    expect(active).toHaveLength(2);
+    expect(active[0].playerId).toBe(h.ids.playerBId);
+    expect(active[1].playerId).toBe(h.ids.playerAId);
+    if (active[0].kind === "minion") {
+      expect(active[0].minionId).toBe(h.ids.minionWraithId);
+    }
+    if (active[1].kind === "minion") {
+      expect(active[1].minionId).toBe(h.ids.minionWraithId);
+    }
+
+    // Alice's flag is cleared.
+    const wraithRow = await getGpm(
+      h,
+      h.ids.playerAId,
+      h.ids.minionWraithId,
+    );
+    expect(wraithRow?.isNext === true).toBe(false);
+
+    // The new head is Bob/Wraith and a fresh `became_head` roll set was
+    // generated for Bob's call (the existing block fires because the
+    // removed call WAS the head).
+    const bobCallId = active[0]._id;
+    const bobRolls = await h.t.run((ctx) =>
+      ctx.db
+        .query("callRollSets")
+        .withIndex("by_call_created", (q) => q.eq("callId", bobCallId))
+        .order("desc")
+        .take(2),
+    );
+    expect(bobRolls.length).toBeGreaterThanOrEqual(1);
+    expect(bobRolls[0].createdReason).toBe("became_head");
+
+    // Alice's auto-promoted call sits at the tail with no roll set yet.
+    const aliceTailCallId = active[1]._id;
+    const aliceRolls = await h.t.run((ctx) =>
+      ctx.db
+        .query("callRollSets")
+        .withIndex("by_call_created", (q) => q.eq("callId", aliceTailCallId))
+        .collect(),
+    );
+    expect(aliceRolls).toHaveLength(0);
+  });
+
+  test("does NOT auto-promote when no flag is set", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    const aliceCallId = await addCall(h, h.ids.aId, h.ids.minionRavenId);
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.removeCall, { callId: aliceCallId });
+
+    const active = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.activeCalls, { gameId: h.ids.gameId });
+    expect(active).toHaveLength(0);
+
+    // No new `calls` row inserted for Alice.
+    const aliceCalls = await h.t.run(async (ctx) =>
+      ctx.db
+        .query("calls")
+        .withIndex("by_game_player_active", (q) =>
+          q.eq("gameId", h.ids.gameId).eq("playerId", h.ids.playerAId),
+        )
+        .collect(),
+    );
+    expect(aliceCalls.filter((r) => r.isActive)).toHaveLength(0);
+  });
+
+  test("defensively clears the flag and enqueues nothing when the flagged minion is no longer bought", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    const aliceCallId = await addCall(h, h.ids.aId, h.ids.minionRavenId);
+
+    // Manually patch the Wraith row to (isNext: true, bought: false),
+    // bypassing the toggle's bought-guard. Simulates a hypothetical
+    // future unbuy path.
+    await h.t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("gamePlayerMinions")
+        .withIndex("by_game_player_minion", (q) =>
+          q
+            .eq("gameId", h.ids.gameId)
+            .eq("playerId", h.ids.playerAId)
+            .eq("minionId", h.ids.minionWraithId),
+        )
+        .unique();
+      if (!row) throw new Error("expected gpm row");
+      await ctx.db.patch(row._id, { isNext: true, bought: false });
+    });
+
+    // GM removes Alice's active call.
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.removeCall, { callId: aliceCallId });
+
+    // Flag is cleared; no auto-promote happened.
+    const wraithRow = await getGpm(
+      h,
+      h.ids.playerAId,
+      h.ids.minionWraithId,
+    );
+    expect(wraithRow?.isNext === true).toBe(false);
+    expect(wraithRow?.isNext).toBeUndefined();
+
+    const active = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.calls.activeCalls, { gameId: h.ids.gameId });
+    expect(active).toHaveLength(0);
+  });
+
+  test("addOrReplaceCall does NOT clear the isNext flag", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.minionBuys.toggleNextMinion, {
+        gameId: h.ids.gameId,
+        minionId: h.ids.minionWraithId,
+      });
+
+    // Alice replaces her active call (Raven → still Raven? need a
+    // different minion to actually trigger a replace). Use Wraith for
+    // the new content — replace-in-place semantics preserve _id and
+    // createdAt and DO NOT touch isNext.
+    await addCall(h, h.ids.aId, h.ids.minionWraithId);
+
+    const wraithRow = await getGpm(
+      h,
+      h.ids.playerAId,
+      h.ids.minionWraithId,
+    );
+    expect(wraithRow?.isNext).toBe(true);
+  });
+
+  test("addOrReplaceCustomCall does NOT clear the isNext flag", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.minionBuys.toggleNextMinion, {
+        gameId: h.ids.gameId,
+        minionId: h.ids.minionWraithId,
+      });
+
+    // Alice replaces her active call with a custom call.
+    await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.calls.addOrReplaceCustomCall, {
+        gameId: h.ids.gameId,
+        label: "Need GM",
+      });
+
+    const wraithRow = await getGpm(
+      h,
+      h.ids.playerAId,
+      h.ids.minionWraithId,
+    );
+    expect(wraithRow?.isNext).toBe(true);
+  });
+
+  test("listForPlayer exposes isNext per minion and hasActiveCall at the top level", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    // Before any call: hasActiveCall false; every minion's isNext false.
+    {
+      const data = await h.t
+        .withIdentity(asUser(h.ids.aId))
+        .query(api.minionBuys.listForPlayer, {
+          gameId: h.ids.gameId,
+          playerId: h.ids.playerAId,
+        });
+      expect(data).not.toBeNull();
+      expect(data!.hasActiveCall).toBe(false);
+      for (const m of data!.minions) {
+        expect(m.isNext).toBe(false);
+      }
+    }
+
+    // After Alice calls Raven: hasActiveCall true; flags still false.
+    await addCall(h, h.ids.aId, h.ids.minionRavenId);
+    {
+      const data = await h.t
+        .withIdentity(asUser(h.ids.aId))
+        .query(api.minionBuys.listForPlayer, {
+          gameId: h.ids.gameId,
+          playerId: h.ids.playerAId,
+        });
+      expect(data!.hasActiveCall).toBe(true);
+      for (const m of data!.minions) {
+        expect(m.isNext).toBe(false);
+      }
+    }
+
+    // After toggling Wraith: isNext true for Wraith, false for others.
+    await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.minionBuys.toggleNextMinion, {
+        gameId: h.ids.gameId,
+        minionId: h.ids.minionWraithId,
+      });
+    {
+      const data = await h.t
+        .withIdentity(asUser(h.ids.aId))
+        .query(api.minionBuys.listForPlayer, {
+          gameId: h.ids.gameId,
+          playerId: h.ids.playerAId,
+        });
+      const wraith = data!.minions.find((m) => m._id === h.ids.minionWraithId);
+      const raven = data!.minions.find((m) => m._id === h.ids.minionRavenId);
+      expect(wraith?.isNext).toBe(true);
+      expect(raven?.isNext).toBe(false);
+    }
+
+    // Bob (a non-self participant) can read Alice's `isNext` unredacted.
+    {
+      const data = await h.t
+        .withIdentity(asUser(h.ids.bId))
+        .query(api.minionBuys.listForPlayer, {
+          gameId: h.ids.gameId,
+          playerId: h.ids.playerAId,
+        });
+      const wraith = data!.minions.find((m) => m._id === h.ids.minionWraithId);
+      expect(wraith?.isNext).toBe(true);
+      expect(data!.hasActiveCall).toBe(true);
+      expect(data!.isSelf).toBe(false);
+    }
+
+    // GM also sees Alice's `isNext` unredacted.
+    {
+      const data = await h.t
+        .withIdentity(asUser(h.ids.gmId))
+        .query(api.minionBuys.listForPlayer, {
+          gameId: h.ids.gameId,
+          playerId: h.ids.playerAId,
+        });
+      const wraith = data!.minions.find((m) => m._id === h.ids.minionWraithId);
+      expect(wraith?.isNext).toBe(true);
+      expect(data!.hasActiveCall).toBe(true);
+    }
+  });
+});

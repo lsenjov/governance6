@@ -170,6 +170,11 @@ export default defineSchema({
     .index("by_game_player_time", ["gameId", "playerId", "createdAt"]),
 
   // Rule 21: per-game Minion buy state.
+  //
+  // `isNext` flags the player's queued follow-up minion. At most one
+  // row per `(gameId, playerId)` may have `isNext === true`, enforced
+  // by `toggleNextMinion` and consumed by `removeCall`'s auto-promote
+  // path. See `plans/2026-05-17-next-minion-v1.md`.
   gamePlayerMinions: defineTable({
     gameId: v.id("games"),
     playerId: v.id("players"),
@@ -177,6 +182,7 @@ export default defineSchema({
     bought: v.boolean(),
     boughtAt: v.optional(v.number()),
     pricePaid: v.optional(v.number()),
+    isNext: v.optional(v.boolean()),
   })
     .index("by_game_player", ["gameId", "playerId"])
     .index("by_game_player_minion", ["gameId", "playerId", "minionId"]),

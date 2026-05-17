@@ -88,6 +88,89 @@ export const buyMinion = mutation({
 });
 
 /**
+ * Toggle the player's queued follow-up minion ("Next").
+ *
+ * At most one `gamePlayerMinions` row per `(gameId, playerId)` may
+ * have `isNext === true`. Clicking Next on a different minion clears
+ * the previous flag; clicking Next on the currently-marked minion
+ * clears it (toggle-off).
+ *
+ * The "set" branch requires the player to currently have an active
+ * call — without one there is nothing for the auto-promote in
+ * `removeCall` to fire on. The "clear" branch is unconditional
+ * (idempotent, safe under races).
+ *
+ * The auto-promote in `convex/calls.ts:removeCall` is the sole
+ * consumer of this flag: when the GM removes a player's active call,
+ * the player's `isNext` minion (if still bought) is auto-enqueued at
+ * the tail of the FIFO queue and the flag is cleared. See
+ * `plans/2026-05-17-next-minion-v1.md`.
+ */
+export const toggleNextMinion = mutation({
+  args: { gameId: v.id("games"), minionId: v.id("minions") },
+  handler: async (ctx, args) => {
+    const { game, player } = await requireGamePlayer(ctx, args.gameId);
+    if (game.state !== "playing") {
+      throw new Error("Next can only be set while the game is playing.");
+    }
+
+    const row = await ctx.db
+      .query("gamePlayerMinions")
+      .withIndex("by_game_player_minion", (q) =>
+        q
+          .eq("gameId", args.gameId)
+          .eq("playerId", player._id)
+          .eq("minionId", args.minionId),
+      )
+      .unique();
+    if (!row || !row.bought) {
+      throw new Error("You must buy this Minion before marking it next.");
+    }
+
+    const shouldClear = row.isNext === true;
+
+    if (!shouldClear) {
+      // Set branch: require an active call.
+      const activeCall = await ctx.db
+        .query("calls")
+        .withIndex("by_game_player_active", (q) =>
+          q
+            .eq("gameId", args.gameId)
+            .eq("playerId", player._id)
+            .eq("isActive", true),
+        )
+        .unique();
+      if (!activeCall) {
+        throw new Error(
+          "You must have an active Call before marking a Minion next.",
+        );
+      }
+    }
+
+    // Defensive: clear any other rows for this (game, player) that
+    // have `isNext === true`. Uniqueness is meant to be invariant
+    // but we sweep in case a prior write left two rows true.
+    const siblingRows = await ctx.db
+      .query("gamePlayerMinions")
+      .withIndex("by_game_player", (q) =>
+        q.eq("gameId", args.gameId).eq("playerId", player._id),
+      )
+      .collect();
+    for (const other of siblingRows) {
+      if (other._id !== row._id && other.isNext === true) {
+        await ctx.db.patch(other._id, { isNext: undefined });
+      }
+    }
+
+    if (shouldClear) {
+      await ctx.db.patch(row._id, { isNext: undefined });
+    } else {
+      await ctx.db.patch(row._id, { isNext: true });
+    }
+  },
+});
+
+/**
  * For a given Player in a Game: return every Minion of their selected
  * Syndicate with bought state, price paid, and the next-buy price.
  */
@@ -111,6 +194,21 @@ export const listForPlayer = query({
       .unique();
     if (!isGm && !meRow) return null;
 
+    // `hasActiveCall` is exposed so the UI can gate the Next button
+    // without a separate query. Computed regardless of whether the
+    // player has a selected syndicate (so the empty-syndicate branch
+    // still returns it).
+    const activeCallRow = await ctx.db
+      .query("calls")
+      .withIndex("by_game_player_active", (q) =>
+        q
+          .eq("gameId", args.gameId)
+          .eq("playerId", args.playerId)
+          .eq("isActive", true),
+      )
+      .unique();
+    const hasActiveCall = activeCallRow !== null;
+
     if (!player.selectedSyndicateId) {
       return {
         isSelf,
@@ -124,9 +222,11 @@ export const listForPlayer = query({
           order: number;
           bought: boolean;
           pricePaid?: number;
+          isNext: boolean;
         }[],
         nextPrice: null as number | null,
         boughtCount: 0,
+        hasActiveCall,
       };
     }
 
@@ -167,10 +267,12 @@ export const listForPlayer = query({
           order: m.order,
           bought: row?.bought ?? false,
           pricePaid: row?.pricePaid,
+          isNext: row?.isNext === true,
         };
       }),
       nextPrice,
       boughtCount,
+      hasActiveCall,
     };
   },
 });

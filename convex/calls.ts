@@ -43,6 +43,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 export const addOrReplaceCall = mutation({
   args: { gameId: v.id("games"), minionId: v.id("minions") },
   handler: async (ctx, args) => {
+    // Note: this replace-in-place path intentionally leaves the
+    // caller's `gamePlayerMinions.isNext` flag untouched. The
+    // auto-promote in `removeCall` is the sole consumer/clearer of
+    // that flag — a player's queued follow-up must survive their own
+    // re-call. See `plans/2026-05-17-next-minion-v1.md`.
     const { game, player } = await requireGamePlayer(ctx, args.gameId);
     if (game.state !== "playing") {
       throw new Error("Calls can only be added while the game is playing.");
@@ -122,6 +127,11 @@ export const addOrReplaceCall = mutation({
 export const addOrReplaceCustomCall = mutation({
   args: { gameId: v.id("games"), label: v.string() },
   handler: async (ctx, args) => {
+    // Note: this replace-in-place path intentionally leaves the
+    // caller's `gamePlayerMinions.isNext` flag untouched. The
+    // auto-promote in `removeCall` is the sole consumer/clearer of
+    // that flag — a player's queued follow-up must survive their own
+    // re-call. See `plans/2026-05-17-next-minion-v1.md`.
     const { game, player } = await requireGamePlayer(ctx, args.gameId);
     if (game.state !== "playing") {
       throw new Error("Calls can only be added while the game is playing.");
@@ -178,6 +188,36 @@ export const removeCall = mutation({
       removedAt: Date.now(),
       removedByGmId: game.gmId,
     });
+
+    // Auto-promote the removed-call player's "next" minion, if any.
+    // Runs AFTER the soft-delete so `upsertActiveCall` sees no active
+    // call for this player and takes the insert branch. Runs BEFORE
+    // the existing roll-set block so the head lookup inside that
+    // block reflects the newly-inserted call when the queue was
+    // otherwise empty. See `plans/2026-05-17-next-minion-v1.md` for
+    // the full ordering invariant.
+    const playerMinionRows = await ctx.db
+      .query("gamePlayerMinions")
+      .withIndex("by_game_player", (q) =>
+        q.eq("gameId", call.gameId).eq("playerId", call.playerId),
+      )
+      .collect();
+    const flagged = playerMinionRows.find((r) => r.isNext === true);
+    if (flagged) {
+      // Clear the flag regardless of whether we re-enqueue, so a
+      // stale flag for an unbought minion is GC'd.
+      await ctx.db.patch(flagged._id, { isNext: undefined });
+      if (flagged.bought) {
+        const flaggedPlayer = await ctx.db.get(call.playerId);
+        if (flaggedPlayer) {
+          await upsertActiveCall(ctx, {
+            gameId: call.gameId,
+            player: flaggedPlayer,
+            content: { kind: "minion", minionId: flagged.minionId },
+          });
+        }
+      }
+    }
 
     if (removedWasHead) {
       const newHeadId = await getHeadCallId(ctx, call.gameId);

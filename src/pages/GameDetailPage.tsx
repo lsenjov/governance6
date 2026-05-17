@@ -1242,6 +1242,7 @@ function MinionBuyPanel({
   const data = useQuery(api.minionBuys.listForPlayer, { gameId, playerId });
   const buy = useMutation(api.minionBuys.buyMinion);
   const addCall = useMutation(api.calls.addOrReplaceCall);
+  const toggleNext = useMutation(api.minionBuys.toggleNextMinion);
   const [err, setErr] = useState<string | null>(null);
 
   if (data === undefined) return <div className="muted">Loading…</div>;
@@ -1266,6 +1267,16 @@ function MinionBuyPanel({
       await addCall({ gameId, minionId });
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Call failed.");
+    }
+  }
+
+  async function handleNext(e: ReactMouseEvent, minionId: Id<"minions">) {
+    e.stopPropagation();
+    setErr(null);
+    try {
+      await toggleNext({ gameId, minionId });
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Next failed.");
     }
   }
 
@@ -1360,6 +1371,23 @@ function MinionBuyPanel({
                   Call
                 </button>
               )}
+              {gameState === "playing" &&
+                m.bought &&
+                data.isSelf &&
+                data.hasActiveCall && (
+                  <button
+                    type="button"
+                    className={m.isNext ? undefined : "secondary"}
+                    aria-pressed={m.isNext}
+                    title={
+                      m.isNext ? "Clear next minion" : "Mark as next minion"
+                    }
+                    onClick={(e) => void handleNext(e, m._id)}
+                    style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
+                  >
+                    Next
+                  </button>
+                )}
               {m.bought && (
                 <span className="badge success" style={{ fontSize: "0.7rem" }}>
                   Bought
