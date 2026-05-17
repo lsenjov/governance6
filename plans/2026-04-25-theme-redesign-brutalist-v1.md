@@ -3,7 +3,7 @@
 ## Concept
 
 A municipal notice board rendered as software. Aggressively un-pretty,
-ultra-legible, single hot accent. Takes the word *governance* literally:
+ultra-legible, single hot accent. Takes the word _governance_ literally:
 this is the look of a city ordinance posted on a tram stop in 1978.
 Heavy type, hard borders, zero ornament, deliberate grid.
 
@@ -11,20 +11,20 @@ Heavy type, hard borders, zero ornament, deliberate grid.
 
 Replace the entire `:root` color set in `src/index.css:1-28`:
 
-| Token             | Value      | Role                                |
-| ----------------- | ---------- | ----------------------------------- |
-| `--bg`            | `#f4f1ea`  | Newsprint off-white                 |
-| `--bg-elevated`   | `#ffffff`  | Posted notice                       |
-| `--bg-muted`      | `#e9e4d6`  | Inset / banded rows                 |
-| `--fg`            | `#0a0a0a`  | Void black                          |
-| `--fg-muted`      | `#555555`  | Secondary, captions only            |
-| `--border`        | `#0a0a0a`  | Hard 2px black                      |
-| `--accent`        | `#ffcc00`  | Signal yellow (primary action)      |
-| `--accent-fg`     | `#0a0a0a`  | Black on yellow                     |
-| `--alt-accent`    | `#ff3a2e`  | Riot red — destructive / alerts     |
-| `--success`       | `#0a0a0a`  | No green; success uses bold rule    |
-| `--danger`        | `#ff3a2e`  | Riot red                            |
-| `--warning`       | `#ffcc00`  | Same as accent                      |
+| Token           | Value     | Role                             |
+| --------------- | --------- | -------------------------------- |
+| `--bg`          | `#f4f1ea` | Newsprint off-white              |
+| `--bg-elevated` | `#ffffff` | Posted notice                    |
+| `--bg-muted`    | `#e9e4d6` | Inset / banded rows              |
+| `--fg`          | `#0a0a0a` | Void black                       |
+| `--fg-muted`    | `#555555` | Secondary, captions only         |
+| `--border`      | `#0a0a0a` | Hard 2px black                   |
+| `--accent`      | `#ffcc00` | Signal yellow (primary action)   |
+| `--accent-fg`   | `#0a0a0a` | Black on yellow                  |
+| `--alt-accent`  | `#ff3a2e` | Riot red — destructive / alerts  |
+| `--success`     | `#0a0a0a` | No green; success uses bold rule |
+| `--danger`      | `#ff3a2e` | Riot red                         |
+| `--warning`     | `#ffcc00` | Same as accent                   |
 
 Greys are forbidden except `--fg-muted` for tiny captions. The system has
 exactly two surfaces and two accents.
@@ -42,7 +42,7 @@ exactly two surfaces and two accents.
 - Body: 14px Inter, line-height 1.5.
 - Display: Archivo Black for `h1/h2`, ALL CAPS, `letter-spacing: 0.02em`.
 - Section labels: `text-transform: uppercase; letter-spacing: 0.12em;
-  font-size: 0.72rem;`.
+font-size: 0.72rem;`.
 - Numerals everywhere quantitative: monospace + tabular-nums.
 
 Add to `index.html`:
@@ -86,12 +86,12 @@ Add to `index.html`:
 - `button.secondary` — white fill, 2px black border, same hard shadow.
 - `button.danger` — riot red, white text.
 - `input/textarea/select` (`83-105`) — `background: #fff; border: 2px solid
-  #0a0a0a; border-radius: 0;` Focus state: `outline: 4px solid var(--accent);
-  outline-offset: 0;`.
+#0a0a0a; border-radius: 0;` Focus state: `outline: 4px solid var(--accent);
+outline-offset: 0;`.
 - `.top-nav` (`120-127`) — black background, white text, yellow 4px bottom
   strip.
 - `.card` (`161-176`) — white bg, 2px black border, no shadow, `padding:
-  1.25rem 1.5rem`.
+1.25rem 1.5rem`.
 - `h2/h3` inside cards — uppercase Archivo Black, larger size jump
   (1.5rem / 1.125rem).
 - `.badge` (`367-393`) — square corners, 2px black border, solid fill.
@@ -108,20 +108,34 @@ Add to `index.html`:
 ## New utilities
 
 ```css
-.section-label { text-transform: uppercase; letter-spacing: 0.12em;
-                 font-size: 0.72rem; font-weight: 700; }
-.hard-shadow   { box-shadow: 4px 4px 0 #0a0a0a; }
-.bulletin      { counter-reset: section; }
+.section-label {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.hard-shadow {
+  box-shadow: 4px 4px 0 #0a0a0a;
+}
+.bulletin {
+  counter-reset: section;
+}
 .bulletin .card h2::before {
   counter-increment: section;
   content: "§" counter(section, decimal-leading-zero) "  ";
   font-family: var(--font-mono);
   color: var(--fg-muted);
 }
-.marker-link   { box-shadow: inset 0 -6px 0 var(--accent); }
-.tape          { /* yellow caution-tape divider */
-  background: repeating-linear-gradient(45deg,
-    var(--accent) 0 12px, #0a0a0a 12px 18px);
+.marker-link {
+  box-shadow: inset 0 -6px 0 var(--accent);
+}
+.tape {
+  /* yellow caution-tape divider */
+  background: repeating-linear-gradient(
+    45deg,
+    var(--accent) 0 12px,
+    #0a0a0a 12px 18px
+  );
   height: 8px;
 }
 ```
@@ -146,7 +160,7 @@ Add to `index.html`:
       this theme).
 - [ ] No `box-shadow` with blur ≠ 0 anywhere; only hard offsets.
 - [ ] Contrast: yellow `#ffcc00` on black ≥ 12:1; black on `--bg` ≥ 18:1.
-- [ ] Yellow is *never* used for text, only fills/strips/CTAs.
+- [ ] Yellow is _never_ used for text, only fills/strips/CTAs.
 - [ ] `prefers-reduced-motion` — no animations to gate, but verify the hard
       shadow doesn't ship as a transition.
 - [ ] Mobile: 2px borders + no shadow remains legible at 360px width.

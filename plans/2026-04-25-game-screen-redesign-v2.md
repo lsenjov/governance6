@@ -28,10 +28,10 @@ This plan executes the combined **Strategy A + B** recommendation from
 ### Phase 1 — Layout primitives (CSS)
 
 - [x] Task 1. In `src/index.css`, remove `.section-masonry` and its media
-  queries (`src/index.css:181-221`) along with the `3-column` widen rule at
-  `src/index.css:142-146`. Rationale: the new layout does not use either.
-  The `.main-content` `max-width: 1200px` default stays but we'll override it
-  scoped to the new game shell in Task 4.
+      queries (`src/index.css:181-221`) along with the `3-column` widen rule at
+      `src/index.css:142-146`. Rationale: the new layout does not use either.
+      The `.main-content` `max-width: 1200px` default stays but we'll override it
+      scoped to the new game shell in Task 4.
 
 - [x] Task 2. Add compaction primitives to `src/index.css`:
   - `.card.tight { padding: 0.5rem 0.75rem; margin-bottom: 0.5rem; }`
@@ -46,8 +46,8 @@ This plan executes the combined **Strategy A + B** recommendation from
   - `--hud-height: 3rem;`
   - `--rail-width: 22rem;`
   - `--bottom-strip-height: 3.25rem;`
-  Rationale: single source of truth for offsets used by both the sticky HUD
-  and the sticky rail; avoids magic numbers.
+    Rationale: single source of truth for offsets used by both the sticky HUD
+    and the sticky rail; avoids magic numbers.
 
 - [x] Task 4. Add the new game-shell layout classes in `src/index.css`:
   - `.game-shell { display: flex; flex-direction: column; gap: 0.5rem; }`
@@ -63,7 +63,7 @@ This plan executes the combined **Strategy A + B** recommendation from
     viewports get the fixed-width right rail.
 
 - [x] Task 5. Add the bottom summary-strip styles in `src/index.css`, active
-  only below 900px:
+      only below 900px:
   - `.game-bottom-strip { display: none; }`
   - `@media (max-width: 899px) { .game-bottom-strip { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--bg-elevated); border-top: 1px solid var(--border); padding: 0.5rem 0.75rem; gap: 0.75rem; align-items: center; justify-content: space-between; min-height: var(--bottom-strip-height); } .main-content { padding-bottom: calc(1.5rem + var(--bottom-strip-height)); } }`
   - Rationale: mobile-only bottom-anchored summary strip that doesn't
@@ -72,9 +72,9 @@ This plan executes the combined **Strategy A + B** recommendation from
 ### Phase 2 — Sticky HUD + "You" strip
 
 - [x] Task 6. In `src/pages/GameDetailPage.tsx`, replace the current top block
-  (`src/pages/GameDetailPage.tsx:26-68`: Back link, h2 title row, GM line,
-  `ElapsedDisplay`, `GmControls`) with a single `<header className="game-hud">`
-  that contains, in order:
+      (`src/pages/GameDetailPage.tsx:26-68`: Back link, h2 title row, GM line,
+      `ElapsedDisplay`, `GmControls`) with a single `<header className="game-hud">`
+      that contains, in order:
   - Back link (`← Games`) as a compact link.
   - Game name (`h2` with `margin: 0`, `font-size: 1.1rem`).
   - State pill (existing `.badge` logic).
@@ -85,13 +85,13 @@ This plan executes the combined **Strategy A + B** recommendation from
   - GM controls (`Start game` / `Archive`) inline, no card wrapper.
   - Game-level notes icon (`NoteIcon` with `target={{ kind: "game" }}`).
   - Game-log button `[Log]` (see Phase 5) — opens the events drawer.
-  Delete `ElapsedDisplay` and refactor into an inline `ElapsedInline` helper.
-  Delete `GmControls`' card wrapper; extract the button group as
-  `GmControlsInline`.
+    Delete `ElapsedDisplay` and refactor into an inline `ElapsedInline` helper.
+    Delete `GmControls`' card wrapper; extract the button group as
+    `GmControlsInline`.
 
 - [x] Task 7. Add the "You" context strip as a `<div className="game-you-strip">`
-  rendered directly under the HUD whenever `viewer.playerId` is set and
-  `game.state !== "ready"`. Contents:
+      rendered directly under the HUD whenever `viewer.playerId` is set and
+      `game.state !== "ready"`. Contents:
   - `<strong>You:</strong> {your displayName}`
   - `· {syndicate name} (Leader {leader})` if a syndicate is selected,
     otherwise `· No Syndicate`.
@@ -101,35 +101,35 @@ This plan executes the combined **Strategy A + B** recommendation from
   - `[Transfer]` button (opens the transfer popover — Phase 4).
   - `[Ledger]` button (toggles the existing `OwnLedger` content in a popover
     / inline expand beneath the strip).
-  Rationale: surfaces the most frequently-needed player state (my POWER) and
-  actions without a dedicated column.
+    Rationale: surfaces the most frequently-needed player state (my POWER) and
+    actions without a dedicated column.
 
 ### Phase 3 — Two-pane body
 
 - [x] Task 8. Below the HUD and "You" strip, wrap the page body in
-  `<div className="game-grid">` with two children:
+      `<div className="game-grid">` with two children:
   - Left: `<div className="game-main">` containing the roster (and, in the
     `ready` state for GMs, the `AddPlayerForm`; for non-GM players, the
     `SyndicateSelector`).
   - Right: `<aside className="game-rail">` containing the Call Queue and the
     POWER standings. In the `ready` state the right rail is hidden (nothing
     to show) and the grid collapses to a single column via a class switch.
-  Rationale: implements Strategy B's purpose-built layout. The rail is
-  sticky on wide viewports and drops beneath the roster on narrow ones
-  (handled by Task 4's media query).
+    Rationale: implements Strategy B's purpose-built layout. The rail is
+    sticky on wide viewports and drops beneath the roster on narrow ones
+    (handled by Task 4's media query).
 
 - [x] Task 9. Rewrite the roster renderer (`RosterList` at
-  `src/pages/GameDetailPage.tsx:269-374`) as a vertical list of row-divider
-  items (not cards) with these parts per row:
+      `src/pages/GameDetailPage.tsx:269-374`) as a vertical list of row-divider
+      items (not cards) with these parts per row:
   - Collapsed row (single line):
     `▸ {name}{you?}  ·  {syndicate or "No Syndicate"}  ·  <strong>{POWER}</strong>⟡  [NoteIcon (syndicate)]  [remove if GM & ready]`
   - Expanded row: the collapsed header, followed by `MinionBuyPanel` inline
     (for playing/archived states) and for GMs the merged `GmEditPowerForm` +
     `LedgerTable` (see Task 11).
   - Click anywhere on the header (outside buttons/note icon) toggles expand.
-  Rationale: one row per player instead of a full card; player power now
-  lives on the header line so the current `PowerPanel` table is redundant
-  in the rail (see Task 13).
+    Rationale: one row per player instead of a full card; player power now
+    lives on the header line so the current `PowerPanel` table is redundant
+    in the rail (see Task 13).
 
 - [x] Task 10. Add hybrid persisted expand state using `localStorage`:
   - New hook `useRosterExpandedSet(gameId)` returning `{ expandedSet: Set<PlayerId>, toggle(pid), isExpanded(pid) }`.
@@ -137,7 +137,7 @@ This plan executes the combined **Strategy A + B** recommendation from
   - Initial rule: viewer's own `playerId` is always treated as expanded
     regardless of storage. All other players default to collapsed.
   - Hook must tolerate missing/invalid JSON.
-  Rationale: matches the "Hybrid" decision from Q1.
+    Rationale: matches the "Hybrid" decision from Q1.
 
 - [x] Task 11. Fold GM-per-player tools into the expanded roster row.
   - Delete `GmLedgerPanel` and `GmPlayerRow` (`src/pages/GameDetailPage.tsx:530-581`).
@@ -146,18 +146,18 @@ This plan executes the combined **Strategy A + B** recommendation from
     inline labels — Task 15) and `GmPlayerLedger`.
   - Preserve the existing `api.ledger.gmEditPower` / `api.ledger.getAnyLedger`
     calls; only the UI wrapper changes.
-  Rationale: eliminates the second copy of every player and colocates GM
-  tools with the player they apply to.
+    Rationale: eliminates the second copy of every player and colocates GM
+    tools with the player they apply to.
 
 - [x] Task 12. Rewrite `MinionBuyPanel` (`src/pages/GameDetailPage.tsx:802-924`)
-  as a list of `.row-divider` rows (no per-minion card):
+      as a list of `.row-divider` rows (no per-minion card):
   - Single line: `{name}{ — accent muted}  [skill1] [skill2] …   [NoteIcon] [Buy {price}] | [Call] | [Bought ✓]`
   - Description moves to a `title` tooltip on the name, plus a tiny
     expand-caret that reveals the full description beneath (optional; may
     skip for v1 if the tooltip is sufficient).
   - The existing `Bought: N/8 · next buy costs X` summary becomes a single
     muted line above the list (unchanged content, just smaller spacing).
-  Rationale: 8 minions × 3 players drops from ~1400px to ~700px.
+    Rationale: 8 minions × 3 players drops from ~1400px to ~700px.
 
 - [x] Task 13. Rewrite the right rail's Call Queue.
   - Replace `CallQueuePanel` (`src/pages/GameDetailPage.tsx:926-1022`) with a
@@ -182,9 +182,9 @@ This plan executes the combined **Strategy A + B** recommendation from
 ### Phase 4 — Transfer + Ledger popovers
 
 - [x] Task 15. Replace the existing `TransferForm` card
-  (`src/pages/GameDetailPage.tsx:709-800`) with a popover triggered by the
-  `[Transfer]` button in the "You" strip (Task 7). The popover reuses the
-  existing form fields but with inline labels:
+      (`src/pages/GameDetailPage.tsx:709-800`) with a popover triggered by the
+      `[Transfer]` button in the "You" strip (Task 7). The popover reuses the
+      existing form fields but with inline labels:
   - Recipient select with `aria-label="Recipient"` and no `<label>` above.
   - Amount input with `placeholder="Amount"`, `aria-label="Amount"`.
   - Reason input with `placeholder="Reason (required)"`, `aria-label="Reason"`.
@@ -196,19 +196,19 @@ This plan executes the combined **Strategy A + B** recommendation from
   - Closes on outside click and Escape.
 
 - [x] Task 16. Replace `OwnLedger`'s button-card
-  (`src/pages/GameDetailPage.tsx:513-528`) with a popover launched from the
-  `[Ledger]` button in the "You" strip. Body renders the existing
-  `LedgerTable` content (no changes to the table itself).
+      (`src/pages/GameDetailPage.tsx:513-528`) with a popover launched from the
+      `[Ledger]` button in the "You" strip. Body renders the existing
+      `LedgerTable` content (no changes to the table itself).
 
 - [x] Task 17. Apply the same inline-label treatment to `GmEditPowerForm`
-  (`src/pages/GameDetailPage.tsx:616-644`): replace the `<label>Delta…` and
-  `<label>Reason…` blocks with `placeholder` + `aria-label`. The form now
-  renders as one row: `[Δ ± int] [Reason (optional)] [Apply]`.
+      (`src/pages/GameDetailPage.tsx:616-644`): replace the `<label>Delta…` and
+      `<label>Reason…` blocks with `placeholder` + `aria-label`. The form now
+      renders as one row: `[Δ ± int] [Reason (optional)] [Apply]`.
 
 ### Phase 5 — Game log / events drawer
 
 - [x] Task 18. Add a game-log slide-over drawer launched from the HUD's
-  `[Log]` button (Task 6).
+      `[Log]` button (Task 6).
   - New CSS: `.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(28rem, 100vw); background: var(--bg-elevated); border-left: 1px solid var(--border); box-shadow: -8px 0 24px rgba(0,0,0,0.4); z-index: 40; display: flex; flex-direction: column; }` plus a backdrop (`.drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 39; }`).
   - Contents, in order:
     - Header with title `Game Log` and a close `✕` button.
@@ -222,13 +222,13 @@ This plan executes the combined **Strategy A + B** recommendation from
 ### Phase 6 — Narrow-screen bottom summary strip
 
 - [x] Task 19. Add a `<div className="game-bottom-strip">` rendered at the
-  root of the game shell, visible only below 900px (CSS-controlled — Task 5).
-  Contents (only when `game.state !== "ready"` and `viewer.playerId` is set):
+      root of the game shell, visible only below 900px (CSS-controlled — Task 5).
+      Contents (only when `game.state !== "ready"` and `viewer.playerId` is set):
   - Left: `POWER <strong>{mine}</strong>⟡` + `Queue: <strong>{activeCount}</strong>`
   - Right: `[Queue ▾]` button that opens the rail content as a sheet
     (reuses the drawer primitive from Task 18, but sliding from the bottom).
-  Rationale: keeps the most glanceable rail info visible on mobile without
-  hiding the roster above.
+    Rationale: keeps the most glanceable rail info visible on mobile without
+    hiding the roster above.
 
 ### Phase 7 — Syndicate Editor compaction (Strategy A only)
 
@@ -255,19 +255,19 @@ This plan executes the combined **Strategy A + B** recommendation from
 ### Phase 8 — Health checks
 
 - [x] Task 21. Run `npm run typecheck` and fix any type regressions
-  introduced by the refactors (e.g., props on the inlined `ElapsedInline`,
-  removed `GmLedgerPanel`). Rationale: the redesign touches many components;
-  catch type drift early.
+      introduced by the refactors (e.g., props on the inlined `ElapsedInline`,
+      removed `GmLedgerPanel`). Rationale: the redesign touches many components;
+      catch type drift early.
 
 - [x] Task 22. Run `npm run lint` and address any new lint errors.
-  Rationale: standard.
+      Rationale: standard.
 
 - [x] Task 23. Run `npm test` (Vitest). The existing test suite has no
-  game-screen render tests, so this is mostly a regression gate. Add one
-  smoke test that renders `GameDetailPage` with a mocked view in each of the
-  three game states (`ready`, `playing`, `archived`) and asserts the HUD,
-  roster, and (where applicable) rail render without throwing. Rationale:
-  cheap safety net for a redesign of this scope.
+      game-screen render tests, so this is mostly a regression gate. Add one
+      smoke test that renders `GameDetailPage` with a mocked view in each of the
+      three game states (`ready`, `playing`, `archived`) and asserts the HUD,
+      roster, and (where applicable) rail render without throwing. Rationale:
+      cheap safety net for a redesign of this scope.
 
   **Execution note:** The existing suite (`convex/notes.test.ts`, 16 tests)
   passes clean after the redesign. New game-screen render tests were
@@ -278,7 +278,7 @@ This plan executes the combined **Strategy A + B** recommendation from
   Task 25 is the gate for UI correctness.
 
 - [x] Task 24. Run `npm run build` and ensure the production bundle builds
-  clean. Rationale: catches any Vite/TS issues not surfaced by typecheck.
+      clean. Rationale: catches any Vite/TS issues not surfaced by typecheck.
 
 - [x] Task 25. Manual visual verification across the state matrix:
   - **Playing, GM, 3 players, 8 minions each, 2 calls in queue.** Above-the-fold shows HUD + "You" strip + 3 roster rows + rail with queue and standings. Roster rows start collapsed (except own); tapping a row expands minions.

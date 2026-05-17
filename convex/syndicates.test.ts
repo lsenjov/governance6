@@ -76,13 +76,12 @@ async function createHarness() {
 describe("syndicates.update / setIsShared: admin parity", () => {
   test("admin can update a non-owned unplayed syndicate", async () => {
     const h = await createHarness();
-    await h.t.withIdentity(asUser(h.ids.adminId)).mutation(
-      api.syndicates.update,
-      {
+    await h.t
+      .withIdentity(asUser(h.ids.adminId))
+      .mutation(api.syndicates.update, {
         syndicateId: h.ids.privateUnplayedId,
         name: "Admin Renamed",
-      },
-    );
+      });
     const row = await h.t.run(async (ctx) =>
       ctx.db.get(h.ids.privateUnplayedId),
     );
@@ -128,13 +127,12 @@ describe("syndicates.update / setIsShared: admin parity", () => {
   test("non-admin non-owner is still rejected", async () => {
     const h = await createHarness();
     await expect(
-      h.t.withIdentity(asUser(h.ids.strangerId)).mutation(
-        api.syndicates.update,
-        {
+      h.t
+        .withIdentity(asUser(h.ids.strangerId))
+        .mutation(api.syndicates.update, {
           syndicateId: h.ids.privateUnplayedId,
           name: "Sneak",
-        },
-      ),
+        }),
     ).rejects.toThrow(/owner/i);
   });
 });

@@ -1,6 +1,9 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { assertSyndicateEditableForAdminOrOwner, requireUserId } from "./lib/auth";
+import {
+  assertSyndicateEditableForAdminOrOwner,
+  requireUserId,
+} from "./lib/auth";
 
 /**
  * Drawback CRUD — Rule 3 (0–5 per Syndicate).
@@ -64,10 +67,14 @@ export const create = mutation({
     await assertSyndicateEditableForAdminOrOwner(ctx, args.syndicateId);
     const name = args.name.trim();
     if (name.length < 1 || name.length > DRAWBACK_NAME_MAX) {
-      throw new Error(`Drawback name must be 1–${DRAWBACK_NAME_MAX} characters.`);
+      throw new Error(
+        `Drawback name must be 1–${DRAWBACK_NAME_MAX} characters.`,
+      );
     }
     if (args.description.length > DRAWBACK_DESC_MAX) {
-      throw new Error(`Drawback description must be at most ${DRAWBACK_DESC_MAX} characters.`);
+      throw new Error(
+        `Drawback description must be at most ${DRAWBACK_DESC_MAX} characters.`,
+      );
     }
     const abbreviation = normaliseAbbreviation(args.abbreviation);
     const existing = await ctx.db
@@ -75,7 +82,9 @@ export const create = mutation({
       .withIndex("by_syndicate", (q) => q.eq("syndicateId", args.syndicateId))
       .collect();
     if (existing.length >= MAX_DRAWBACKS) {
-      throw new Error(`A Syndicate may have at most ${MAX_DRAWBACKS} drawbacks.`);
+      throw new Error(
+        `A Syndicate may have at most ${MAX_DRAWBACKS} drawbacks.`,
+      );
     }
     const maxOrder = existing.reduce((m, d) => Math.max(m, d.order), -1);
     return await ctx.db.insert("drawbacks", {
@@ -116,13 +125,17 @@ export const update = mutation({
     if (args.name !== undefined) {
       const n = args.name.trim();
       if (n.length < 1 || n.length > DRAWBACK_NAME_MAX) {
-        throw new Error(`Drawback name must be 1–${DRAWBACK_NAME_MAX} characters.`);
+        throw new Error(
+          `Drawback name must be 1–${DRAWBACK_NAME_MAX} characters.`,
+        );
       }
       patch.name = n;
     }
     if (args.description !== undefined) {
       if (args.description.length > DRAWBACK_DESC_MAX) {
-        throw new Error(`Drawback description must be at most ${DRAWBACK_DESC_MAX} characters.`);
+        throw new Error(
+          `Drawback description must be at most ${DRAWBACK_DESC_MAX} characters.`,
+        );
       }
       patch.description = args.description;
     }

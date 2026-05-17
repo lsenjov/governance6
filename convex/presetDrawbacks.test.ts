@@ -53,9 +53,9 @@ describe("presetDrawbacks: authorisation", () => {
 
   test("unauthenticated cannot list", async () => {
     const h = await createHarness();
-    await expect(
-      h.t.query(api.presetDrawbacks.list, {}),
-    ).rejects.toThrow(/Not authenticated/i);
+    await expect(h.t.query(api.presetDrawbacks.list, {})).rejects.toThrow(
+      /Not authenticated/i,
+    );
   });
 
   test("authenticated non-admin can list", async () => {
@@ -114,11 +114,13 @@ describe("presetDrawbacks.add", () => {
   test("abbreviation rejects more than 6 chars", async () => {
     const h = await createHarness();
     await expect(
-      h.t.withIdentity(asUser(h.ids.adminId)).mutation(api.presetDrawbacks.add, {
-        name: "TooLong",
-        description: "",
-        abbreviation: "TOOLONG",
-      }),
+      h.t
+        .withIdentity(asUser(h.ids.adminId))
+        .mutation(api.presetDrawbacks.add, {
+          name: "TooLong",
+          description: "",
+          abbreviation: "TOOLONG",
+        }),
     ).rejects.toThrow(/at most 6/i);
   });
 
@@ -131,16 +133,20 @@ describe("presetDrawbacks.add", () => {
         description: "",
       });
     await expect(
-      h.t.withIdentity(asUser(h.ids.adminId)).mutation(api.presetDrawbacks.add, {
-        name: "glass jaw",
-        description: "",
-      }),
+      h.t
+        .withIdentity(asUser(h.ids.adminId))
+        .mutation(api.presetDrawbacks.add, {
+          name: "glass jaw",
+          description: "",
+        }),
     ).rejects.toThrow(/already exists/i);
     await expect(
-      h.t.withIdentity(asUser(h.ids.adminId)).mutation(api.presetDrawbacks.add, {
-        name: "  GLASS JAW  ",
-        description: "",
-      }),
+      h.t
+        .withIdentity(asUser(h.ids.adminId))
+        .mutation(api.presetDrawbacks.add, {
+          name: "  GLASS JAW  ",
+          description: "",
+        }),
     ).rejects.toThrow(/already exists/i);
   });
 });
@@ -260,9 +266,11 @@ describe("presetDrawbacks.remove", () => {
       });
 
     await expect(
-      h.t.withIdentity(asUser(h.ids.userId)).mutation(api.presetDrawbacks.remove, {
-        drawbackId: id,
-      }),
+      h.t
+        .withIdentity(asUser(h.ids.userId))
+        .mutation(api.presetDrawbacks.remove, {
+          drawbackId: id,
+        }),
     ).rejects.toThrow(/admin/i);
 
     await h.t

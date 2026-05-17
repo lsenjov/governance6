@@ -94,7 +94,7 @@ channel is acceptable for this scale.
    acceptable for this trust model.
 
 2. **High — atomic flag consumption.** The flag must be cleared
-   *before* the password is set (and before any UI signal of success
+   _before_ the password is set (and before any UI signal of success
    reaches the user), so that a second attempt can't reuse the flag.
    If `modifyAccountCredentials` then fails, the admin re-flips the
    flag; nothing leaks because nothing was authenticated.
@@ -209,11 +209,11 @@ channel is acceptable for this scale.
 ### Backend — schema
 
 - [x] Task 1. Add `passwordResetPending: v.optional(v.literal(true))`
-  to the `users` table at `convex/schema.ts:15-30`. Place it next to
-  `isSiteAdmin` so the "manage via dashboard only" comment naturally
-  covers it. **Extend the existing comment block at
-  `convex/schema.ts:26-29`** so it documents both `isSiteAdmin` and
-  `passwordResetPending`:
+      to the `users` table at `convex/schema.ts:15-30`. Place it next to
+      `isSiteAdmin` so the "manage via dashboard only" comment naturally
+      covers it. **Extend the existing comment block at
+      `convex/schema.ts:26-29`** so it documents both `isSiteAdmin` and
+      `passwordResetPending`:
 
   ```
   // Both 'isSiteAdmin' and 'passwordResetPending' are manageable only
@@ -233,7 +233,7 @@ channel is acceptable for this scale.
 ### Backend — internal mutation
 
 - [x] Task 2. Add `consumePasswordResetFlag` as an `internalMutation`
-  in `convex/auth.ts`. Args: `{ email: v.string() }`. Behaviour:
+      in `convex/auth.ts`. Args: `{ email: v.string() }`. Behaviour:
   - Look up users by email via
     `withIndex("email", (q) => q.eq("email", email)).take(2)`.
   - If the result is empty, throw `new Error("No reset pending.")`
@@ -259,23 +259,23 @@ channel is acceptable for this scale.
 ### Backend — public action
 
 - [x] Task 3. Add `resetFlaggedPassword` as a public `action` in
-  `convex/auth.ts`. Args: `{ email: v.string(), newPassword: v.string() }`.
-  Returns `null`. Behaviour:
+      `convex/auth.ts`. Args: `{ email: v.string(), newPassword: v.string() }`.
+      Returns `null`. Behaviour:
   1. Validate `newPassword.length >= 8`; throw `"Password must be at
-     least 8 characters."` otherwise. (Match `Password.js:165`.)
+least 8 characters."` otherwise. (Match `Password.js:165`.)
      Note: the flag is NOT consumed in this branch.
   2. `const userId: Id<"users"> = await ctx.runMutation(internal.auth.consumePasswordResetFlag, { email })`.
      The TypeScript circularity annotation is required because the
      mutation lives in the same file (per
      `convex/_generated/ai/guidelines.md:94-110`).
   3. Wrap step 4 in `try { ... } catch (e) { throw new Error("No
-     reset pending."); }` so the library's error message
+reset pending."); }` so the library's error message
      (`"Cannot modify account with ID ${email} because it does not
-     exist"` — `modifyAccount.js:22`) does not leak the email back to
+exist"` — `modifyAccount.js:22`) does not leak the email back to
      an unauthenticated caller. After the rethrow, log the original
      error server-side via `console.error` for ops visibility.
   4. `await modifyAccountCredentials(ctx, { provider: "password",
-     account: { id: email, secret: newPassword } })`.
+account: { id: email, secret: newPassword } })`.
   5. `await invalidateSessions(ctx, { userId })` (outside the try/catch
      in step 3; failure here is a server bug, not a per-request
      error to mask).
@@ -295,7 +295,7 @@ channel is acceptable for this scale.
 ### Backend — tests
 
 - [x] Task 4. Create `convex/auth.test.ts` covering the internal flag-
-  consumption path:
+      consumption path:
   - "consumePasswordResetFlag throws when no user matches email"
   - "consumePasswordResetFlag throws when flag is unset"
   - "consumePasswordResetFlag throws when two users share the email
@@ -308,7 +308,7 @@ channel is acceptable for this scale.
     single-use)"
 
   Use `t.run(async (ctx) => ctx.db.insert("users", { email, ...,
-  passwordResetPending: true }))` to seed, and call
+passwordResetPending: true }))` to seed, and call
   `t.mutation(internal.auth.consumePasswordResetFlag, { email })`.
   Then assert via `t.run(... ctx.db.get(userId))` that
   `passwordResetPending` is absent AND `displayName`/`isSiteAdmin`
@@ -319,15 +319,15 @@ channel is acceptable for this scale.
   that value from being inserted in the first place.
 
 - [x] Task 5. Add tests to the same file covering
-  `resetFlaggedPassword` end-to-end. `convex-test` resolves function
-  paths by importing the module via `import.meta.glob` and looking up
-  the named export
-  (`node_modules/convex-test/dist/index.js:1395-1428`), so the
-  `convexAuth({...}).store` mutation exported from `convex/auth.ts:4`
-  is reachable as `auth:store` from inside
-  `modifyAccountCredentials` (`modifyAccount.js:29-35`) and
-  `invalidateSessions` (`invalidateSessions.js:8-15`). The full action
-  is therefore exercisable under the harness with no fallback needed.
+      `resetFlaggedPassword` end-to-end. `convex-test` resolves function
+      paths by importing the module via `import.meta.glob` and looking up
+      the named export
+      (`node_modules/convex-test/dist/index.js:1395-1428`), so the
+      `convexAuth({...}).store` mutation exported from `convex/auth.ts:4`
+      is reachable as `auth:store` from inside
+      `modifyAccountCredentials` (`modifyAccount.js:29-35`) and
+      `invalidateSessions` (`invalidateSessions.js:8-15`). The full action
+      is therefore exercisable under the harness with no fallback needed.
 
   Tests:
   - "resetFlaggedPassword rejects passwords shorter than 8 chars"
@@ -347,7 +347,7 @@ channel is acceptable for this scale.
     `"lucia"` if convenient, or just any sentinel string — we assert
     inequality, not a specific new value). Call the action, then
     re-fetch the `authAccounts` row and assert `secret !==
-    seededHash` and `passwordResetPending === undefined`.
+seededHash` and `passwordResetPending === undefined`.
   - "resetFlaggedPassword invalidates existing sessions for the user"
     — seed an `authSessions` row with `userId` matching, call the
     action, then assert the row is gone.
@@ -355,21 +355,21 @@ channel is acceptable for this scale.
     throws `'No reset pending.'`".
   - (Stretch) "after a successful reset, signing in with the new
     password works" via `t.action(api.auth.signIn, { provider:
-    "password", params: { email, password: newPassword, flow:
-    "signIn" } })`. If the Scrypt round-trip is slow under
+"password", params: { email, password: newPassword, flow:
+"signIn" } })`. If the Scrypt round-trip is slow under
     edge-runtime, mark this as `.skip` with a one-line comment and
     move on; the secret-changed assertion above is the load-bearing
     one.
 
 - [x] Task 6. Verify that the existing `convex/notes.test.ts`,
-  `convex/drawbacks.test.ts`, etc., are unaffected (no schema field
-  they care about is modified; the new field is optional). Rationale:
-  regression sanity check.
+      `convex/drawbacks.test.ts`, etc., are unaffected (no schema field
+      they care about is modified; the new field is optional). Rationale:
+      regression sanity check.
 
 ### Frontend — sign-in page
 
 - [x] Task 7. Extend `src/pages/SignInPage.tsx` to support a third
-  `flow` value `"reset"`. Specifically:
+      `flow` value `"reset"`. Specifically:
   - Widen the `flow` state type at `src/pages/SignInPage.tsx:7` to
     `"signIn" | "signUp" | "reset"`.
   - Import `useAction` from `convex/react` and `api` from
@@ -379,12 +379,12 @@ channel is acceptable for this scale.
     (where `resetFlaggedPassword = useAction(api.auth.resetFlaggedPassword)`).
     On success: (a) call `e.currentTarget.reset()` to wipe the password
     out of the DOM input before transitioning, (b) `setSuccess("Password
-    reset. Please sign in.")`, (c) `setFlow("signIn")`. On failure
+reset. Please sign in.")`, (c) `setFlow("signIn")`. On failure
     surface the thrown error via the existing `error` state.
   - Update the heading at `src/pages/SignInPage.tsx:35-37` to switch on
     all three flow values (`"Sign in to continue." | "Create an
-    account." | "Choose a new password. An admin must have authorised
-    this reset."`).
+account." | "Choose a new password. An admin must have authorised
+this reset."`).
   - Update the submit button label at lines 65-69 to include the
     `"reset"` case (`"Set new password"`).
   - Update the autocomplete attribute at lines 57-59 to a three-way
@@ -393,11 +393,11 @@ channel is acceptable for this scale.
   - Secondary actions: render exactly these toggles per flow state,
     replacing the single toggle button at lines 71-79:
 
-    | `flow` | Visible secondary actions |
-    | --- | --- |
+    | `flow`   | Visible secondary actions                       |
+    | -------- | ----------------------------------------------- |
     | `signIn` | "Need an account? Sign up" · "Forgot password?" |
-    | `signUp` | "Already have an account? Sign in" |
-    | `reset` | "Back to sign in" |
+    | `signUp` | "Already have an account? Sign in"              |
+    | `reset`  | "Back to sign in"                               |
 
     Each button calls `setFlow(...)` and additionally
     `setError(null)` + `setSuccess(null)` to clear any stale banner
@@ -411,33 +411,33 @@ channel is acceptable for this scale.
   sit in the input across the flow transition.
 
 - [x] Task 8. Add a `success` state (`useState<string | null>(null)`)
-  to `src/pages/SignInPage.tsx` alongside the existing `error` state.
-  Render the success message in a sibling element to the existing
-  `error-text` element using a `success-text` class (style with the
-  existing theme green if available; otherwise the bare class is
-  fine — themable later). The state is set by the reset-success
-  branch in Task 7 and cleared on any flow transition. Rationale:
-  without it, the flow change from `reset` back to `signIn` is silent
-  and confusing.
+      to `src/pages/SignInPage.tsx` alongside the existing `error` state.
+      Render the success message in a sibling element to the existing
+      `error-text` element using a `success-text` class (style with the
+      existing theme green if available; otherwise the bare class is
+      fine — themable later). The state is set by the reset-success
+      branch in Task 7 and cleared on any flow transition. Rationale:
+      without it, the flow change from `reset` back to `signIn` is silent
+      and confusing.
 
 ### Verification round
 
 - [x] Task 9. Run `npm run typecheck` and confirm no TypeScript
-  errors. Common slip points: the `Id<"users">` annotation on the
-  `runMutation` result, the widened `flow` union in the React state.
+      errors. Common slip points: the `Id<"users">` annotation on the
+      `runMutation` result, the widened `flow` union in the React state.
 
 - [x] Task 10. Run `npm run lint` and confirm no ESLint errors. The
-  repo has `eslint.config.js` at the root; CI / local convention
-  expects a clean lint pass.
+      repo has `eslint.config.js` at the root; CI / local convention
+      expects a clean lint pass.
 
 - [x] Task 11. Run `npm test` and confirm the full vitest suite passes,
-  including the new `convex/auth.test.ts` cases.
+      including the new `convex/auth.test.ts` cases.
 
 - [ ] Task 12. Manual smoke test (out of scope for automated tests, but
-  document the steps in the verification criteria below): from
-  `npm run dev:all`, create a user, sign out, flip
-  `passwordResetPending` to `true` via `npx convex dashboard`, complete
-  the reset flow, sign in with the new password.
+      document the steps in the verification criteria below): from
+      `npm run dev:all`, create a user, sign out, flip
+      `passwordResetPending` to `true` via `npx convex dashboard`, complete
+      the reset flow, sign in with the new password.
 
 ## Verification Criteria
 

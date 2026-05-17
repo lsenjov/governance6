@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
@@ -14,7 +8,12 @@ import { useElapsed, formatElapsed } from "../hooks/useElapsed";
 import { resolveNoteCount, useNotesCountMap } from "../hooks/useNotesCountMap";
 import { useRosterExpandedSet } from "../hooks/useRosterExpandedSet";
 import { useHideManagementControls } from "../hooks/useHideManagementControls";
-import { NoteIcon, NoteList, NoteCreateForm, buildListArgs } from "../components/NoteIcon";
+import {
+  NoteIcon,
+  NoteList,
+  NoteCreateForm,
+  buildListArgs,
+} from "../components/NoteIcon";
 import { RollSetDisplay } from "../components/RollSetDisplay";
 import { Drawer } from "../components/Drawer";
 import { GmTodoDrawer } from "../components/GmTodoDrawer";
@@ -330,10 +329,7 @@ function GameHud({
         />
       )}
       {viewerIsGm && gmTodoOpen && (
-        <GmTodoDrawer
-          gameId={gameId}
-          onClose={() => setGmTodoOpen(false)}
-        />
+        <GmTodoDrawer gameId={gameId} onClose={() => setGmTodoOpen(false)} />
       )}
     </>
   );
@@ -402,8 +398,8 @@ function GmToolsDrawer({
           style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}
         >
           Hides + New Grant, + New Goal, and the Edit / Clear owner / Delete
-          buttons on Treason Grants and Goals. The toggle is remembered for
-          this game.
+          buttons on Treason Grants and Goals. The toggle is remembered for this
+          game.
         </div>
       </section>
     </Drawer>
@@ -670,10 +666,7 @@ function CustomCallForm({
 function LedgerButton({ gameId }: { gameId: GameId }) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement | null>(null);
-  const entries = useQuery(
-    api.ledger.getOwnLedger,
-    open ? { gameId } : "skip",
-  );
+  const entries = useQuery(api.ledger.getOwnLedger, open ? { gameId } : "skip");
   return (
     <div
       ref={anchorRef}
@@ -933,10 +926,7 @@ function ArchivedBidsList({ rows }: { rows: ArchivedBidsListRow[] }) {
                 {r.wasSettled && (
                   <span style={{ fontSize: "0.85rem" }}>
                     <strong>{r.totalPaid}</strong>
-                    <span
-                      className="muted"
-                      style={{ fontSize: "0.8rem" }}
-                    >
+                    <span className="muted" style={{ fontSize: "0.8rem" }}>
                       {" "}
                       POWER · {r.bidCount} bidder
                       {r.bidCount === 1 ? "" : "s"}
@@ -1089,8 +1079,7 @@ function RosterRow({
 
   async function handleRemove(e: ReactMouseEvent) {
     e.stopPropagation();
-    if (!window.confirm(`Remove ${player.displayName} from this game?`))
-      return;
+    if (!window.confirm(`Remove ${player.displayName} from this game?`)) return;
     setErr(null);
     try {
       await removePlayer({ gameId, playerId: player._id });
@@ -1101,7 +1090,10 @@ function RosterRow({
 
   const canToggle = !isSelf; // Self is always expanded.
   const showGmTools =
-    expanded && viewer.isGm && gameState !== "archived" && gameState !== "ready";
+    expanded &&
+    viewer.isGm &&
+    gameState !== "archived" &&
+    gameState !== "ready";
   const showMinions =
     expanded && gameState !== "ready" && player.selectedSyndicateId !== null;
 
@@ -1278,11 +1270,12 @@ function MinionBuyPanel({
   return (
     <div>
       {err && <div className="error-text">{err}</div>}
-      <div className="muted" style={{ fontSize: "0.85rem", padding: "0.25rem" }}>
+      <div
+        className="muted"
+        style={{ fontSize: "0.85rem", padding: "0.25rem" }}
+      >
         Bought {data.boughtCount}/8 ·{" "}
-        {data.nextPrice !== null
-          ? `next buy ${data.nextPrice}`
-          : "max reached"}
+        {data.nextPrice !== null ? `next buy ${data.nextPrice}` : "max reached"}
       </div>
       <div>
         {data.minions.map((m) => (
@@ -1565,10 +1558,7 @@ function CallQueueRail({
                   head will never render dice. */}
               {isGm && i === 0 && c.kind === "minion" && "rolls" in c && (
                 <div style={{ marginTop: "0.4rem" }}>
-                  <RollSetDisplay
-                    rolls={c.rolls ?? null}
-                    size="sm"
-                  />
+                  <RollSetDisplay rolls={c.rolls ?? null} size="sm" />
                 </div>
               )}
             </li>
@@ -1599,10 +1589,7 @@ function PowerStandingsRail({
       power: powerByPlayer.get(r._id) ?? r.power,
     }))
     .sort((a, b) => b.power - a.power);
-  const maxPower = Math.max(
-    1,
-    ...rows.map((r) => (r.power > 0 ? r.power : 0)),
-  );
+  const maxPower = Math.max(1, ...rows.map((r) => (r.power > 0 ? r.power : 0)));
   return (
     <div className="card tight">
       {balancesLoading && (
@@ -1631,10 +1618,7 @@ function PowerStandingsRail({
               )}
             </span>
             <div className="power-bar-track" aria-hidden="true">
-              <div
-                className="power-bar-fill"
-                style={{ width: `${pct}%` }}
-              />
+              <div className="power-bar-fill" style={{ width: `${pct}%` }} />
             </div>
             <strong>{power}</strong>
           </div>
@@ -2022,10 +2006,7 @@ function SelectedSyndicateDetails({
                 <div className="row-wrap" style={{ alignItems: "baseline" }}>
                   <strong>{m.name}</strong>
                   {m.accent && (
-                    <span
-                      className="muted"
-                      style={{ fontSize: "0.85rem" }}
-                    >
+                    <span className="muted" style={{ fontSize: "0.85rem" }}>
                       {m.accent}
                     </span>
                   )}
@@ -2108,11 +2089,7 @@ function BottomStrip({
         </button>
       </div>
       {sheetOpen && (
-        <Drawer
-          onClose={() => setSheetOpen(false)}
-          title="Game summary"
-          bottom
-        >
+        <Drawer onClose={() => setSheetOpen(false)} title="Game summary" bottom>
           <section>
             <h4 style={{ margin: "0 0 0.5rem 0" }}>Call Queue</h4>
             <CallQueueRail
@@ -2178,16 +2155,12 @@ function CurrentCallSection({
   // Notes only attach to a minion-kind head. Gate on `data.kind` so a
   // custom head doesn't subscribe `listNotesForTarget` against an
   // absent `data.minion._id` (which would crash the hook).
-  const minionId =
-    data && data.kind === "minion" ? data.minion._id : null;
+  const minionId = data && data.kind === "minion" ? data.minion._id : null;
   const noteListArgs = useMemo(() => {
     if (!minionId) return null;
     return buildListArgs(gameId, { kind: "minion", minionId });
   }, [gameId, minionId]);
-  const notes = useQuery(
-    api.notes.listNotesForTarget,
-    noteListArgs ?? "skip",
-  );
+  const notes = useQuery(api.notes.listNotesForTarget, noteListArgs ?? "skip");
 
   const [removeErr, setRemoveErr] = useState<string | null>(null);
   const [noteErr, setNoteErr] = useState<string | null>(null);
@@ -3125,7 +3098,8 @@ function ActiveBidPanel({
   const [busy, setBusy] = useState(false);
   const isOpen = round.status === "open";
 
-  const label = round.label && round.label.length > 0 ? round.label : "Public bid";
+  const label =
+    round.label && round.label.length > 0 ? round.label : "Public bid";
 
   async function handleClose() {
     if (
@@ -3193,7 +3167,10 @@ function ActiveBidPanel({
         className="row-wrap"
         style={{ alignItems: "center", justifyContent: "space-between" }}
       >
-        <span className="row-wrap" style={{ alignItems: "center", gap: "0.5rem" }}>
+        <span
+          className="row-wrap"
+          style={{ alignItems: "center", gap: "0.5rem" }}
+        >
           <strong>{label}</strong>
           {!isOpen && (
             <span className="badge success" style={{ fontSize: "0.7rem" }}>
@@ -3256,10 +3233,7 @@ function ActiveBidPanel({
           >
             {isOpen ? "Not yet bid" : "Did not bid"}
           </div>
-          <div
-            className="row-wrap"
-            style={{ gap: "0.4rem" }}
-          >
+          <div className="row-wrap" style={{ gap: "0.4rem" }}>
             {data.pending.map((p) => (
               <span
                 key={p.playerId}
@@ -3303,13 +3277,7 @@ function BidElapsed({ startedAt }: { startedAt: number }) {
   );
 }
 
-function BidTable({
-  bids,
-  isOpen,
-}: {
-  bids: ActiveBidRow[];
-  isOpen: boolean;
-}) {
+function BidTable({ bids, isOpen }: { bids: ActiveBidRow[]; isOpen: boolean }) {
   if (bids.length === 0) {
     return (
       <div className="muted">
@@ -3527,10 +3495,7 @@ function GoalsSection({
         </span>
       </div>
       {showCreateForm && data && (
-        <NewGoalForm
-          gameId={gameId}
-          eligiblePlayers={data.eligiblePlayers}
-        />
+        <NewGoalForm gameId={gameId} eligiblePlayers={data.eligiblePlayers} />
       )}
       {data === undefined ? (
         <div className="muted">Loading…</div>
@@ -3674,10 +3639,7 @@ function NewGoalForm({
         </select>
       </div>
       <div className="row-wrap" style={{ gap: "0.5rem" }}>
-        <label
-          className="row"
-          style={{ gap: "0.25rem", alignItems: "center" }}
-        >
+        <label className="row" style={{ gap: "0.25rem", alignItems: "center" }}>
           <span className="muted" style={{ fontSize: "0.8rem" }}>
             From
           </span>
@@ -3694,10 +3656,7 @@ function NewGoalForm({
             ))}
           </select>
         </label>
-        <label
-          className="row"
-          style={{ gap: "0.25rem", alignItems: "center" }}
-        >
+        <label className="row" style={{ gap: "0.25rem", alignItems: "center" }}>
           <span className="muted" style={{ fontSize: "0.8rem" }}>
             To
           </span>
@@ -3708,11 +3667,7 @@ function NewGoalForm({
           >
             <option value="">Unassigned</option>
             {eligiblePlayers.map((p) => (
-              <option
-                key={p._id}
-                value={p._id}
-                disabled={p._id === fromId}
-              >
+              <option key={p._id} value={p._id} disabled={p._id === fromId}>
                 {p.displayName}
               </option>
             ))}
@@ -3797,9 +3752,7 @@ function GoalRowView({
 
   async function handleDelete() {
     if (
-      !window.confirm(
-        `Delete goal '${goal.keyword}'? This cannot be undone.`,
-      )
+      !window.confirm(`Delete goal '${goal.keyword}'? This cannot be undone.`)
     ) {
       return;
     }
@@ -4246,10 +4199,7 @@ function GoalEditor({
         </select>
       </div>
       <div className="row-wrap" style={{ gap: "0.5rem" }}>
-        <label
-          className="row"
-          style={{ gap: "0.25rem", alignItems: "center" }}
-        >
+        <label className="row" style={{ gap: "0.25rem", alignItems: "center" }}>
           <span className="muted" style={{ fontSize: "0.8rem" }}>
             From
           </span>
@@ -4266,10 +4216,7 @@ function GoalEditor({
             ))}
           </select>
         </label>
-        <label
-          className="row"
-          style={{ gap: "0.25rem", alignItems: "center" }}
-        >
+        <label className="row" style={{ gap: "0.25rem", alignItems: "center" }}>
           <span className="muted" style={{ fontSize: "0.8rem" }}>
             To
           </span>
@@ -4280,11 +4227,7 @@ function GoalEditor({
           >
             <option value="">Unassigned</option>
             {eligiblePlayers.map((p) => (
-              <option
-                key={p._id}
-                value={p._id}
-                disabled={p._id === fromId}
-              >
+              <option key={p._id} value={p._id} disabled={p._id === fromId}>
                 {p.displayName}
               </option>
             ))}

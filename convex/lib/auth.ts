@@ -175,7 +175,11 @@ export async function assertSyndicateEditable(
 export async function requireSyndicateOwnerOrAdmin(
   ctx: Ctx,
   syndicateId: Id<"syndicates">,
-): Promise<{ syndicate: Doc<"syndicates">; isOwner: boolean; isAdmin: boolean }> {
+): Promise<{
+  syndicate: Doc<"syndicates">;
+  isOwner: boolean;
+  isAdmin: boolean;
+}> {
   const user = await requireUser(ctx);
   const syndicate = await ctx.db.get(syndicateId);
   if (!syndicate) throw new Error("Syndicate not found.");
@@ -198,7 +202,11 @@ export async function requireSyndicateOwnerOrAdmin(
 export async function assertSyndicateEditableForAdminOrOwner(
   ctx: Ctx,
   syndicateId: Id<"syndicates">,
-): Promise<{ syndicate: Doc<"syndicates">; isOwner: boolean; isAdmin: boolean }> {
+): Promise<{
+  syndicate: Doc<"syndicates">;
+  isOwner: boolean;
+  isAdmin: boolean;
+}> {
   const result = await requireSyndicateOwnerOrAdmin(ctx, syndicateId);
   if (result.syndicate.played) {
     throw new Error(

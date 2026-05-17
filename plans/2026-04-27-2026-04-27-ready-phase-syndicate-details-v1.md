@@ -71,10 +71,10 @@ the game.
 ### Phase 1 — Read-only details component
 
 - [ ] Task 1. Add a new `<SelectedSyndicateDetails>` component in
-  `src/pages/GameDetailPage.tsx` (co-located with `<SyndicateSelector>`
-  to keep the READY-only UI together; new file is unnecessary per the
-  project's existing pattern of large feature components living in this
-  file). Props:
+      `src/pages/GameDetailPage.tsx` (co-located with `<SyndicateSelector>`
+      to keep the READY-only UI together; new file is unnecessary per the
+      project's existing pattern of large feature components living in this
+      file). Props:
   - `syndicateId: Id<"syndicates">` (the currently selected id; if null,
     the parent does not render this component).
   - Internal: `useQuery(api.syndicates.getWithChildren, { syndicateId })`.
@@ -112,7 +112,7 @@ the game.
     existing editor screen.
 
 - [ ] Task 2. Decide and document presentation density. Two acceptable
-  variants:
+      variants:
   - **Variant A (default)**: Always render the details panel below the
     selector when a selection exists. Simple, no extra clicks.
   - **Variant B**: Render a collapsed `<details>`/disclosure with the
@@ -126,70 +126,70 @@ the game.
 ### Phase 2 — Wire-up in the READY player block
 
 - [ ] Task 3. In the existing READY player section at
-  `src/pages/GameDetailPage.tsx:117-128`, after the
-  `<SyndicateSelector>`, derive `selectedSyndicateId` from the same
-  roster lookup the selector already uses
-  (`roster.find((p) => p._id === viewer.playerId)?.selectedSyndicateId`)
-  and, when truthy, render `<SelectedSyndicateDetails syndicateId={…} />`.
-  The wrapping `<section>` heading "Your Syndicate" should remain a
-  single section containing both the selector and the details panel,
-  so the player sees them as one cohesive unit.
+      `src/pages/GameDetailPage.tsx:117-128`, after the
+      `<SyndicateSelector>`, derive `selectedSyndicateId` from the same
+      roster lookup the selector already uses
+      (`roster.find((p) => p._id === viewer.playerId)?.selectedSyndicateId`)
+      and, when truthy, render `<SelectedSyndicateDetails syndicateId={…} />`.
+      The wrapping `<section>` heading "Your Syndicate" should remain a
+      single section containing both the selector and the details panel,
+      so the player sees them as one cohesive unit.
   - Rationale: anchors the new view in the exact place the player is
     already focused while choosing.
 
 - [ ] Task 4. Confirm the GM-side branch
-  (`src/pages/GameDetailPage.tsx:110-115`) is unchanged. The new
-  component is rendered only inside the non-GM branch (Task 3).
-  Rationale: GMs do not select a syndicate during READY; surfacing
-  details for them would be incorrect placement (their per-player
-  roster row already shows the chosen-syndicate name and a
-  `<NoteIcon>` for that target at
-  `src/pages/GameDetailPage.tsx:786-808`).
+      (`src/pages/GameDetailPage.tsx:110-115`) is unchanged. The new
+      component is rendered only inside the non-GM branch (Task 3).
+      Rationale: GMs do not select a syndicate during READY; surfacing
+      details for them would be incorrect placement (their per-player
+      roster row already shows the chosen-syndicate name and a
+      `<NoteIcon>` for that target at
+      `src/pages/GameDetailPage.tsx:786-808`).
 
 ### Phase 3 — Visual polish
 
 - [ ] Task 5. Reuse existing CSS classes only (`.card`, `.stack`,
-  `.row`, `.row-wrap`, `.row-divider`, `.muted`, `.badge`,
-  `.badge warning`, `.badge accent`, `.section-grid`). Do **not**
-  introduce new CSS variables, breakpoints, or class names.
-  Rationale: keeps the change contained and avoids interfering with
-  the v2/v4/v5 game-screen redesign work tracked in
-  `plans/2026-04-25-game-screen-redesign-v*.md`.
+      `.row`, `.row-wrap`, `.row-divider`, `.muted`, `.badge`,
+      `.badge warning`, `.badge accent`, `.section-grid`). Do **not**
+      introduce new CSS variables, breakpoints, or class names.
+      Rationale: keeps the change contained and avoids interfering with
+      the v2/v4/v5 game-screen redesign work tracked in
+      `plans/2026-04-25-game-screen-redesign-v*.md`.
 
 - [ ] Task 6. Skill list rendering: prefer a comma-joined muted line
-  (`<span className="muted" style={{ fontSize: "0.85rem" }}>{skills.join(", ")}</span>`)
-  over per-skill pills, unless an existing pill class is already in
-  use elsewhere for skills (none observed in `SyndicateEditorPage`'s
-  read-only path). Rationale: avoids new CSS while keeping the list
-  scannable.
+      (`<span className="muted" style={{ fontSize: "0.85rem" }}>{skills.join(", ")}</span>`)
+      over per-skill pills, unless an existing pill class is already in
+      use elsewhere for skills (none observed in `SyndicateEditorPage`'s
+      read-only path). Rationale: avoids new CSS while keeping the list
+      scannable.
 
 - [ ] Task 7. Use `white-space: pre-wrap` on description fields so
-  authored newlines render. Cap description with no truncation in the
-  details view (the editor textareas are 4 rows but the read-only view
-  should show full content; players need this to make their pick).
-  Rationale: details view is the primary place players read these
-  fields; truncation would defeat the feature's purpose.
+      authored newlines render. Cap description with no truncation in the
+      details view (the editor textareas are 4 rows but the read-only view
+      should show full content; players need this to make their pick).
+      Rationale: details view is the primary place players read these
+      fields; truncation would defeat the feature's purpose.
 
 ### Phase 4 — Health checks
 
 - [ ] Task 8. Run `npm run typecheck`. Expected clean — the new
-  component only uses existing types (`Id<"syndicates">`,
-  `Doc<"syndicates">` and the children docs from `getWithChildren`).
-  Rationale: standard.
+      component only uses existing types (`Id<"syndicates">`,
+      `Doc<"syndicates">` and the children docs from `getWithChildren`).
+      Rationale: standard.
 
 - [ ] Task 9. Run `npm run lint` and address new lint findings.
-  Rationale: standard.
+      Rationale: standard.
 
 - [ ] Task 10. Run `npm test` (Vitest). The convex test suite
-  (`convex/notes.test.ts`, `convex/treasonGrants.test.ts`, etc.) is
-  unaffected because no Convex code changes; the existing suite should
-  remain green. No new tests are added because the project has no
-  React testing harness (per the v2 plan note at
-  `plans/2026-04-25-game-screen-redesign-v2.md:265-278`). Manual
-  verification covers the new UI.
+      (`convex/notes.test.ts`, `convex/treasonGrants.test.ts`, etc.) is
+      unaffected because no Convex code changes; the existing suite should
+      remain green. No new tests are added because the project has no
+      React testing harness (per the v2 plan note at
+      `plans/2026-04-25-game-screen-redesign-v2.md:265-278`). Manual
+      verification covers the new UI.
 
 - [ ] Task 11. Run `npm run build` to confirm the production bundle is
-  clean. Rationale: catches any Vite/TS issues missed by typecheck.
+      clean. Rationale: catches any Vite/TS issues missed by typecheck.
 
 - [ ] Task 12. Manual visual verification matrix:
   - **READY, non-GM, no selection.** Selector shown; details panel

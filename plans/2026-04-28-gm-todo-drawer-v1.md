@@ -37,9 +37,9 @@ buried inside per-target note popovers. The drawer must:
   - `targetKind === "syndicate"` → syndicate → player who has selected
     it (if any).
   - `targetKind === "game"` → no per-entity context.
-  All three branches are reachable in v1 — see Task 0b, which relaxes
-  the timer gate so the GM can attach a clock to game- and
-  syndicate-target notes too.
+    All three branches are reachable in v1 — see Task 0b, which relaxes
+    the timer gate so the GM can attach a clock to game- and
+    syndicate-target notes too.
 - "A drawer, with a button next to GM TOOLS" = a new HUD button placed
   immediately after the existing GM Tools button
   (`src/pages/GameDetailPage.tsx:283-291`), opening a new drawer that
@@ -155,9 +155,7 @@ chronological history.
 `Date.now()` on each tick:
 
 1a. `ticking` past `dueAt` (overdue), most overdue first.
-1b. `ticking` future `dueAt`, soonest first.
-2.  `due_manual`, `createdAt` descending.
-3.  `done`, `createdAt` descending.
+1b. `ticking` future `dueAt`, soonest first. 2. `due_manual`, `createdAt` descending. 3. `done`, `createdAt` descending.
 
 The re-evaluation rides the same 1Hz heartbeat that
 `<NoteTimerCell>` already uses for its countdown
@@ -178,30 +176,30 @@ verbatim for the click-to-cycle behaviour.
 ### Pre-steps (shared infrastructure)
 
 - [ ] **Task 0a.** Extract the `Drawer` primitive into a new file
-  `src/components/Drawer.tsx`. The primitive currently lives inline
-  at `src/pages/GameDetailPage.tsx:795-841` and is consumed at THREE
-  in-file call sites:
+      `src/components/Drawer.tsx`. The primitive currently lives inline
+      at `src/pages/GameDetailPage.tsx:795-841` and is consumed at THREE
+      in-file call sites:
   1. `GmToolsDrawer` (`src/pages/GameDetailPage.tsx:360`),
   2. `GameLogDrawer` (`src/pages/GameDetailPage.tsx:864`),
   3. The bottom-anchored "Game summary" drawer used by the player
      rail (`src/pages/GameDetailPage.tsx:2135`).
-  Move the function verbatim into the new module, export it, and
-  update all three call sites to import from `../components/Drawer`.
-  No behaviour change. Rationale: importing an in-file helper from a
-  4000+ line page module is awkward and creates a circular shape
-  once `GmTodoDrawer` lives in `src/components/`. Doing the
-  extraction first keeps the v1 diff for the new feature small.
-  Acceptance: existing drawer tests / smoke flows pass; only the
-  import path changes at the three sites enumerated above (the
-  `bottom` prop path on site 3 must keep working — verify by
-  opening the player rail's Queue drawer).
+     Move the function verbatim into the new module, export it, and
+     update all three call sites to import from `../components/Drawer`.
+     No behaviour change. Rationale: importing an in-file helper from a
+     4000+ line page module is awkward and creates a circular shape
+     once `GmTodoDrawer` lives in `src/components/`. Doing the
+     extraction first keeps the v1 diff for the new feature small.
+     Acceptance: existing drawer tests / smoke flows pass; only the
+     import path changes at the three sites enumerated above (the
+     `bottom` prop path on site 3 must keep working — verify by
+     opening the player rail's Queue drawer).
 
 - [ ] **Task 0b.** Relax the timer gate in the `createNote` handler
-  so the GM may attach `timerMinutes` to any note kind they author.
-  The relevant code spans two non-overlapping ranges:
-  `convex/notes.ts:164-179` (attachedRollSetId resolution — left
-  unchanged) and `convex/notes.ts:181-216` (timer validation — the
-  block this task edits). Concrete edits:
+      so the GM may attach `timerMinutes` to any note kind they author.
+      The relevant code spans two non-overlapping ranges:
+      `convex/notes.ts:164-179` (attachedRollSetId resolution — left
+      unchanged) and `convex/notes.ts:181-216` (timer validation — the
+      block this task edits). Concrete edits:
   - Keep guard #1 (`role !== "gm"` rejected) and guard #2
     (`timerMinutes` must be in `TIMER_PRESET_MINUTES`).
   - Drop guard #3 (the `attachedRollSetId === undefined` rejection,
@@ -218,7 +216,7 @@ verbatim for the click-to-cycle behaviour.
     the "only on minion-target head-call notes" implication, and
     add a forward-pointer to this plan so a reader cross-checking
     the older Note Timers v1 plan finds the broadened semantics.
-  Tests in `convex/notes.test.ts`:
+    Tests in `convex/notes.test.ts`:
   - GM creating a `targetKind: "game"` note with `timerMinutes: 5`
     succeeds and the row carries a `ticking` timer.
   - GM creating a `targetKind: "syndicate"` note with `timerMinutes`
@@ -236,16 +234,16 @@ verbatim for the click-to-cycle behaviour.
     "Only the GM may post a note with a timer.".
   - The minion-target on-head-call timer path continues to work
     (no regression on the existing test).
-  Rationale: the GM Todo drawer needs all three target kinds
-  exercised through the public API to be a useful working surface,
-  and there is no Rule 24 reason to restrict GM-authored timers to
-  the minion case — the head-call check existed solely to protect
-  the "timer ⇒ pinned roll set" invariant the original Note Timers
-  v1 plan asserted. That invariant relaxes here.
+    Rationale: the GM Todo drawer needs all three target kinds
+    exercised through the public API to be a useful working surface,
+    and there is no Rule 24 reason to restrict GM-authored timers to
+    the minion case — the head-call check existed solely to protect
+    the "timer ⇒ pinned roll set" invariant the original Note Timers
+    v1 plan asserted. That invariant relaxes here.
 
 - [ ] **Task 0c.** Introduce a shared 1Hz heartbeat hook so every
-  `<NoteTimerCell>` and the new drawer's sort refinement use the
-  same timer source.
+      `<NoteTimerCell>` and the new drawer's sort refinement use the
+      same timer source.
   - New file `src/lib/useNow.ts`. Implementation: a module-scope
     `Set<() => void>` of subscribers and a single lazy
     `setInterval(1000)`. The first subscriber starts the interval;
@@ -262,7 +260,7 @@ verbatim for the click-to-cycle behaviour.
   - Skip the heartbeat for cells whose `timer.kind !== "ticking"`:
     keep the existing optimisation by gating subscription inside
     the cell with a `useNow` variant that takes a `subscribed:
-    boolean`, OR simply call `useNow()` unconditionally and accept
+boolean`, OR simply call `useNow()` unconditionally and accept
     that done/due_manual cells re-render every second alongside
     the rest of the page. The simpler unconditional path is fine
     in practice — these cells render maybe a dozen at peak and the
@@ -282,30 +280,30 @@ verbatim for the click-to-cycle behaviour.
     - Unmounting the last subscriber clears the interval.
     - `formatTimerValue` and `deriveTimerState` are unchanged and
       their existing tests still pass.
-  Trade-off: a small refactor in one component + one new module.
-  Payoff: every clock on the page ticks in lockstep, the drawer's
-  sort refinement piggybacks on the same heartbeat for free, and
-  the misleading "we do not multiply the per-cell intervals" claim
-  in earlier drafts becomes literally true.
+      Trade-off: a small refactor in one component + one new module.
+      Payoff: every clock on the page ticks in lockstep, the drawer's
+      sort refinement piggybacks on the same heartbeat for free, and
+      the misleading "we do not multiply the per-cell intervals" claim
+      in earlier drafts becomes literally true.
 
 - [ ] **Task 0d.** Enforce within-game uniqueness of
-  `players.selectedSyndicateId` during the `ready` stage in
-  `convex/games.ts:94-117` (`selectSyndicate`). Concrete edit: in
-  the non-null branch, before the `ctx.db.patch`, query the
-  `by_selected_syndicate` index for `args.syndicateId`, filter to
-  the current `gameId`, and reject if any row other than the
-  caller's own `player._id` is present. Error message: "Another
-  Player in this game has already selected that Syndicate.".
-  No backfill scan is needed: `selectSyndicate` is the SOLE
-  write path for `players.selectedSyndicateId` (every other
-  reference is a read or an `undefined` clear, e.g.
-  `convex/syndicates.ts:154-166`'s cascade), so any existing data
-  was created under the same one-player-at-a-time mutation flow
-  and cannot already violate the new invariant. If a future
-  audit ever finds a violation it would indicate a bug in this
-  task, not pre-existing drift.
-  Tests in `convex/games.test.ts` (or `selectSyndicate.test.ts` if
-  the existing file is large):
+      `players.selectedSyndicateId` during the `ready` stage in
+      `convex/games.ts:94-117` (`selectSyndicate`). Concrete edit: in
+      the non-null branch, before the `ctx.db.patch`, query the
+      `by_selected_syndicate` index for `args.syndicateId`, filter to
+      the current `gameId`, and reject if any row other than the
+      caller's own `player._id` is present. Error message: "Another
+      Player in this game has already selected that Syndicate.".
+      No backfill scan is needed: `selectSyndicate` is the SOLE
+      write path for `players.selectedSyndicateId` (every other
+      reference is a read or an `undefined` clear, e.g.
+      `convex/syndicates.ts:154-166`'s cascade), so any existing data
+      was created under the same one-player-at-a-time mutation flow
+      and cannot already violate the new invariant. If a future
+      audit ever finds a violation it would indicate a bug in this
+      task, not pre-existing drift.
+      Tests in `convex/games.test.ts` (or `selectSyndicate.test.ts` if
+      the existing file is large):
   - First player to select a shared syndicate succeeds.
   - A second player in the same game attempting to select the same
     syndicate is rejected with the new error.
@@ -315,14 +313,14 @@ verbatim for the click-to-cycle behaviour.
   - A player may re-select a syndicate they already had selected
     (idempotent — the only `by_selected_syndicate` row that
     matches is theirs).
-  Rationale: the GM Todo drawer projects a single
-  `playerId` / `playerDisplayName` per row (Task 1). Without this
-  invariant the projection silently picks one of two equally valid
-  selectors. Making the mutation invariant authoritative removes
-  the ambiguity at the production write site. The check is also
-  natural under the rules — Rule 13 already implies
-  one-player-one-syndicate during ready, but the mutation never
-  enforced it.
+    Rationale: the GM Todo drawer projects a single
+    `playerId` / `playerDisplayName` per row (Task 1). Without this
+    invariant the projection silently picks one of two equally valid
+    selectors. Making the mutation invariant authoritative removes
+    the ambiguity at the production write site. The check is also
+    natural under the rules — Rule 13 already implies
+    one-player-one-syndicate during ready, but the mutation never
+    enforced it.
 
   **Scope caveat — this is a mutation-level invariant, not a
   schema-level one.** Task 0d does not add a schema constraint and
@@ -342,8 +340,8 @@ verbatim for the click-to-cycle behaviour.
 ### Server (Convex)
 
 - [ ] **Task 1.** Add a new GM-only query
-  `listGameNotesWithTimers({ gameId })` in `convex/notes.ts`. The
-  handler must:
+      `listGameNotesWithTimers({ gameId })` in `convex/notes.ts`. The
+      handler must:
   - Call `requireGameGm(ctx, args.gameId)` first — Rule 24 server-side
     authority. Non-GM callers get the same error surface as
     `cycleNoteTimer`.
@@ -357,51 +355,41 @@ verbatim for the click-to-cycle behaviour.
     optionality of a sub-object cheaply. See Risks.)
   - Bulk-resolve auxiliaries with deduplicated per-id reads (one
     dedupe pass per kind, then a `for (const id of uniqueIds)
-    await ctx.db.get(id)` loop — Convex has no `getMany`, so this
+await ctx.db.get(id)` loop — Convex has no `getMany`, so this
     matches the existing `convex/notes.ts:432` pattern) so we
-    never N+1 the table:
-    - `minions` for every distinct `targetMinionId`,
-    - `syndicates` for every distinct `targetSyndicateId` ∪
-      `minion.syndicateId`,
-    - `players` for every distinct `selectedSyndicateId` matching
-      those syndicate ids (use the existing
-      `by_selected_syndicate` index, restricted by `gameId` in
-      memory like `convex/notes.ts:548-558` does today). Task 0d's
-      invariant is enforced at the **mutation** level only, not
-      the schema level, so production data created via
-      `selectSyndicate` carries at most one matching player per
-      `(gameId, syndicateId)` pair — but test fixtures that
-      bypass the mutation by direct `ctx.db.insert("players", …)`
-      (e.g. `convex/calls.test.ts:126-139`,
-      `convex/publicBids.test.ts:64-84`,
-      `convex/goals.test.ts:60-73`,
-      `convex/treasonGrants.test.ts:60-73`) can still produce
-      multi-selector shapes. To keep the projection deterministic
-      against any input, pick the matching player with the lowest
-      `joinedAt` (ties broken by `_id` ascending — Convex ids are
-      stable strings, so the comparison is total). In production
-      this collapses to "the single hit"; in tests it picks the
-      same row every run regardless of index walk order.
-    - `users` for every author user id ∪ player user id ∪ derived
-      author ids,
-    - `callRollSets` for every distinct `attachedRollSetId` (reuse
-      the dedupe-then-`get` pattern from
-      `convex/notes.ts:425-444`; reuse `projectRollSet`). The
-      `attachedRolls` projection follows the existing
-      `listNotesForTarget` rule verbatim
-      (`convex/notes.ts:459-466`):
-         * if the row has NO `attachedRollSetId`, the
-           `attachedRolls` KEY IS OMITTED ENTIRELY;
-         * if the row has an `attachedRollSetId`, the key is
-           PRESENT with value `RollSetView` (or `null` if the
-           bulk join failed to find the row, matching today's
-           defensive `?? null`).
-      After Task 0b this means the key is absent on:
-         * every game-target timer-bearing note,
-         * every syndicate-target timer-bearing note,
-         * minion-target timer-bearing notes whose minion was
-           not the head call at create time (also reachable
-           after Task 0b's guard #3 drop).
+    never N+1 the table: - `minions` for every distinct `targetMinionId`, - `syndicates` for every distinct `targetSyndicateId` ∪
+    `minion.syndicateId`, - `players` for every distinct `selectedSyndicateId` matching
+    those syndicate ids (use the existing
+    `by_selected_syndicate` index, restricted by `gameId` in
+    memory like `convex/notes.ts:548-558` does today). Task 0d's
+    invariant is enforced at the **mutation** level only, not
+    the schema level, so production data created via
+    `selectSyndicate` carries at most one matching player per
+    `(gameId, syndicateId)` pair — but test fixtures that
+    bypass the mutation by direct `ctx.db.insert("players", …)`
+    (e.g. `convex/calls.test.ts:126-139`,
+    `convex/publicBids.test.ts:64-84`,
+    `convex/goals.test.ts:60-73`,
+    `convex/treasonGrants.test.ts:60-73`) can still produce
+    multi-selector shapes. To keep the projection deterministic
+    against any input, pick the matching player with the lowest
+    `joinedAt` (ties broken by `_id` ascending — Convex ids are
+    stable strings, so the comparison is total). In production
+    this collapses to "the single hit"; in tests it picks the
+    same row every run regardless of index walk order. - `users` for every author user id ∪ player user id ∪ derived
+    author ids, - `callRollSets` for every distinct `attachedRollSetId` (reuse
+    the dedupe-then-`get` pattern from
+    `convex/notes.ts:425-444`; reuse `projectRollSet`). The
+    `attachedRolls` projection follows the existing
+    `listNotesForTarget` rule verbatim
+    (`convex/notes.ts:459-466`): - if the row has NO `attachedRollSetId`, the
+    `attachedRolls` KEY IS OMITTED ENTIRELY; - if the row has an `attachedRollSetId`, the key is
+    PRESENT with value `RollSetView` (or `null` if the
+    bulk join failed to find the row, matching today's
+    defensive `?? null`).
+    After Task 0b this means the key is absent on: - every game-target timer-bearing note, - every syndicate-target timer-bearing note, - minion-target timer-bearing notes whose minion was
+    not the head call at create time (also reachable
+    after Task 0b's guard #3 drop).
   - Project a flat row per timer-bearing note:
     ```
     {
@@ -442,14 +430,14 @@ verbatim for the click-to-cycle behaviour.
     schema delta, no new mutation.
 
 - [ ] **Task 2.** Export the `GmTodoNoteRow` type from
-  `convex/notes.ts` next to the existing `NoteListItem` type
-  (`convex/notes.ts:337-354`). Re-use `NoteTimer`, `RollSetView`, and
-  the `Id<...>` aliases already in scope. Rationale: clients consume
-  the same shape the server projects without redefining a parallel
-  TS type.
+      `convex/notes.ts` next to the existing `NoteListItem` type
+      (`convex/notes.ts:337-354`). Re-use `NoteTimer`, `RollSetView`, and
+      the `Id<...>` aliases already in scope. Rationale: clients consume
+      the same shape the server projects without redefining a parallel
+      TS type.
 
 - [ ] **Task 3.** Server tests in `convex/notes.test.ts` (or a sibling
-  test file if the existing one is large):
+      test file if the existing one is large):
   - `listGameNotesWithTimers` rejects Players (mirrors the
     `cycleNoteTimer` Player-rejection test).
   - Returns `[]` when no notes carry a timer.
@@ -496,32 +484,32 @@ verbatim for the click-to-cycle behaviour.
 ### Client (React)
 
 - [ ] **Task 4.** Add `gmTodoOpen` local state and a "GM Todo" button
-  in the HUD header at `src/pages/GameDetailPage.tsx:283-298`. Place
-  the button immediately after the existing "GM Tools" button, gated
-  by the same `viewerIsGm` check. Style it with the existing
-  `secondary` class so it matches the surrounding HUD chrome. No new
-  CSS. The button is intentionally NOT gated by
-  `hideManagementControls` — it stays visible whether or not the GM
-  has hidden management controls, mirroring the timer-cell carve-out
-  documented at `src/components/NoteIcon.tsx:322-326` (timers are
-  gameplay state, not destructive management affordances). The GM
-  Tools button itself follows the same convention today
-  (`src/pages/GameDetailPage.tsx:283-291` checks only `viewerIsGm`).
+      in the HUD header at `src/pages/GameDetailPage.tsx:283-298`. Place
+      the button immediately after the existing "GM Tools" button, gated
+      by the same `viewerIsGm` check. Style it with the existing
+      `secondary` class so it matches the surrounding HUD chrome. No new
+      CSS. The button is intentionally NOT gated by
+      `hideManagementControls` — it stays visible whether or not the GM
+      has hidden management controls, mirroring the timer-cell carve-out
+      documented at `src/components/NoteIcon.tsx:322-326` (timers are
+      gameplay state, not destructive management affordances). The GM
+      Tools button itself follows the same convention today
+      (`src/pages/GameDetailPage.tsx:283-291` checks only `viewerIsGm`).
 
 - [ ] **Task 5.** Render `<GmTodoDrawer>` conditionally on
-  `viewerIsGm && gmTodoOpen` next to the existing
-  `<GmToolsDrawer>` mount in the same component
-  (`src/pages/GameDetailPage.tsx:310-319`). Pass `gameId` and an
-  `onClose` that flips the local state, exactly like the GM Tools
-  drawer. As with Task 4, the mount condition deliberately ignores
-  `hideManagementControls`.
+      `viewerIsGm && gmTodoOpen` next to the existing
+      `<GmToolsDrawer>` mount in the same component
+      (`src/pages/GameDetailPage.tsx:310-319`). Pass `gameId` and an
+      `onClose` that flips the local state, exactly like the GM Tools
+      drawer. As with Task 4, the mount condition deliberately ignores
+      `hideManagementControls`.
 
 - [ ] **Task 6.** Implement `GmTodoDrawer` as a new component in
-  `src/components/GmTodoDrawer.tsx`. Extraction is preferred over
-  co-location with `GmToolsDrawer` because `GameDetailPage.tsx` is
-  already 4000+ lines (Risk 8); adding another in-file drawer makes
-  the situation worse. The drawer imports `Drawer` from the shared
-  module created in Task 0a. The component:
+      `src/components/GmTodoDrawer.tsx`. Extraction is preferred over
+      co-location with `GmToolsDrawer` because `GameDetailPage.tsx` is
+      already 4000+ lines (Risk 8); adding another in-file drawer makes
+      the situation worse. The drawer imports `Drawer` from the shared
+      module created in Task 0a. The component:
   - Uses `useQuery(api.notes.listGameNotesWithTimers, { gameId })`.
   - Uses `useMutation(api.notes.cycleNoteTimer)` for the cell click
     handler. Errors surfaced via a local `setErr` channel (mirrors
@@ -536,10 +524,10 @@ verbatim for the click-to-cycle behaviour.
     issue that can't be resolved with inline styles.
 
 - [ ] **Task 7.** Render the target context line as a small helper
-  inside `src/components/GmTodoDrawer.tsx`, e.g.
-  `formatGmTodoTarget(row)`. The helper returns a JSX fragment
-  (not a string) so individual segments can carry the existing
-  `.muted` separator class. Implementation tree:
+      inside `src/components/GmTodoDrawer.tsx`, e.g.
+      `formatGmTodoTarget(row)`. The helper returns a JSX fragment
+      (not a string) so individual segments can carry the existing
+      `.muted` separator class. Implementation tree:
   - minion-target: `Player • Syndicate • Minion`
   - syndicate-target: `Player • Syndicate`
   - game-target: `Game-wide`
@@ -547,8 +535,8 @@ verbatim for the click-to-cycle behaviour.
     existing `.muted` token).
 
 - [ ] **Task 8.** Client-side sort refinement. The server returns
-  rows in the time-independent ordering documented in "Sort order"
-  (Task 1). The drawer:
+      rows in the time-independent ordering documented in "Sort order"
+      (Task 1). The drawer:
   - Reads the current wall-clock via the shared `useNow()` hook
     introduced in Task 0c. No drawer-local interval — the hook
     already provides the lockstep heartbeat that
@@ -567,35 +555,35 @@ verbatim for the click-to-cycle behaviour.
     broken — see "Sort order" rationale).
 
 - [ ] **Task 9.** Click semantics on the timer cell mirror the
-  popover (running → done, done → due_manual, due_manual → done).
-  Reuse the existing mutation; do NOT introduce a parallel cycle
-  helper. The reactive query causes the row to re-render and the
-  sort order to re-stabilise without manual cache work.
+      popover (running → done, done → due_manual, due_manual → done).
+      Reuse the existing mutation; do NOT introduce a parallel cycle
+      helper. The reactive query causes the row to re-render and the
+      sort order to re-stabilise without manual cache work.
 
 - [ ] **Task 10.** Visibility note: the drawer must NEVER mount on a
-  Player session, but the server query is also GM-only. Defence in
-  depth — the button gate alone is not sufficient (see Risks).
+      Player session, but the server query is also GM-only. Defence in
+      depth — the button gate alone is not sufficient (see Risks).
 
 - [ ] **Task 11.** **Deferred — out of scope for v1.** Inline
-  note-list link affordance (lightweight): on each row, expose a
-  button labelled "Open" (or render the row body as a secondary
-  action) that opens the standard notes popover for the note's
-  target. Implementation note: this requires hoisting state into
-  the GameDetailPage that selects which `NoteIcon`'s popover
-  should be shown next, which is non-trivial. Defer to a follow-up
-  plan; the cycle-on-click cell already delivers the primary
-  action ("mark done").
+      note-list link affordance (lightweight): on each row, expose a
+      button labelled "Open" (or render the row body as a secondary
+      action) that opens the standard notes popover for the note's
+      target. Implementation note: this requires hoisting state into
+      the GameDetailPage that selects which `NoteIcon`'s popover
+      should be shown next, which is non-trivial. Defer to a follow-up
+      plan; the cycle-on-click cell already delivers the primary
+      action ("mark done").
 
 - [ ] **Task 12.** **Deferred — out of scope for v1.** A numeric
-  badge on the "GM Todo" button showing the count of `ticking` +
-  `due_manual` rows would be useful, but the existing
-  `.note-icon-badge` class (`src/components/NoteIcon.tsx:91-93`) is
-  positioned for the 16×16 svg in `NoteGlyph`
-  (`src/components/NoteIcon.tsx:108-124`); pasting it onto a
-  `secondary` text button needs new CSS to look right. The HUD
-  button is GM-only and immediately adjacent to the drawer it opens,
-  so the cost/value ratio of styling work doesn't clear v1. Revisit
-  in a follow-up if field reports show GMs missing overdue clocks.
+      badge on the "GM Todo" button showing the count of `ticking` +
+      `due_manual` rows would be useful, but the existing
+      `.note-icon-badge` class (`src/components/NoteIcon.tsx:91-93`) is
+      positioned for the 16×16 svg in `NoteGlyph`
+      (`src/components/NoteIcon.tsx:108-124`); pasting it onto a
+      `secondary` text button needs new CSS to look right. The HUD
+      button is GM-only and immediately adjacent to the drawer it opens,
+      so the cost/value ratio of styling work doesn't clear v1. Revisit
+      in a follow-up if field reports show GMs missing overdue clocks.
 
 - [ ] **Task 13.** Client unit tests (vitest):
   - `formatGmTodoTarget(row)` renders the four branches above
@@ -624,14 +612,14 @@ verbatim for the click-to-cycle behaviour.
 ### Documentation / housekeeping
 
 - [ ] **Task 14.** Amend the file-top docblock in `convex/notes.ts`
-  (`convex/notes.ts:12-35`) to mention the new GM-only aggregation
-  query and explicitly call out that, like `attachedRollSetId` and
-  `timer`, the projected payload never reaches Player sessions.
-  Also update the Note Timers paragraph to reflect Task 0b — timers
-  are GM-only on every target kind, not just minion-target.
+      (`convex/notes.ts:12-35`) to mention the new GM-only aggregation
+      query and explicitly call out that, like `attachedRollSetId` and
+      `timer`, the projected payload never reaches Player sessions.
+      Also update the Note Timers paragraph to reflect Task 0b — timers
+      are GM-only on every target kind, not just minion-target.
 
 - [ ] **Task 15.** Add inline doc-comment headers to the new query
-  and the new drawer component documenting:
+      and the new drawer component documenting:
   - the four-tier sort order (and why `due_manual` outranks
     `done`, mirroring the rationale in "Sort order"),
   - the GM-only invariant,
@@ -648,7 +636,7 @@ verbatim for the click-to-cycle behaviour.
     Task 0d uniqueness invariant.
 
 - [ ] **Task 16.** No standalone documentation file. Plan-level spec
-  lives in this document; code comments cover the implementation.
+      lives in this document; code comments cover the implementation.
 
 ## Verification Criteria
 

@@ -687,9 +687,11 @@ describe("notes: attached dice rolls", () => {
       });
     expect(list).toHaveLength(1);
     const note = list[0] as {
-      attachedRolls?:
-        | { skillRoll: number; chaosRoll: number; skillCount: number }
-        | null;
+      attachedRolls?: {
+        skillRoll: number;
+        chaosRoll: number;
+        skillCount: number;
+      } | null;
     };
     expect(Object.prototype.hasOwnProperty.call(note, "attachedRolls")).toBe(
       true,
@@ -724,9 +726,9 @@ describe("notes: attached dice rolls", () => {
     expect(list).toHaveLength(1);
     // Wire format must not leak the attachment to non-GMs — even as
     // `null` or `undefined`. The key MUST be absent.
-    expect(
-      Object.prototype.hasOwnProperty.call(list[0], "attachedRolls"),
-    ).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(list[0], "attachedRolls")).toBe(
+      false,
+    );
   });
 
   test("note on a minion that is NOT the head omits `attachedRolls`", async () => {
@@ -755,9 +757,9 @@ describe("notes: attached dice rolls", () => {
         targetMinionId: h.ids.minionId,
       });
     expect(list).toHaveLength(1);
-    expect(
-      Object.prototype.hasOwnProperty.call(list[0], "attachedRolls"),
-    ).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(list[0], "attachedRolls")).toBe(
+      false,
+    );
   });
 
   test("game-target and syndicate-target notes never get `attachedRolls`", async () => {
@@ -853,17 +855,15 @@ describe("notes: attached dice rolls", () => {
       });
     expect(gmListBefore).toHaveLength(1);
     const noteBefore = gmListBefore[0] as {
-      attachedRolls?:
-        | {
-            skillRoll: number;
-            chaosRoll: number;
-            extras: Array<{
-              kind: string;
-              name: string;
-              value: number;
-            }>;
-          }
-        | null;
+      attachedRolls?: {
+        skillRoll: number;
+        chaosRoll: number;
+        extras: Array<{
+          kind: string;
+          name: string;
+          value: number;
+        }>;
+      } | null;
     };
     expect(noteBefore.attachedRolls).not.toBeNull();
     expect(noteBefore.attachedRolls!.extras).toHaveLength(1);
@@ -905,15 +905,13 @@ describe("notes: attached dice rolls", () => {
     // can't see private notes by another author). Alice as author of
     // a private note authored by GM cannot see it either. Re-use the
     // public-author-Alice path: author a public note and re-read.
-    await h.t
-      .withIdentity(asUser(h.ids.aId))
-      .mutation(api.notes.createNote, {
-        gameId: h.ids.gameId,
-        targetKind: "minion",
-        targetMinionId: h.ids.minionId,
-        body: "alice public note",
-        visibility: "public",
-      });
+    await h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "minion",
+      targetMinionId: h.ids.minionId,
+      body: "alice public note",
+      visibility: "public",
+    });
     const aliceList = await h.t
       .withIdentity(asUser(h.ids.aId))
       .query(api.notes.listNotesForTarget, {
@@ -924,9 +922,9 @@ describe("notes: attached dice rolls", () => {
     // Alice now sees her own public note. Confirm `attachedRolls`
     // is absent from EVERY entry on the Player payload.
     for (const row of aliceList) {
-      expect(
-        Object.prototype.hasOwnProperty.call(row, "attachedRolls"),
-      ).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(row, "attachedRolls")).toBe(
+        false,
+      );
     }
   });
 });
@@ -1093,15 +1091,13 @@ describe("notes: timers", () => {
     const ctl = await preparePlayingGame(h, h.ids.aId);
     await ctl.placeOnHead();
     const before = Date.now();
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.notes.createNote, {
-        gameId: h.ids.gameId,
-        targetKind: "minion",
-        targetMinionId: h.ids.minionId,
-        body: "ticking 5",
-        timerMinutes: 5,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "minion",
+      targetMinionId: h.ids.minionId,
+      body: "ticking 5",
+      timerMinutes: 5,
+    });
     const after = Date.now();
 
     const list = await h.t
@@ -1145,9 +1141,7 @@ describe("notes: timers", () => {
         targetMinionId: h.ids.minionId,
       });
     expect(gmList).toHaveLength(1);
-    expect(Object.prototype.hasOwnProperty.call(gmList[0], "timer")).toBe(
-      true,
-    );
+    expect(Object.prototype.hasOwnProperty.call(gmList[0], "timer")).toBe(true);
 
     const playerList = await h.t
       .withIdentity(asUser(h.ids.aId))
@@ -1157,9 +1151,9 @@ describe("notes: timers", () => {
         targetMinionId: h.ids.minionId,
       });
     expect(playerList).toHaveLength(1);
-    expect(
-      Object.prototype.hasOwnProperty.call(playerList[0], "timer"),
-    ).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(playerList[0], "timer")).toBe(
+      false,
+    );
   });
 
   test("notes without a timer omit the `timer` key entirely (GM payload)", async () => {
@@ -1181,9 +1175,7 @@ describe("notes: timers", () => {
         targetMinionId: h.ids.minionId,
       });
     expect(list).toHaveLength(1);
-    expect(Object.prototype.hasOwnProperty.call(list[0], "timer")).toBe(
-      false,
-    );
+    expect(Object.prototype.hasOwnProperty.call(list[0], "timer")).toBe(false);
   });
 
   test("cycleNoteTimer rejects Players and non-participants", async () => {
@@ -1468,15 +1460,13 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
     const h = await createHarness();
     const ctl = await preparePlayingGame(h, h.ids.aId);
     await ctl.placeOnHead();
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.notes.createNote, {
-        gameId: h.ids.gameId,
-        targetKind: "minion",
-        targetMinionId: h.ids.minionId,
-        body: "head-call timer",
-        timerMinutes: 5,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "minion",
+      targetMinionId: h.ids.minionId,
+      body: "head-call timer",
+      timerMinutes: 5,
+    });
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
@@ -1497,15 +1487,13 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
   test("syndicate-target row carries syndicateName + player; no minionName; no attachedRolls key", async () => {
     const h = await createHarness();
     await preparePlayingGame(h, h.ids.aId);
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.notes.createNote, {
-        gameId: h.ids.gameId,
-        targetKind: "syndicate",
-        targetSyndicateId: h.ids.syndicateId,
-        body: "syndicate timer",
-        timerMinutes: 5,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "syndicate",
+      targetSyndicateId: h.ids.syndicateId,
+      body: "syndicate timer",
+      timerMinutes: 5,
+    });
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
@@ -1523,14 +1511,12 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
   test("game-target row has no minionName, syndicateName, playerId, or attachedRolls key", async () => {
     const h = await createHarness();
     await preparePlayingGame(h, h.ids.aId);
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.notes.createNote, {
-        gameId: h.ids.gameId,
-        targetKind: "game",
-        body: "game-wide timer",
-        timerMinutes: 5,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "game",
+      body: "game-wide timer",
+      timerMinutes: 5,
+    });
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
@@ -1550,15 +1536,13 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
     const h = await createHarness();
     // No placeOnHead — queue empty.
     await preparePlayingGame(h, h.ids.aId);
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.notes.createNote, {
-        gameId: h.ids.gameId,
-        targetKind: "minion",
-        targetMinionId: h.ids.minionId,
-        body: "off-head timer",
-        timerMinutes: 5,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "minion",
+      targetMinionId: h.ids.minionId,
+      body: "off-head timer",
+      timerMinutes: 5,
+    });
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
@@ -1588,15 +1572,13 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
       });
     });
     await preparePlayingGame(h, h.ids.aId);
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.notes.createNote, {
-        gameId: h.ids.gameId,
-        targetKind: "syndicate",
-        targetSyndicateId: orphanSyndicateId,
-        body: "no selector",
-        timerMinutes: 5,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "syndicate",
+      targetSyndicateId: orphanSyndicateId,
+      body: "no selector",
+      timerMinutes: 5,
+    });
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
@@ -1753,14 +1735,12 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
         timerMinutes: 5,
       });
     // Author one timer in this game too so the result is non-empty.
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.notes.createNote, {
-        gameId: h.ids.gameId,
-        targetKind: "game",
-        body: "this game timer",
-        timerMinutes: 5,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "game",
+      body: "this game timer",
+      timerMinutes: 5,
+    });
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });

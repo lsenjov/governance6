@@ -110,10 +110,9 @@ describe("consumePasswordResetFlag", () => {
       passwordResetPending: true,
     });
 
-    const returned = await t.mutation(
-      internal.auth.consumePasswordResetFlag,
-      { email: "u@example.com" },
-    );
+    const returned = await t.mutation(internal.auth.consumePasswordResetFlag, {
+      email: "u@example.com",
+    });
     expect(returned).toBe(userId);
 
     const after = await t.run(async (ctx) => ctx.db.get(userId));

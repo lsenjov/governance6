@@ -217,7 +217,8 @@ export const getPlayerBalances = query({
       .withIndex("by_game", (q) => q.eq("gameId", args.gameId))
       .collect();
     const me = players.find((p) => p.userId === userId);
-    if (!isGm && !me) throw new Error("You are not a participant in this game.");
+    if (!isGm && !me)
+      throw new Error("You are not a participant in this game.");
 
     return await Promise.all(
       players.map(async (p) => {

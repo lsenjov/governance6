@@ -9,7 +9,7 @@ import "./index.css";
 const convexUrl = import.meta.env.VITE_CONVEX_URL;
 if (!convexUrl) {
   throw new Error(
-    "Missing VITE_CONVEX_URL. Run `npx convex dev` and set it in .env.local."
+    "Missing VITE_CONVEX_URL. Run `npx convex dev` and set it in .env.local.",
   );
 }
 
@@ -22,5 +22,5 @@ createRoot(document.getElementById("root")!).render(
         <App />
       </BrowserRouter>
     </ConvexAuthProvider>
-  </StrictMode>
+  </StrictMode>,
 );

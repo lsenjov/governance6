@@ -1,6 +1,9 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { assertSyndicateEditableForAdminOrOwner, requireUserId } from "./lib/auth";
+import {
+  assertSyndicateEditableForAdminOrOwner,
+  requireUserId,
+} from "./lib/auth";
 
 /**
  * Minion CRUD — Rule 4.
@@ -159,9 +162,7 @@ export const update = mutation({
         )
         .collect();
       const merged = uniqueSkillSet([
-        ...siblings
-          .filter((m) => m._id !== args.minionId)
-          .map((m) => m.skills),
+        ...siblings.filter((m) => m._id !== args.minionId).map((m) => m.skills),
         skills,
       ]);
       if (merged.size > MAX_UNIQUE_SYNDICATE_SKILLS) {

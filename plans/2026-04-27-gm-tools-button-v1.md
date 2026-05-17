@@ -15,7 +15,7 @@ Introduce a dedicated "GM Tools" entry point in the game HUD that is only visibl
 
 - "Top" means the existing `game-hud` header rendered in `GameHud`, not a new global app shell. The repo only navigates within game/games pages and there is no global top bar to extend.
 - "GM only" means gated by `viewer.isGm` (the same gate already used by `GmControlsInline`).
-- The Start/Archive transition buttons should move *entirely* into the panel; no duplicate control remains in the HUD. This honours "Move … into it".
+- The Start/Archive transition buttons should move _entirely_ into the panel; no duplicate control remains in the HUD. This honours "Move … into it".
 - The "Game is archived." muted notice currently shown by `GmControlsInline` is informational; the state badge already conveys this, so it can be dropped from the HUD when the inline controls leave. It is acceptable to surface it inside the drawer instead so the GM still sees it when they open the panel.
 - Reuse the existing right‑side `Drawer` primitive (used by Game Log) rather than introducing a new modal/popover variant. A drawer scales naturally for "more tools will be added there".
 - No new Convex mutations or schema changes are needed; only `api.games.transitionState` is reused.
@@ -42,7 +42,7 @@ Introduce a dedicated "GM Tools" entry point in the game HUD that is only visibl
   - Owns the `useMutation(api.games.transitionState)` call and the local `err` state.
   - Reproduces the existing branching: `ready` → Start game (disabled when `rosterSize === 0`, with the same title hint) + Archive; `playing` → Archive; `archived` → "Game is archived." muted text.
   - Optionally wraps the Archive action in a `window.confirm` (Archive is currently a no‑confirm destructive action; flagged as optional since the original behaviour is no‑confirm and the task says "move", not "change").
-  - Rationale: Preserves all existing semantics so behaviour is unchanged; only the *location* of the controls moves.
+  - Rationale: Preserves all existing semantics so behaviour is unchanged; only the _location_ of the controls moves.
 
 - [ ] Task 4. Remove the inline `GmControlsInline` invocation from `GameHud` (`src/pages/GameDetailPage.tsx:260-266`) and delete (or fully replace) the `GmControlsInline` function at `src/pages/GameDetailPage.tsx:300-359` if it has no remaining callers. Verify no other files import it (it is not exported, so this is local cleanup).
 
@@ -74,7 +74,7 @@ Introduce a dedicated "GM Tools" entry point in the game HUD that is only visibl
 ## Potential Risks and Mitigations
 
 1. **Loss of fast access to "Start game" during setup.**
-   Mitigation: The button is one click away in the HUD and the drawer is keyboard‑dismissible. If product feedback surfaces friction, consider hoisting *only* the `ready → playing` action back to the HUD as a primary CTA while keeping Archive in the drawer; this is a follow‑up change, not part of v1.
+   Mitigation: The button is one click away in the HUD and the drawer is keyboard‑dismissible. If product feedback surfaces friction, consider hoisting _only_ the `ready → playing` action back to the HUD as a primary CTA while keeping Archive in the drawer; this is a follow‑up change, not part of v1.
 
 2. **Accidental archive becomes easier to click in a dedicated panel.**
    Mitigation: Optionally guard Archive with `window.confirm("Archive this game?")` inside `GameStateTransitionControls`. Out of scope for the literal "move" but recommended.

@@ -133,9 +133,7 @@ export const addOrReplaceCustomCall = mutation({
       throw new Error("Custom call label cannot be empty.");
     }
     if (trimmedLabel.length > 80) {
-      throw new Error(
-        "Custom call label must be at most 80 characters.",
-      );
+      throw new Error("Custom call label must be at most 80 characters.");
     }
 
     const result = await upsertActiveCall(ctx, {
@@ -390,7 +388,11 @@ export type CurrentCallDetails =
         _id: Id<"syndicates">;
         name: string;
         leader: string;
-        drawbacks: { _id: Id<"drawbacks">; name: string; description: string }[];
+        drawbacks: {
+          _id: Id<"drawbacks">;
+          name: string;
+          description: string;
+        }[];
       };
       rolls: RollSetView | null;
     }

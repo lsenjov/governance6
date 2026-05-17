@@ -17,20 +17,20 @@ yellow.
 Defined in `src/index.css:1-36` on `:root`. Two surfaces, two accents,
 void black. Greys are forbidden except `--fg-muted` for tiny captions.
 
-| Token           | Value     | Role                              |
-| --------------- | --------- | --------------------------------- |
-| `--bg`          | `#f4f1ea` | Newsprint off-white               |
-| `--bg-elevated` | `#ffffff` | Posted notice                     |
-| `--bg-muted`    | `#e9e4d6` | Inset / banded rows               |
-| `--fg`          | `#0a0a0a` | Void black                        |
-| `--fg-muted`    | `#555555` | Secondary, captions only          |
-| `--border`      | `#0a0a0a` | Hard 2px black                    |
-| `--accent`      | `#7dc4c0` | Teal/mint (primary action)        |
-| `--accent-fg`   | `#0a0a0a` | Black on mint                     |
-| `--alt-accent`  | `#ff3a2e` | Riot red — destructive / alerts   |
-| `--success`     | `#0a0a0a` | No green; success uses bold rule  |
-| `--danger`      | `#ff3a2e` | Riot red                          |
-| `--warning`     | `#7dc4c0` | Same as accent                    |
+| Token           | Value     | Role                             |
+| --------------- | --------- | -------------------------------- |
+| `--bg`          | `#f4f1ea` | Newsprint off-white              |
+| `--bg-elevated` | `#ffffff` | Posted notice                    |
+| `--bg-muted`    | `#e9e4d6` | Inset / banded rows              |
+| `--fg`          | `#0a0a0a` | Void black                       |
+| `--fg-muted`    | `#555555` | Secondary, captions only         |
+| `--border`      | `#0a0a0a` | Hard 2px black                   |
+| `--accent`      | `#7dc4c0` | Teal/mint (primary action)       |
+| `--accent-fg`   | `#0a0a0a` | Black on mint                    |
+| `--alt-accent`  | `#ff3a2e` | Riot red — destructive / alerts  |
+| `--success`     | `#0a0a0a` | No green; success uses bold rule |
+| `--danger`      | `#ff3a2e` | Riot red                         |
+| `--warning`     | `#7dc4c0` | Same as accent                   |
 
 **Accent rule:** mint is for fills, strips, and CTAs only. Never use
 mint as a text color against the page background — contrast fails.
@@ -40,21 +40,21 @@ mint as a text color against the page background — contrast fails.
 Font tokens at `src/index.css:20-22`:
 
 ```css
---font-body:    "Inter", "Helvetica Neue", Arial, sans-serif;
+--font-body: "Inter", "Helvetica Neue", Arial, sans-serif;
 --font-display: "Archivo Black", "Space Grotesk", "Inter", sans-serif;
---font-mono:    "JetBrains Mono", ui-monospace, monospace;
+--font-mono: "JetBrains Mono", ui-monospace, monospace;
 ```
 
 Loaded in `index.html` via Google Fonts (`Inter 400/600/700`,
 `Archivo Black`, `JetBrains Mono 400/600`).
 
-| Use                  | Font          | Treatment                                       |
-| -------------------- | ------------- | ----------------------------------------------- |
-| Body                 | Inter 14px    | line-height 1.5                                 |
-| `h1` / `h2` / `h3`   | Archivo Black | UPPERCASE, `letter-spacing: 0.02em`             |
-| Section labels       | Inter 700     | UPPERCASE, `letter-spacing: 0.12em`, `0.72rem`  |
-| Numerals (POWER, $)  | JetBrains Mono | `font-variant-numeric: tabular-nums`           |
-| Buttons              | Archivo Black | UPPERCASE, `letter-spacing: 0.06em`, `0.85rem`  |
+| Use                 | Font           | Treatment                                      |
+| ------------------- | -------------- | ---------------------------------------------- |
+| Body                | Inter 14px     | line-height 1.5                                |
+| `h1` / `h2` / `h3`  | Archivo Black  | UPPERCASE, `letter-spacing: 0.02em`            |
+| Section labels      | Inter 700      | UPPERCASE, `letter-spacing: 0.12em`, `0.72rem` |
+| Numerals (POWER, $) | JetBrains Mono | `font-variant-numeric: tabular-nums`           |
+| Buttons             | Archivo Black  | UPPERCASE, `letter-spacing: 0.06em`, `0.85rem` |
 
 Heading sizes: `h1 = 2rem`, `h2 = 1.5rem`, `h3 = 1.125rem`
 (`src/index.css:67-80`).
@@ -169,15 +169,15 @@ to 6px on hover. Focus is a 4px mint outline with 2px offset.
 
 ## Utilities (`src/index.css:925-989`)
 
-| Class             | Use                                              |
-| ----------------- | ------------------------------------------------ |
-| `.section-label`  | Tiny uppercase 0.72rem caption                   |
-| `.hard-shadow`    | `4px 4px 0 var(--border)` drop                   |
-| `.bulletin`       | Wrapper that numbers child card headings         |
-| `.marker-link`    | Manual mint highlight strip behind text          |
-| `.tape`           | 8px diagonal mint/black caution-tape strip       |
-| `.empty-stripes`  | Diagonal hatch for empty states                  |
-| `.mono`/`.tabular`| JetBrains Mono with tabular-nums                 |
+| Class              | Use                                        |
+| ------------------ | ------------------------------------------ |
+| `.section-label`   | Tiny uppercase 0.72rem caption             |
+| `.hard-shadow`     | `4px 4px 0 var(--border)` drop             |
+| `.bulletin`        | Wrapper that numbers child card headings   |
+| `.marker-link`     | Manual mint highlight strip behind text    |
+| `.tape`            | 8px diagonal mint/black caution-tape strip |
+| `.empty-stripes`   | Diagonal hatch for empty states            |
+| `.mono`/`.tabular` | JetBrains Mono with tabular-nums           |
 
 ## Verification checklist
 
@@ -215,7 +215,7 @@ accent. Adding illustrations would require:
   hatching density) — not ad-hoc icons pulled from a library.
 - New asset-handling decisions (inline SVG vs. sprite, color tokens
   vs. baked-in black, accent recoloring).
-- Style rules for *where* illustrations are allowed (empty states,
+- Style rules for _where_ illustrations are allowed (empty states,
   card headers, drawbacks) so they don't drift into ornament.
 
 Until a dedicated art pass happens, components ship with type +

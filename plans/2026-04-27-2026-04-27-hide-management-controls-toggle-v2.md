@@ -33,15 +33,15 @@ All other affordances — **Take** (player-facing), **Assign from… / Assign to
 ## Assumptions
 
 - **Scope of "hide" is exactly:** `+ New Grant` and `Edit`, `Clear owner`, `Delete` on Treason Grants; `+ New Goal` and `Edit`, `Delete` on Goals.
-- **Player-facing and assignment affordances are untouched.** The `Take` button on Treason Grants (`src/pages/GameDetailPage.tsx:2263-2272`) and the `Assign from… / Assign to…` buttons on Goals (`src/pages/GameDetailPage.tsx:3348-3367`) are *not* hidden — they were not named, they are non-destructive, and assignment is operationally distinct from editing.
-- **In-progress editors / forms stay visible** — if a GM has clicked Edit (or `+ New Grant` / `+ New Goal`) and is mid-edit when they enable the toggle, the open form continues rendering until the GM saves or cancels via the form's own buttons. Rationale: prevents accidental data loss; the toggle hides *entry points*, not in-flight work. The forms manage their own `open` state internally (`NewGrantForm`'s `open`, `src/pages/GameDetailPage.tsx:2054`; `NewGoalForm`'s `open`, `src/pages/GameDetailPage.tsx:3047`), so hiding the parent will collapse the form on next render only when its triggering button is also hidden — see Task 3 for the exact wrapping strategy.
-  - Specifically, the implementation hides the *whole component instance* (`<NewGrantForm />` / `<NewGoalForm />`), not just the closed-state button. This means: if the form is currently *open* when the GM ticks the toggle, the form unmounts and any unsaved input is lost. This is the same drop-on-unmount behaviour those forms already exhibit if the GM navigates away or re-renders the section, so the behaviour is consistent with current expectations. Documented as a known trade-off; see Risk #3.
+- **Player-facing and assignment affordances are untouched.** The `Take` button on Treason Grants (`src/pages/GameDetailPage.tsx:2263-2272`) and the `Assign from… / Assign to…` buttons on Goals (`src/pages/GameDetailPage.tsx:3348-3367`) are _not_ hidden — they were not named, they are non-destructive, and assignment is operationally distinct from editing.
+- **In-progress editors / forms stay visible** — if a GM has clicked Edit (or `+ New Grant` / `+ New Goal`) and is mid-edit when they enable the toggle, the open form continues rendering until the GM saves or cancels via the form's own buttons. Rationale: prevents accidental data loss; the toggle hides _entry points_, not in-flight work. The forms manage their own `open` state internally (`NewGrantForm`'s `open`, `src/pages/GameDetailPage.tsx:2054`; `NewGoalForm`'s `open`, `src/pages/GameDetailPage.tsx:3047`), so hiding the parent will collapse the form on next render only when its triggering button is also hidden — see Task 3 for the exact wrapping strategy.
+  - Specifically, the implementation hides the _whole component instance_ (`<NewGrantForm />` / `<NewGoalForm />`), not just the closed-state button. This means: if the form is currently _open_ when the GM ticks the toggle, the form unmounts and any unsaved input is lost. This is the same drop-on-unmount behaviour those forms already exhibit if the GM navigates away or re-renders the section, so the behaviour is consistent with current expectations. Documented as a known trade-off; see Risk #3.
 - **Toggle is GM-only** — the toggle UI lives inside the existing `GmToolsDrawer`, which itself is only rendered when `viewer.isGm`. Non-GMs never see the affected buttons in the first place (`writable` / `goal.canEdit` / `goal.canDelete` are all server-gated to GMs).
 - **Persistence per-game in `localStorage`** under key `game:{gameId}:hideManagementControls`, mirroring `useRosterExpandedSet` (`src/hooks/useRosterExpandedSet.ts:24`). Default is **off** (controls visible). A GM who wants the safer "hidden" mode opts in once per game; the choice survives reload but does not leak across games. Storage failures (private mode, quota) silently degrade to "off" for that session.
 - **No Convex schema changes, no new mutations.** This is a purely client-side display preference.
 - **Section placement in drawer**: a new section titled "Display" sits below the existing "Game state" section, so future display preferences accumulate there.
 - **Toggle control**: a checkbox + label inside the "Display" section, matching the lightweight visual language already used in forms across the file. No new CSS.
-- **Drawer state ephemerality**: the drawer's `gmToolsOpen` boolean stays ephemeral; only the toggle's *value* persists.
+- **Drawer state ephemerality**: the drawer's `gmToolsOpen` boolean stays ephemeral; only the toggle's _value_ persists.
 
 ## Implementation Plan
 
@@ -56,7 +56,7 @@ All other affordances — **Take** (player-facing), **Assign from… / Assign to
 - [ ] Task 2. Thread the preference into `GameDetailPage` (`src/pages/GameDetailPage.tsx:52-194`) so the relevant sections can read it:
   - Call `useHideManagementControls(gid)` once for the GM viewer (and unconditionally when `gid` is defined; the value is harmless for non-GMs because they never render the gated buttons). Default `false`.
   - Pass the `hideManagementControls` boolean down to `TreasonGrantsSection` and `GoalsSection` as a new prop.
-  - Pass the *setter* down to `GameHud` so `GmToolsDrawer` can flip it (route prop through `GameHud` → `GmToolsDrawer`, mirroring how `gameState` and `rosterSize` already flow).
+  - Pass the _setter_ down to `GameHud` so `GmToolsDrawer` can flip it (route prop through `GameHud` → `GmToolsDrawer`, mirroring how `gameState` and `rosterSize` already flow).
   - Rationale: a single source of truth at the page level avoids duplicate hook calls (and duplicate storage writes) inside two sibling sections, and matches how `viewer`/`gameState` are already threaded.
 
 - [ ] Task 3. Surface the toggle inside `GmToolsDrawer` (`src/pages/GameDetailPage.tsx:319-342`):
@@ -73,7 +73,7 @@ All other affordances — **Take** (player-facing), **Assign from… / Assign to
     - Compute `showRowManagement = writable && !hideManagementControls`.
     - Wrap the `<>` containing the **Edit**, **Clear owner**, and **Delete** buttons (`src/pages/GameDetailPage.tsx:2274-2304`) in `showRowManagement && (<>…</>)` instead of the current `writable && (<>…</>)`.
     - Leave the `editing && writable && <GrantEditor … />` block (`src/pages/GameDetailPage.tsx:2309-2317`) ungated by the new flag — see Assumption "in-progress editors stay visible".
-    - The **Take** button (`src/pages/GameDetailPage.tsx:2263-2272`) is *not* affected.
+    - The **Take** button (`src/pages/GameDetailPage.tsx:2263-2272`) is _not_ affected.
   - Rationale: minimum-surface change; both gating points already use `writable`, so the new flag composes cleanly.
 
 - [ ] Task 5. Update `GoalsSection` (`src/pages/GameDetailPage.tsx:2978-3037`) to accept `hideManagementControls`:
@@ -88,7 +88,7 @@ All other affordances — **Take** (player-facing), **Assign from… / Assign to
 - [ ] Task 6. Audit the rest of the Treason Grants and Goals UI for layout artefacts when entry points and buttons disappear:
   - **Section header rows** (`src/pages/GameDetailPage.tsx:2018-2026` and `src/pages/GameDetailPage.tsx:2999-3007`) remain visible regardless; the `<h3>` and "N total" counter still render, so the section never becomes "empty-looking".
   - **Empty-state copy** for grants (`src/pages/GameDetailPage.tsx:2031-2035`) and goals (`src/pages/GameDetailPage.tsx:3017-3021`) currently nudges the GM to author content. With the toggle on, that copy is now mildly misleading ("No grants yet. Author a treason grant to seed the pool."). Strategy: when `hideManagementControls && data.grants.length === 0` (or the analogous goals case), substitute a softer copy variant such as "No grants yet." — keep the "Author …" copy only when the GM can actually act. Apply symmetrically to goals.
-  - **Action cluster** in each row is wrapped in `<span className="row-wrap" style={{ gap: "0.4rem" }}>` (Treason: `src/pages/GameDetailPage.tsx:2262-2306`; Goals: `src/pages/GameDetailPage.tsx:3347-3390`). With `gap`-based layout, removing children leaves no stray separators. Verify visually that an *empty* action cluster doesn't introduce odd spacing on the right edge; if it does, conditionally avoid rendering the `<span>` when it would have no children.
+  - **Action cluster** in each row is wrapped in `<span className="row-wrap" style={{ gap: "0.4rem" }}>` (Treason: `src/pages/GameDetailPage.tsx:2262-2306`; Goals: `src/pages/GameDetailPage.tsx:3347-3390`). With `gap`-based layout, removing children leaves no stray separators. Verify visually that an _empty_ action cluster doesn't introduce odd spacing on the right edge; if it does, conditionally avoid rendering the `<span>` when it would have no children.
 
 - [ ] Task 7. Type and lint hygiene:
   - Add the new prop to the prop type of every component touched (`TreasonGrantsSection`, `TreasonGrantRow`, `GoalsSection`, `GoalRowView`, `GmToolsDrawer`, `GameHud`).
@@ -105,8 +105,8 @@ All other affordances — **Take** (player-facing), **Assign from… / Assign to
     - If both lists were empty, verify the empty-state copy is the softer variant (no "Author …" nudge).
     - Reload the page → toggle remains ticked; entry points and row buttons remain hidden.
     - Untick → all controls return.
-  - Edge case: open Edit on a grant or goal, *then* tick the toggle → the existing editor form remains; the row's Edit/Cancel toggle button is hidden; saving via the editor's own Save/Cancel still works.
-  - Edge case: open `NewGrantForm` (or `NewGoalForm`) by clicking `+ New Grant`, type some text into the form, *then* tick the toggle → the form unmounts and any text is discarded. Confirm this matches the documented assumption.
+  - Edge case: open Edit on a grant or goal, _then_ tick the toggle → the existing editor form remains; the row's Edit/Cancel toggle button is hidden; saving via the editor's own Save/Cancel still works.
+  - Edge case: open `NewGrantForm` (or `NewGoalForm`) by clicking `+ New Grant`, type some text into the form, _then_ tick the toggle → the form unmounts and any text is discarded. Confirm this matches the documented assumption.
   - Edge case: open in two browser tabs of the same game; verify the toggle in one does not propagate instantly to the other (acceptable: `localStorage` is per-tab read on mount; cross-tab sync is out of scope).
   - Switch to a different game → toggle starts unticked (per-game key) regardless of the other game's value.
 
@@ -120,7 +120,7 @@ All other affordances — **Take** (player-facing), **Assign from… / Assign to
   - In Treason Grant rows, the **Edit**, **Clear owner**, and **Delete** buttons are not rendered.
   - In Goal rows, the **Edit** and **Delete** buttons are not rendered.
   - All other buttons (Take; Assign from…; Assign to…; closing/saving controls inside any open editor/form) continue to render and function.
-  - In-progress *row* editor forms that were already open continue to render.
+  - In-progress _row_ editor forms that were already open continue to render.
   - Empty-state copy for grants and goals omits the "Author a …" nudge while the toggle is on.
 - The toggle's state persists per-game across reload via `localStorage` under `game:{gameId}:hideManagementControls`. Two distinct games maintain independent values. Storage failures degrade silently to "off" for that session.
 - No Convex schema, query, or mutation changes; no new server logic.
@@ -137,12 +137,12 @@ All other affordances — **Take** (player-facing), **Assign from… / Assign to
    Mitigation: the toggle lives in the GM Tools drawer the GM already uses for state transitions; help text under the checkbox names exactly which controls are hidden so the GM can find and revert it.
 
 3. **Mid-create / mid-edit data loss when the create form is open.**
-   Toggling the flag *on* while `NewGrantForm` or `NewGoalForm` is open unmounts the form and discards typed input.
+   Toggling the flag _on_ while `NewGrantForm` or `NewGoalForm` is open unmounts the form and discards typed input.
    Mitigation: documented as an accepted trade-off (matches the form's existing drop-on-unmount behaviour); help text suggests the toggle is for "presenting" rather than authoring; if user feedback shows real friction, follow up with a v2 that preserves form state via lifted `open` state in the parent section.
 
 4. **Mid-edit confusion in a row.**
    If the GM is editing a row and toggles the flag on, the row's Edit button (now labelled Cancel) disappears — but the form's own Save/Cancel still works. There is no data loss.
-   Mitigation: explicitly leave open *row* editors visible (Tasks 4–5); document this in the toggle's help text only if user testing surfaces confusion.
+   Mitigation: explicitly leave open _row_ editors visible (Tasks 4–5); document this in the toggle's help text only if user testing surfaces confusion.
 
 5. **Storage drift / orphan keys.**
    `localStorage` keys for archived/deleted games persist forever.
@@ -176,6 +176,6 @@ All other affordances — **Take** (player-facing), **Assign from… / Assign to
 
 5. **Move the toggle into the section headers (e.g. a small icon next to "Treason Grants").** Trade-off: more discoverable in-context but clutters the section headers and duplicates the affordance. Rejected: GM Tools drawer is the canonical home for GM-only utilities, per the `2026-04-27-gm-tools-button-v2` plan.
 
-6. **Lift `NewGrantForm` / `NewGoalForm` `open` state into the parent section so toggling the flag on hides the *button* but preserves the *open form*.** Trade-off: avoids data loss when toggling mid-create at the cost of refactoring two unrelated forms and adding hybrid state. Rejected for v1; documented in Risk #3 as the path forward if friction emerges.
+6. **Lift `NewGrantForm` / `NewGoalForm` `open` state into the parent section so toggling the flag on hides the _button_ but preserves the _open form_.** Trade-off: avoids data loss when toggling mid-create at the cost of refactoring two unrelated forms and adding hybrid state. Rejected for v1; documented in Risk #3 as the path forward if friction emerges.
 
 7. **Disable rather than hide.** Trade-off: keeps spatial layout stable; communicates "available but turned off". Rejected: the user explicitly asked to hide the controls.

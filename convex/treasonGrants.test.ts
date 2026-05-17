@@ -145,21 +145,21 @@ describe("treasonGrants: create authorisation + validation", () => {
 
   test("keyword length and POWER bounds are enforced", async () => {
     const h = await createHarness();
-    await expect(
-      createGrant(h, { keyword: "   ", power: 1 }),
-    ).rejects.toThrow(/empty/i);
+    await expect(createGrant(h, { keyword: "   ", power: 1 })).rejects.toThrow(
+      /empty/i,
+    );
     await expect(
       createGrant(h, { keyword: "a".repeat(41), power: 1 }),
     ).rejects.toThrow(/40/);
-    await expect(
-      createGrant(h, { keyword: "ok", power: 0 }),
-    ).rejects.toThrow(/at least 1/i);
-    await expect(
-      createGrant(h, { keyword: "ok", power: -3 }),
-    ).rejects.toThrow(/at least 1/i);
-    await expect(
-      createGrant(h, { keyword: "ok", power: 1.5 }),
-    ).rejects.toThrow(/integer/i);
+    await expect(createGrant(h, { keyword: "ok", power: 0 })).rejects.toThrow(
+      /at least 1/i,
+    );
+    await expect(createGrant(h, { keyword: "ok", power: -3 })).rejects.toThrow(
+      /at least 1/i,
+    );
+    await expect(createGrant(h, { keyword: "ok", power: 1.5 })).rejects.toThrow(
+      /integer/i,
+    );
     await expect(
       createGrant(h, { keyword: "ok", power: 99999 }),
     ).rejects.toThrow(/at most/i);
@@ -196,9 +196,9 @@ describe("treasonGrants: create authorisation + validation", () => {
   test("create is rejected in archived game", async () => {
     const h = await createHarness();
     await archiveGame(h);
-    await expect(
-      createGrant(h, { keyword: "Late", power: 5 }),
-    ).rejects.toThrow(/archived/i);
+    await expect(createGrant(h, { keyword: "Late", power: 5 })).rejects.toThrow(
+      /archived/i,
+    );
   });
 });
 
@@ -338,9 +338,7 @@ describe("treasonGrants: delete", () => {
           await ctx.db
             .query("powerLedgerEntries")
             .withIndex("by_game_player_time", (q) =>
-              q
-                .eq("gameId", h.ids.gameId)
-                .eq("playerId", h.ids.playerAId),
+              q.eq("gameId", h.ids.gameId).eq("playerId", h.ids.playerAId),
             )
             .collect()
         ).length,
@@ -359,9 +357,7 @@ describe("treasonGrants: delete", () => {
           await ctx.db
             .query("powerLedgerEntries")
             .withIndex("by_game_player_time", (q) =>
-              q
-                .eq("gameId", h.ids.gameId)
-                .eq("playerId", h.ids.playerAId),
+              q.eq("gameId", h.ids.gameId).eq("playerId", h.ids.playerAId),
             )
             .collect()
         ).length,
@@ -462,18 +458,14 @@ describe("treasonGrants: take", () => {
       .withIdentity(asUser(h.ids.aId))
       .mutation(api.treasonGrants.takeGrant, { grantId });
 
-    const player = await h.t.run(async (ctx) =>
-      ctx.db.get(h.ids.playerAId),
-    );
+    const player = await h.t.run(async (ctx) => ctx.db.get(h.ids.playerAId));
     expect(player?.power).toBe(7);
 
     const entries = await h.t.run(async (ctx) =>
       ctx.db
         .query("powerLedgerEntries")
         .withIndex("by_game_player_time", (q) =>
-          q
-            .eq("gameId", h.ids.gameId)
-            .eq("playerId", h.ids.playerAId),
+          q.eq("gameId", h.ids.gameId).eq("playerId", h.ids.playerAId),
         )
         .collect(),
     );
@@ -552,9 +544,7 @@ describe("treasonGrants: take", () => {
     await h.t
       .withIdentity(asUser(h.ids.aId))
       .mutation(api.treasonGrants.takeGrant, { grantId: g2 });
-    const player = await h.t.run(async (ctx) =>
-      ctx.db.get(h.ids.playerAId),
-    );
+    const player = await h.t.run(async (ctx) => ctx.db.get(h.ids.playerAId));
     expect(player?.power).toBe(7);
   });
 });

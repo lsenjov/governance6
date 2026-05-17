@@ -68,22 +68,22 @@ horizontal real estate for a side-by-side context-and-notes layout.
 ## Key findings & rationale
 
 1. **Main column, not the left rail.** The section bundles call header
-   + minion descriptors + skills as badges + syndicate + drawbacks +
-   five inline notes + an inline create form. That is far too much
-   content for a narrow sidebar (`var(--rail-width)`); placing it in
-   `game-main` (a) gives it the horizontal room it needs, (b) lets the
-   notes panel sit beside the call/minion context using the existing
-   `section-grid` two-column rule, and (c) keeps the left rail's
-   purpose tight (live queue + standings only).
+   - minion descriptors + skills as badges + syndicate + drawbacks +
+     five inline notes + an inline create form. That is far too much
+     content for a narrow sidebar (`var(--rail-width)`); placing it in
+     `game-main` (a) gives it the horizontal room it needs, (b) lets the
+     notes panel sit beside the call/minion context using the existing
+     `section-grid` two-column rule, and (c) keeps the left rail's
+     purpose tight (live queue + standings only).
 
 2. **Single GM-only aggregator query is the right shape.** Composing
    the data on the client from `activeCalls` + `minions.listForSyndicate`
-   + `drawbacks.listForSyndicate` + `syndicates.getWithChildren`
-   would (a) require multiple round trips, (b) leak Convex semantic
-   constraints (e.g. `getWithChildren` returning `null` to GMs of
-   non-shared syndicates), and (c) couple unrelated UI to multiple
-   subscriptions. A single new query co-locates GM-only authorisation
-   and returns exactly what the section renders.
+   - `drawbacks.listForSyndicate` + `syndicates.getWithChildren`
+     would (a) require multiple round trips, (b) leak Convex semantic
+     constraints (e.g. `getWithChildren` returning `null` to GMs of
+     non-shared syndicates), and (c) couple unrelated UI to multiple
+     subscriptions. A single new query co-locates GM-only authorisation
+     and returns exactly what the section renders.
 
 3. **Reuse note rendering, not the popover.** The popover in
    `NoteIcon.tsx` does positioning work the section does not need.
@@ -111,34 +111,33 @@ horizontal real estate for a side-by-side context-and-notes layout.
       `convex/calls.ts` that takes `{ gameId }` and runs `requireGameGm`
       to enforce GM-only access (Rule 24, server-side regardless of UI).
       Return shape:
-      ```
-      | null
-      | {
-          call: {
-              _id: Id<"calls">,
-              createdAt: number,
-              playerId: Id<"players">,
-              playerName: string,
-          },
-          minion: {
-              _id: Id<"minions">,
+      `     | null
+  | {
+      call: {
+          _id: Id<"calls">,
+          createdAt: number,
+          playerId: Id<"players">,
+          playerName: string,
+      },
+      minion: {
+          _id: Id<"minions">,
+          name: string,
+          accent: string | null,
+          description: string | null,
+          skills: string[],
+      },
+      syndicate: {
+          _id: Id<"syndicates">,
+          name: string,
+          leader: string,
+          drawbacks: Array<{
+              _id: Id<"drawbacks">,
               name: string,
-              accent: string | null,
-              description: string | null,
-              skills: string[],
-          },
-          syndicate: {
-              _id: Id<"syndicates">,
-              name: string,
-              leader: string,
-              drawbacks: Array<{
-                  _id: Id<"drawbacks">,
-                  name: string,
-                  description: string,
-              }>,
-          },
-        }
-      ```
+              description: string,
+          }>,
+      },
+    }
+  `
       Returning `null` when the queue is empty keeps the contract
       explicit and avoids ambiguous "stub" data on the client.
 
@@ -156,16 +155,11 @@ horizontal real estate for a side-by-side context-and-notes layout.
       empty state safely.
 
 - [x] Task 4. Add backend tests in a new `convex/calls.test.ts`
-      covering:
-      - returns `null` when queue is empty,
-      - returns the FIFO **head** when multiple calls exist (verify by
-        creating two calls in order),
-      - after `removeCall` on the head, the query returns the **next**
-        head (exercises the verification criterion that the section
-        re-populates with the new head),
-      - includes minion `skills`/`accent`/`description` and the
-        syndicate's drawbacks (sorted by `order`),
-      - throws for non-GM participants and for non-participants.
+      covering: - returns `null` when queue is empty, - returns the FIFO **head** when multiple calls exist (verify by
+      creating two calls in order), - after `removeCall` on the head, the query returns the **next**
+      head (exercises the verification criterion that the section
+      re-populates with the new head), - includes minion `skills`/`accent`/`description` and the
+      syndicate's drawbacks (sorted by `order`), - throws for non-GM participants and for non-participants.
       Follow the existing patterns in `convex/notes.test.ts:111-573` and
       `convex/calls`-adjacent test fixtures.
 
@@ -179,18 +173,16 @@ horizontal real estate for a side-by-side context-and-notes layout.
 
 - [x] Task 5. Refactor `src/components/NoteIcon.tsx` to extract two
       layout-agnostic exports without changing the popover's external
-      behaviour:
-      - `NoteList`: takes `notes` (array result type from
-        `api.notes.listNotesForTarget`) plus `onDelete` and renders the
-        existing item layout from `NoteIcon.tsx:229-269`.
-      - `NoteCreateForm`: takes `gameId` + `target: NoteTarget` and
-        renders the existing `<form>` from `NoteIcon.tsx:271-315`,
-        including visibility toggle and immutability footer. Use
-        `React.useId()` to generate unique ids for the textarea and
-        visibility checkbox (and matching `htmlFor`) so multiple
-        instances on the page (popover + main-column section) don't
-        collide on the currently-hardcoded `note-body` /
-        `note-visibility` ids (`NoteIcon.tsx:282, 298`).
+      behaviour: - `NoteList`: takes `notes` (array result type from
+      `api.notes.listNotesForTarget`) plus `onDelete` and renders the
+      existing item layout from `NoteIcon.tsx:229-269`. - `NoteCreateForm`: takes `gameId` + `target: NoteTarget` and
+      renders the existing `<form>` from `NoteIcon.tsx:271-315`,
+      including visibility toggle and immutability footer. Use
+      `React.useId()` to generate unique ids for the textarea and
+      visibility checkbox (and matching `htmlFor`) so multiple
+      instances on the page (popover + main-column section) don't
+      collide on the currently-hardcoded `note-body` /
+      `note-visibility` ids (`NoteIcon.tsx:282, 298`).
       Also export the existing `NoteTarget` type (`NoteIcon.tsx:6-9`)
       and the `buildListArgs` helper (`NoteIcon.tsx:320`) so the new
       section can construct list-query args identically.
@@ -278,7 +270,7 @@ horizontal real estate for a side-by-side context-and-notes layout.
       placeholder; do not flash the empty state.
 
 - [x] Task 11. Insert `<CurrentCallSection gameId={gid}
-      viewerIsGm={viewer.isGm} />` as the **first child** of
+  viewerIsGm={viewer.isGm} />` as the **first child** of
       `<div className="game-main">` at `GameDetailPage.tsx:125`,
       **above** the existing `Roster` `<section>`. The component
       itself returns `null` for non-GMs, so no extra outer guard is

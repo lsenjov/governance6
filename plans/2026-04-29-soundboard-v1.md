@@ -278,33 +278,33 @@ Defence in depth: the GM-only UI gate is a courtesy; the
 ### Schema + storage primitives
 
 - [ ] **Task 1.** Add the `presetSounds` and `soundEvents` table
-  definitions in `convex/schema.ts` per the schema block above. Keep
-  the diff to two new table definitions and no edits to existing
-  tables. Add a docblock on each table mirroring the explanatory
-  style of `presetSkills` (`convex/schema.ts:32-39`) and
-  `powerLedgerEntries` (`convex/schema.ts:138-165`) so future
-  contributors find the rationale at the schema site.
+      definitions in `convex/schema.ts` per the schema block above. Keep
+      the diff to two new table definitions and no edits to existing
+      tables. Add a docblock on each table mirroring the explanatory
+      style of `presetSkills` (`convex/schema.ts:32-39`) and
+      `powerLedgerEntries` (`convex/schema.ts:138-165`) so future
+      contributors find the rationale at the schema site.
 
 - [ ] **Task 2.** Add `convex/presetSounds.ts` modelled on
-  `convex/presetSkills.ts:1-87`. Implement `list`,
-  `generateUploadUrl`, `add`, `update` (rename only), and
-  `remove`. Naming follows the established
-  `presetSkills.add` / `presetDrawbacks.add` precedent (NOT
-  `create`). `add` MUST validate `contentType` when present —
-  reject with a clear error when it does not start with
-  `audio/` (defence in depth against an admin uploading a non-audio
-  file; see Risk 8). `remove` MUST also call
-  `ctx.storage.delete(storageId)` inside the same mutation
-  transaction so the blob and the row drop atomically; document this
-  contract in a doc comment so a later refactor doesn't split them.
-  Use the same `normalizeName` helper shape (trim, max 120 chars,
-  case-insensitive uniqueness) as `presetSkills`. The `list` query
-  uses `.collect()` + JS-side sort — add a one-line comment noting
-  the catalogue is bounded by admin curation, same precedent as
-  `convex/presetSkills.ts:34`.
+      `convex/presetSkills.ts:1-87`. Implement `list`,
+      `generateUploadUrl`, `add`, `update` (rename only), and
+      `remove`. Naming follows the established
+      `presetSkills.add` / `presetDrawbacks.add` precedent (NOT
+      `create`). `add` MUST validate `contentType` when present —
+      reject with a clear error when it does not start with
+      `audio/` (defence in depth against an admin uploading a non-audio
+      file; see Risk 8). `remove` MUST also call
+      `ctx.storage.delete(storageId)` inside the same mutation
+      transaction so the blob and the row drop atomically; document this
+      contract in a doc comment so a later refactor doesn't split them.
+      Use the same `normalizeName` helper shape (trim, max 120 chars,
+      case-insensitive uniqueness) as `presetSkills`. The `list` query
+      uses `.collect()` + JS-side sort — add a one-line comment noting
+      the catalogue is bounded by admin curation, same precedent as
+      `convex/presetSkills.ts:34`.
 
 - [ ] **Task 3.** Add `convex/soundboard.ts` containing two
-  functions:
+      functions:
   - `trigger` (mutation): gates on `requireGameGm`; loads the
     preset, copies its `storageId`, inserts a `soundEvents` row,
     returns the new id.
@@ -321,7 +321,7 @@ Defence in depth: the GM-only UI gate is a courtesy; the
 ### Server tests
 
 - [ ] **Task 4.** Tests in `convex/presetSounds.test.ts` (mirror the
-  shape of `convex/presetDrawbacks.test.ts`):
+      shape of `convex/presetDrawbacks.test.ts`):
   - `list` succeeds for any authenticated user; rejects unauthed.
   - `add` rejects non-admins; succeeds for site admin; rejects
     duplicate names case-insensitively; rejects empty / overlong
@@ -356,8 +356,8 @@ Defence in depth: the GM-only UI gate is a courtesy; the
 ### Admin UI (catalogue management)
 
 - [ ] **Task 6.** Extend `src/pages/AdminPage.tsx` with a new
-  "Preset sounds" section after the existing "Preset drawbacks"
-  section. Mirror the structure of the existing sections:
+      "Preset sounds" section after the existing "Preset drawbacks"
+      section. Mirror the structure of the existing sections:
   - `<AddPresetSoundForm>`: name input + file picker (accept
     `audio/*`). On submit, calls
     `api.presetSounds.generateUploadUrl`, POSTs the file to the
@@ -366,7 +366,7 @@ Defence in depth: the GM-only UI gate is a courtesy; the
     returned `storageId`, the trimmed name, and `file.type` as
     `contentType`.
   - `<PresetSoundRow>`: shows the name, an inline `<audio
-    controls src={...} />` for preview (URL fetched via a
+controls src={...} />` for preview (URL fetched via a
     sibling query that returns the signed URL by id), a Save
     (rename) button, and a Delete button. Confirm-on-delete
     matches the existing `PresetDrawbackRow`
@@ -379,18 +379,18 @@ Defence in depth: the GM-only UI gate is a courtesy; the
     sufficient.
 
 - [ ] **Task 7.** Add a small `presetSounds.getOneUrl` query
-  (or `presetSounds.listWithUrls`) so the admin row's
-  `<audio controls>` element has a URL to play. The query gates on
-  `requireSiteAdmin` since it's only used by the admin UI (saves
-  generating signed URLs for every authenticated lister). Decide
-  between per-row `getOneUrl` vs. `listWithUrls` based on N: the
-  catalogue is bounded to dozens at most, so `listWithUrls` is
-  acceptable and simpler. Document the choice in a comment.
+      (or `presetSounds.listWithUrls`) so the admin row's
+      `<audio controls>` element has a URL to play. The query gates on
+      `requireSiteAdmin` since it's only used by the admin UI (saves
+      generating signed URLs for every authenticated lister). Decide
+      between per-row `getOneUrl` vs. `listWithUrls` based on N: the
+      catalogue is bounded to dozens at most, so `listWithUrls` is
+      acceptable and simpler. Document the choice in a comment.
 
 ### Game UI (trigger + playback)
 
 - [ ] **Task 8.** Create `src/components/SoundboardSection.tsx`. The
-  component:
+      component:
   - Takes `{ gameId: Id<"games">; viewerIsGm: boolean }` and
     returns `null` when `viewerIsGm === false` (defence in depth
     against accidental mounts in non-GM render paths).
@@ -402,7 +402,7 @@ Defence in depth: the GM-only UI gate is a courtesy; the
     is omitted to avoid sending them to the "You do not have site
     admin privileges" guard at `src/pages/AdminPage.tsx:22-32`.
   - Renders one button per row with `font-family:
-    var(--font-display)`, uppercase label, theme primary button
+var(--font-display)`, uppercase label, theme primary button
     treatment.
   - On click, calls `api.soundboard.trigger`. Tracks
     `lastTriggeredId` in local state and a `lastTriggeredAt` so
@@ -413,7 +413,7 @@ Defence in depth: the GM-only UI gate is a courtesy; the
     `GameDetailPage` already uses for main-column sections.
 
 - [ ] **Task 9.** Create `src/components/SoundPlayer.tsx`. The
-  component:
+      component:
   - Takes `{ gameId: Id<"games"> }`.
   - Subscribes to `api.soundboard.latestEvent({ gameId })`.
   - Maintains a `useRef<Id<"soundEvents"> | null>(null)` set on
@@ -456,13 +456,13 @@ Defence in depth: the GM-only UI gate is a courtesy; the
       flag value.
 
 - [ ] **Task 10.** Wire both components into
-  `src/pages/GameDetailPage.tsx`:
+      `src/pages/GameDetailPage.tsx`:
   - Mount `<SoundPlayer gameId={gid} />` near the top of the
     returned JSX (above `<GameHud>` is fine — its render output is
     a single conditionally-rendered banner so it doesn't disrupt
     the HUD's layout).
   - Insert `<SoundboardSection gameId={gid}
-    viewerIsGm={viewer.isGm} />` between the existing
+viewerIsGm={viewer.isGm} />` between the existing
     `<GoalsSection>` mount (`src/pages/GameDetailPage.tsx:162-168`)
     and the GM-only "Add Player" branch
     (`src/pages/GameDetailPage.tsx:170-175`). The section's own
@@ -473,14 +473,14 @@ Defence in depth: the GM-only UI gate is a courtesy; the
 ### Theme + accessibility
 
 - [ ] **Task 11.** No new CSS classes. Reuse the existing primary
-  button styling (`.primary` is the default per `THEME.md` lines
-  86–89). The "playing" badge reuses the `.badge.accent` class
-  (`THEME.md` lines 124–127). The "Enable sounds" banner reuses
-  `.read-only-banner` styling (`THEME.md` lines 159–162) for visual
-  consistency with other top-of-page notices. Audit the diff for
-  accidental new tokens; if a button needs a tweak (e.g. a
-  monospace count badge), prefer inline styles rather than
-  introducing a new class.
+      button styling (`.primary` is the default per `THEME.md` lines
+      86–89). The "playing" badge reuses the `.badge.accent` class
+      (`THEME.md` lines 124–127). The "Enable sounds" banner reuses
+      `.read-only-banner` styling (`THEME.md` lines 159–162) for visual
+      consistency with other top-of-page notices. Audit the diff for
+      accidental new tokens; if a button needs a tweak (e.g. a
+      monospace count badge), prefer inline styles rather than
+      introducing a new class.
 
 - [ ] **Task 12.** Accessibility:
   - Each button: `aria-label="Play sound: <name>"` plus visible
@@ -494,19 +494,19 @@ Defence in depth: the GM-only UI gate is a courtesy; the
 ### Client tests
 
 - [ ] **Task 13.** Tests in
-  `src/components/SoundboardSection.test.ts` — pure-function only.
-  The vitest harness runs in `edge-runtime` (`vitest.config.ts:5`)
-  with no DOM and no `@testing-library/react`, mirroring the
-  pure-function approach in `src/components/GmTodoDrawer.test.ts`
-  and `src/components/NoteTimerCell.test.ts`. To keep the test
-  surface meaningful, factor out a small helper from
-  `SoundboardSection.tsx` and export it for testing:
+      `src/components/SoundboardSection.test.ts` — pure-function only.
+      The vitest harness runs in `edge-runtime` (`vitest.config.ts:5`)
+      with no DOM and no `@testing-library/react`, mirroring the
+      pure-function approach in `src/components/GmTodoDrawer.test.ts`
+      and `src/components/NoteTimerCell.test.ts`. To keep the test
+      surface meaningful, factor out a small helper from
+      `SoundboardSection.tsx` and export it for testing:
   - `deriveButtonState(presets, lastTriggeredId, lastTriggeredAt,
-    now)` → array of
+now)` → array of
     `{ presetId, name, isPlaying }` — returns the button list with
     the "playing…" badge resolved against the
     `lastTriggeredAt + 3000ms` window.
-  Tests:
+    Tests:
   - Empty presets list → returns `[]`.
   - Non-empty presets list, no recent trigger → every entry has
     `isPlaying: false`.
@@ -522,8 +522,8 @@ Defence in depth: the GM-only UI gate is a courtesy; the
     early-return surfaces in manual smoke immediately.
 
 - [ ] **Task 14.** Tests in `src/components/SoundPlayer.test.ts` —
-  pure-function only, same constraint as Task 13. The component
-  exports two pure helpers per Task 9; tests live against those:
+      pure-function only, same constraint as Task 13. The component
+      exports two pure helpers per Task 9; tests live against those:
   - `derivePlaybackAction(prevId, current)`:
     - `current === undefined` (initial load, query loading) →
       `{ kind: "none" }`.
@@ -543,26 +543,26 @@ Defence in depth: the GM-only UI gate is a courtesy; the
     - `(true, "user_gesture")` → `false`.
     - `(true, "play_rejected")` → `true` (idempotent).
     - `(false, "user_gesture")` → `false` (idempotent).
-  The imperative wiring (`new Audio(url).play()`, the
-  `pointerdown` listener, the priming silent-WAV data URI) is
-  covered by the verification criteria's manual smoke matrix
-  (rapid double-click, autoplay-policy fallback, late-join
-  silence) rather than by automated tests — these branches all
-  require a real browser audio stack and the existing test
-  harness cannot reach them.
+      The imperative wiring (`new Audio(url).play()`, the
+      `pointerdown` listener, the priming silent-WAV data URI) is
+      covered by the verification criteria's manual smoke matrix
+      (rapid double-click, autoplay-policy fallback, late-join
+      silence) rather than by automated tests — these branches all
+      require a real browser audio stack and the existing test
+      harness cannot reach them.
 
 ### Documentation / housekeeping
 
 - [ ] **Task 15.** Add a top-of-file docblock to
-  `convex/soundboard.ts` describing the trigger/latest-event split,
-  the GM-only mutation gate, the participant-only query gate, the
-  initial-load suppression contract on the client side (referenced
-  but not implemented here — the doc is a forward-pointer for
-  future readers), and the storage-id denormalisation rationale.
-  Mirror the prose style used at the top of `convex/notes.ts`.
+      `convex/soundboard.ts` describing the trigger/latest-event split,
+      the GM-only mutation gate, the participant-only query gate, the
+      initial-load suppression contract on the client side (referenced
+      but not implemented here — the doc is a forward-pointer for
+      future readers), and the storage-id denormalisation rationale.
+      Mirror the prose style used at the top of `convex/notes.ts`.
 
 - [ ] **Task 16.** Add a top-of-file docblock to
-  `src/components/SoundPlayer.tsx` describing:
+      `src/components/SoundPlayer.tsx` describing:
   - The "subscribe to latest, suppress initial baseline" contract.
   - The autoplay-policy banner and the one-shot priming click.
   - Why playback is imperative (an out-of-tree `Audio` element)
@@ -570,7 +570,7 @@ Defence in depth: the GM-only UI gate is a courtesy; the
     to come from a non-React-render code path.
 
 - [ ] **Task 17.** No standalone documentation file. The plan above
-  is the spec; code comments cover the implementation.
+      is the spec; code comments cover the implementation.
 
 ## Verification Criteria
 

@@ -46,7 +46,10 @@ export function SyndicatesListPage() {
 
   return (
     <div>
-      <div className="row" style={{ justifyContent: "space-between", marginBottom: "1rem" }}>
+      <div
+        className="row"
+        style={{ justifyContent: "space-between", marginBottom: "1rem" }}
+      >
         <h2>My Syndicates</h2>
         <button type="button" onClick={() => setShowForm((s) => !s)}>
           {showForm ? "Cancel" : "New Syndicate"}
@@ -101,7 +104,11 @@ export function SyndicatesListPage() {
 
       <div className="stack">
         {syndicates?.map((s) => (
-          <div key={s._id} className="card row" style={{ justifyContent: "space-between" }}>
+          <div
+            key={s._id}
+            className="card row"
+            style={{ justifyContent: "space-between" }}
+          >
             <div>
               <Link to={`/syndicates/${s._id}`} style={{ fontWeight: 600 }}>
                 {s.name}

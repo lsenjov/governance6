@@ -12,23 +12,23 @@ naturally against the existing vocabulary ("syndicate", "drawback",
 
 Replace `:root` (`src/index.css:1-28`):
 
-| Token            | Value      | Role                                  |
-| ---------------- | ---------- | ------------------------------------- |
-| `--bg`           | `#f3ead3`  | Parchment                             |
-| `--bg-elevated`  | `#fbf3dc`  | Vellum card                           |
-| `--bg-muted`     | `#e8dcb8`  | Aged inset                            |
-| `--fg`           | `#1c1209`  | Iron-gall ink                         |
-| `--fg-muted`     | `#6a553a`  | Faded ink                             |
-| `--border`       | `#b8893a`  | Gilt rule                             |
-| `--accent`       | `#5a1a1a`  | Oxblood — primary action              |
-| `--accent-fg`    | `#fbf3dc`  | Vellum on oxblood                     |
-| `--gilt`         | `#b8893a`  | Gold leaf accents                     |
-| `--gilt-bright`  | `#d8a955`  | Highlight gilt                        |
-| `--verdigris`    | `#2f5a4f`  | Secondary accent — success / sealed   |
-| `--lapis`        | `#1d3a5f`  | Tertiary accent — info                |
-| `--danger`       | `#7a1410`  | Deep oxblood                          |
-| `--success`      | `#2f5a4f`  | Verdigris                             |
-| `--warning`      | `#a8741a`  | Aged amber                            |
+| Token           | Value     | Role                                |
+| --------------- | --------- | ----------------------------------- |
+| `--bg`          | `#f3ead3` | Parchment                           |
+| `--bg-elevated` | `#fbf3dc` | Vellum card                         |
+| `--bg-muted`    | `#e8dcb8` | Aged inset                          |
+| `--fg`          | `#1c1209` | Iron-gall ink                       |
+| `--fg-muted`    | `#6a553a` | Faded ink                           |
+| `--border`      | `#b8893a` | Gilt rule                           |
+| `--accent`      | `#5a1a1a` | Oxblood — primary action            |
+| `--accent-fg`   | `#fbf3dc` | Vellum on oxblood                   |
+| `--gilt`        | `#b8893a` | Gold leaf accents                   |
+| `--gilt-bright` | `#d8a955` | Highlight gilt                      |
+| `--verdigris`   | `#2f5a4f` | Secondary accent — success / sealed |
+| `--lapis`       | `#1d3a5f` | Tertiary accent — info              |
+| `--danger`      | `#7a1410` | Deep oxblood                        |
+| `--success`     | `#2f5a4f` | Verdigris                           |
+| `--warning`     | `#a8741a` | Aged amber                          |
 
 ## Typography
 
@@ -43,7 +43,7 @@ Replace `:root` (`src/index.css:1-28`):
 - Body: 16.5px Garamond, line-height 1.6, slightly increased letter-spacing
   (`0.005em`) for readability at that size.
 - Headings: Cinzel small-caps, `letter-spacing: 0.08em`, weight 500–600.
-- Numerals in tables/ledger: monospaced *and* tabular for currency-like
+- Numerals in tables/ledger: monospaced _and_ tabular for currency-like
   alignment (`font-feature-settings: "tnum" 1;`).
 - Drop caps on the first paragraph of each card via `::first-letter`
   (font-size: 3em; float: left; line-height: 0.85; padding-right: 0.4rem;
@@ -62,7 +62,7 @@ Add to `index.html`:
 
 1. **Gilded double rules.** Cards use a 1px solid + 1px solid offset border
    in `--gilt` (via `border` + `outline-offset: 2px; outline: 1px solid
-   var(--gilt);`). Reads as a hand-illuminated frame.
+var(--gilt);`). Reads as a hand-illuminated frame.
 2. **Drop caps.** First paragraph of every `.card` body gets a Cinzel
    drop cap in oxblood.
 3. **Small-caps section headers.** `h2/h3` rendered in Cinzel with
@@ -103,13 +103,13 @@ Add to `index.html`:
   ornament rule.
 - `h2/h3` — Cinzel, small-caps, `--accent` color for `h2`, `--fg` for
   `h3`. Add an underline via `border-bottom: 1px solid var(--gilt);
-  padding-bottom: 0.4rem;`.
+padding-bottom: 0.4rem;`.
 - `.badge` (`367-393`) — restyle to wax-seal variants.
 - `.row-divider` (`178-185`) — replace plain rule with the fleuron
   divider utility.
 - `.power-bar-track/-fill` (`591-601`) — track in `--bg-muted`, fill in
   oxblood with a 1px gilt top-edge highlight (`box-shadow: inset 0 1px 0
-  var(--gilt-bright);`).
+var(--gilt-bright);`).
 - `.drawer` / `.notes-popover` / `.action-popover` (`484-565`) —
   vellum surfaces, gilt double-rule borders, soft shadow
   `0 12px 32px rgba(28,18,9,0.18)`, corner fleurons via background
@@ -128,34 +128,58 @@ Add to `index.html`:
   font-variant: small-caps;
   letter-spacing: 0.08em;
   padding: 0.35rem 1.25rem;
-  clip-path: polygon(8px 0, calc(100% - 8px) 0,
-                     100% 50%, calc(100% - 8px) 100%,
-                     8px 100%, 0 50%);
+  clip-path: polygon(
+    8px 0,
+    calc(100% - 8px) 0,
+    100% 50%,
+    calc(100% - 8px) 100%,
+    8px 100%,
+    0 50%
+  );
 }
 .fleuron-rule {
-  display: flex; align-items: center; gap: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   color: var(--gilt);
 }
 .fleuron-rule::before,
 .fleuron-rule::after {
-  content: ""; flex: 1; border-top: 1px solid var(--gilt);
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--gilt);
 }
-.fleuron-rule::after { content: ""; }
-.fleuron-rule .glyph::before { content: "❦"; }
+.fleuron-rule::after {
+  content: "";
+}
+.fleuron-rule .glyph::before {
+  content: "❦";
+}
 .dropcap::first-letter {
   font-family: var(--font-display);
-  font-size: 3.2em; float: left; line-height: 0.85;
-  padding: 0.1em 0.3rem 0 0; color: var(--accent);
+  font-size: 3.2em;
+  float: left;
+  line-height: 0.85;
+  padding: 0.1em 0.3rem 0 0;
+  color: var(--accent);
 }
 .seal {
-  width: 28px; height: 28px; border-radius: 50%;
-  background: var(--accent); color: var(--accent-fg);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
   border: 2px solid var(--gilt);
   font-family: var(--font-display);
-  display: inline-grid; place-items: center;
-  font-size: 0.75rem; letter-spacing: 0;
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.75rem;
+  letter-spacing: 0;
 }
-.smallcaps { font-variant: small-caps; letter-spacing: 0.06em; }
+.smallcaps {
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+}
 ```
 
 ## Component-level notes

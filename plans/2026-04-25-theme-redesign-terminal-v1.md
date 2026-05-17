@@ -12,21 +12,21 @@ overlay), maximum identity payoff.
 
 Replace `:root` (`src/index.css:1-28`):
 
-| Token             | Value      | Role                                |
-| ----------------- | ---------- | ----------------------------------- |
-| `--bg`            | `#020a02`  | CRT black with green tint           |
-| `--bg-elevated`   | `#061206`  | Panel surface                       |
-| `--bg-muted`      | `#0a1a0a`  | Inset / inactive                    |
-| `--fg`            | `#22ff88`  | Phosphor green                      |
-| `--fg-muted`      | `#3a8a55`  | Dim phosphor                        |
-| `--fg-bright`     | `#a8ffc8`  | Highlighted text                    |
-| `--border`        | `#1f5a32`  | Grid line                           |
-| `--accent`        | `#22ff88`  | Same as fg — focus is via glow      |
-| `--accent-fg`     | `#020a02`  | Inverted block on hover/active      |
-| `--warning`       | `#ffb300`  | Amber alerts                        |
-| `--danger`        | `#ff4040`  | Critical                            |
-| `--success`       | `#22ff88`  | OK                                  |
-| `--cursor`        | `#22ff88`  | Blinking caret                      |
+| Token           | Value     | Role                           |
+| --------------- | --------- | ------------------------------ |
+| `--bg`          | `#020a02` | CRT black with green tint      |
+| `--bg-elevated` | `#061206` | Panel surface                  |
+| `--bg-muted`    | `#0a1a0a` | Inset / inactive               |
+| `--fg`          | `#22ff88` | Phosphor green                 |
+| `--fg-muted`    | `#3a8a55` | Dim phosphor                   |
+| `--fg-bright`   | `#a8ffc8` | Highlighted text               |
+| `--border`      | `#1f5a32` | Grid line                      |
+| `--accent`      | `#22ff88` | Same as fg — focus is via glow |
+| `--accent-fg`   | `#020a02` | Inverted block on hover/active |
+| `--warning`     | `#ffb300` | Amber alerts                   |
+| `--danger`      | `#ff4040` | Critical                       |
+| `--success`     | `#22ff88` | OK                             |
+| `--cursor`      | `#22ff88` | Blinking caret                 |
 
 Optional alt palette: amber (`#ffb000` on `#0c0703`) for a Plan-9 vibe —
 toggle via `[data-theme="terminal-amber"]`.
@@ -35,11 +35,14 @@ toggle via `[data-theme="terminal-amber"]`.
 
 ```css
 :root {
-  --font-body: "JetBrains Mono", "IBM Plex Mono", "Fira Code", ui-monospace,
-               monospace;
+  --font-body:
+    "JetBrains Mono", "IBM Plex Mono", "Fira Code", ui-monospace, monospace;
   --font-display: "VT323", "JetBrains Mono", monospace;
 }
-* { font-family: var(--font-body); font-feature-settings: "calt" 0; }
+* {
+  font-family: var(--font-body);
+  font-feature-settings: "calt" 0;
+}
 ```
 
 - 14px body, line-height 1.45.
@@ -60,7 +63,7 @@ Add to `index.html`:
 
 1. **Scanlines.** Fixed `body::after` with
    `background: repeating-linear-gradient(to bottom, transparent 0 2px,
-   rgba(0,0,0,0.18) 2px 3px); pointer-events: none; z-index: 9999;`.
+rgba(0,0,0,0.18) 2px 3px); pointer-events: none; z-index: 9999;`.
    Optionally a faint vignette via radial gradient on `body::before`.
 2. **ASCII box borders.** A `.box` utility renders cards using
    `border-image` of a 9-slice SVG with `╭─╮ │ ╰─╯` glyphs, OR (simpler)
@@ -78,7 +81,7 @@ Add to `index.html`:
 6. **Status pills as bracket text.** `.badge` renders as `[ACTIVE]`,
    `[FILED]`, `[!! WARN !!]` — no fill, just colored mono text.
 7. **Path-like nav.** Top nav reads like a path: `gov://games / SYN-04A2 /
-   edit`. Each segment is a link with `:hover { color: var(--fg-bright); }`.
+edit`. Each segment is a link with `:hover { color: var(--fg-bright); }`.
 8. **Command bar.** Optional bottom dock pseudo-prompt `gov> _` that, on
    focus, accepts slash commands (`/transfer`, `/note`, `/end-phase`) —
    future enhancement, not required for the theme PR.
@@ -90,17 +93,17 @@ Add to `index.html`:
   and optional CRT curvature via `transform: perspective(...)` (skip on
   `prefers-reduced-motion`).
 - `button` (`53-82`) — `background: transparent; color: var(--fg); border:
-  1px solid var(--fg); padding: 0.4rem 0.75rem; text-transform: uppercase;
-  letter-spacing: 0.06em;`. Hover inverts (`background: var(--fg);
-  color: var(--bg);`). Label format: `[ EXECUTE ]` on primary CTAs.
+1px solid var(--fg); padding: 0.4rem 0.75rem; text-transform: uppercase;
+letter-spacing: 0.06em;`. Hover inverts (`background: var(--fg);
+color: var(--bg);`). Label format: `[ EXECUTE ]` on primary CTAs.
 - `input/textarea/select` (`83-105`) — `background: var(--bg-muted);
-  border: 1px solid var(--border); border-radius: 0; color: var(--fg);
-  caret-color: var(--cursor);` Add a `::before` `> ` prompt on focused
+border: 1px solid var(--border); border-radius: 0; color: var(--fg);
+caret-color: var(--cursor);` Add a `::before` `> ` prompt on focused
   text inputs via a wrapper.
 - `.top-nav` (`120-127`) — single hairline bottom border, path-style links,
   uptime/clock readout in `--fg-muted` on the right.
 - `.card` (`161-176`) — `border: 1px solid var(--border); border-radius: 0;
-  background: var(--bg-elevated);` plus optional `.box.titled` ASCII corners
+background: var(--bg-elevated);` plus optional `.box.titled` ASCII corners
   for emphasized cards (HUD, power standings).
 - `.badge` (`367-393`) — bracket-text restyle (no fill, no border).
 - `.power-bar-track` / `-fill` (`591-601`) — character fill (see motif 5).
@@ -114,21 +117,50 @@ Add to `index.html`:
 ## New utilities
 
 ```css
-.box        { border: 1px solid var(--border); padding: 0.75rem 1rem; }
-.box.titled { position: relative; padding-top: 1.25rem; }
+.box {
+  border: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+}
+.box.titled {
+  position: relative;
+  padding-top: 1.25rem;
+}
 .box.titled::before {
   content: "╭─ " attr(data-title) " ─╮";
-  position: absolute; top: -0.6rem; left: 0.5rem;
-  background: var(--bg); padding: 0 0.4rem;
-  font-family: var(--font-body); color: var(--fg-muted);
+  position: absolute;
+  top: -0.6rem;
+  left: 0.5rem;
+  background: var(--bg);
+  padding: 0 0.4rem;
+  font-family: var(--font-body);
+  color: var(--fg-muted);
 }
-.prompt::before { content: "> "; color: var(--fg-muted); }
-.caret::after   { content: "▮"; animation: blink 1s steps(2) infinite; }
-@keyframes blink { 50% { opacity: 0; } }
-.tag-bracket    { color: var(--fg); }
-.tag-bracket.warn  { color: var(--warning); }
-.tag-bracket.crit  { color: var(--danger); }
-.bar-chars { font-family: var(--font-body); letter-spacing: 0; }
+.prompt::before {
+  content: "> ";
+  color: var(--fg-muted);
+}
+.caret::after {
+  content: "▮";
+  animation: blink 1s steps(2) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+.tag-bracket {
+  color: var(--fg);
+}
+.tag-bracket.warn {
+  color: var(--warning);
+}
+.tag-bracket.crit {
+  color: var(--danger);
+}
+.bar-chars {
+  font-family: var(--font-body);
+  letter-spacing: 0;
+}
 ```
 
 ## Component-level notes

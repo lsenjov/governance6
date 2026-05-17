@@ -2,11 +2,7 @@ import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import {
-  requireGame,
-  requireGameGm,
-  requireGameParticipant,
-} from "./lib/auth";
+import { requireGame, requireGameGm, requireGameParticipant } from "./lib/auth";
 
 /**
  * Goals — Rule 28.
@@ -165,9 +161,7 @@ async function assertKeywordUniqueInGame(
     .collect();
   for (const c of collisions) {
     if (c._id !== exceptGoalId) {
-      throw new Error(
-        "A Goal with this keyword already exists in this game.",
-      );
+      throw new Error("A Goal with this keyword already exists in this game.");
     }
   }
 }
@@ -205,9 +199,7 @@ export const createGoal = mutation({
         args.fromPlayerId !== undefined &&
         args.toPlayerId === args.fromPlayerId
       ) {
-        throw new Error(
-          "from-player and to-player must be different Players.",
-        );
+        throw new Error("from-player and to-player must be different Players.");
       }
     }
 
@@ -295,8 +287,7 @@ export const updateGoal = mutation({
       changed = true;
     }
     if (args.stick !== undefined) {
-      patch.stick =
-        args.stick === null ? undefined : validateStick(args.stick);
+      patch.stick = args.stick === null ? undefined : validateStick(args.stick);
       changed = true;
     }
 
@@ -356,14 +347,8 @@ export const updateGoal = mutation({
     }
 
     // Final invariant after both have been resolved.
-    if (
-      nextFrom !== undefined &&
-      nextTo !== undefined &&
-      nextFrom === nextTo
-    ) {
-      throw new Error(
-        "from-player and to-player must be different Players.",
-      );
+    if (nextFrom !== undefined && nextTo !== undefined && nextFrom === nextTo) {
+      throw new Error("from-player and to-player must be different Players.");
     }
 
     if (fromTouched) patch.fromPlayerId = nextFrom;
@@ -399,9 +384,7 @@ export const assignFromPlayer = mutation({
       goal.toPlayerId !== undefined &&
       args.fromPlayerId === goal.toPlayerId
     ) {
-      throw new Error(
-        "from-player and to-player must be different Players.",
-      );
+      throw new Error("from-player and to-player must be different Players.");
     }
     await ctx.db.patch(goal._id, { fromPlayerId: args.fromPlayerId });
   },
@@ -438,9 +421,7 @@ export const assignToPlayer = mutation({
       );
     }
     if (player === null || player._id !== goal.fromPlayerId) {
-      throw new Error(
-        "Only the from-player can assign a to-player.",
-      );
+      throw new Error("Only the from-player can assign a to-player.");
     }
     if (goal.toPlayerId !== undefined) {
       throw new Error(
@@ -550,8 +531,7 @@ export const listGoalsForGame = query({
     const displayNameByPlayerId: Record<string, string> = {};
     for (const p of players) {
       const u = await ctx.db.get(p.userId);
-      displayNameByPlayerId[p._id] =
-        u?.displayName ?? u?.email ?? "Unknown";
+      displayNameByPlayerId[p._id] = u?.displayName ?? u?.email ?? "Unknown";
     }
 
     const eligiblePlayers: EligiblePlayer[] = players

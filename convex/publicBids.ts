@@ -275,9 +275,7 @@ export const closeBidRound = mutation({
         throw new Error("Bidder's player row no longer exists.");
       }
       if (player.gameId !== round.gameId) {
-        throw new Error(
-          "Bidder's player row no longer belongs to this game.",
-        );
+        throw new Error("Bidder's player row no longer belongs to this game.");
       }
       await ctx.db.insert("powerLedgerEntries", {
         gameId: round.gameId,
@@ -450,7 +448,8 @@ export const getActiveBidRound = query({
     }
     pending.sort((a, b) => a.displayName.localeCompare(b.displayName));
 
-    const status: "open" | "closed" = round.status === "closed" ? "closed" : "open";
+    const status: "open" | "closed" =
+      round.status === "closed" ? "closed" : "open";
 
     return {
       round: {

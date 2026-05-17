@@ -82,10 +82,7 @@ export async function upsertActiveCall(
     // Idempotent same-content no-op: kind matches AND payload field
     // matches byte-for-byte.
     if (existingKind === content.kind) {
-      if (
-        content.kind === "minion" &&
-        existing.minionId === content.minionId
-      ) {
+      if (content.kind === "minion" && existing.minionId === content.minionId) {
         return { id: existing._id, prevKind: existingKind, changed: false };
       }
       if (content.kind === "custom" && existing.label === content.label) {

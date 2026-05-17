@@ -272,10 +272,7 @@ export const listAll = query({
     await requireSiteAdmin(ctx);
     const all = await ctx.db.query("syndicates").collect();
     const ownerIds = Array.from(new Set(all.map((s) => s.ownerId)));
-    const owners: Record<
-      string,
-      { displayName?: string; email?: string }
-    > = {};
+    const owners: Record<string, { displayName?: string; email?: string }> = {};
     for (const oid of ownerIds) {
       const owner = await ctx.db.get(oid);
       owners[oid] = {
@@ -286,9 +283,7 @@ export const listAll = query({
     const decorated = all.map((s) => ({
       ...s,
       ownerName:
-        owners[s.ownerId]?.displayName ??
-        owners[s.ownerId]?.email ??
-        "Unknown",
+        owners[s.ownerId]?.displayName ?? owners[s.ownerId]?.email ?? "Unknown",
       ownerEmail: owners[s.ownerId]?.email,
     }));
     decorated.sort((a, b) => {

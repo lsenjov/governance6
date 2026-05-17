@@ -202,9 +202,7 @@ export default defineSchema({
     minionId: v.optional(v.id("minions")),
     // `undefined` projects to `"minion"` for back-compat with rows
     // written before this field existed.
-    kind: v.optional(
-      v.union(v.literal("minion"), v.literal("custom")),
-    ),
+    kind: v.optional(v.union(v.literal("minion"), v.literal("custom"))),
     // Required when kind === "custom"; absent when "minion". Trimmed
     // and validated server-side (≤ 80 chars; non-empty after trim).
     label: v.optional(v.string()),
@@ -252,9 +250,7 @@ export default defineSchema({
         kind: v.string(),
         name: v.string(),
         value: v.number(),
-        result: v.optional(
-          v.union(v.literal("success"), v.literal("failure")),
-        ),
+        result: v.optional(v.union(v.literal("success"), v.literal("failure"))),
       }),
     ),
     createdAt: v.number(),

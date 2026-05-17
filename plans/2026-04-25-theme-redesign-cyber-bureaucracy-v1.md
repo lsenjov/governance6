@@ -12,24 +12,24 @@ warnings.
 
 Replace `:root` (`src/index.css:1-28`):
 
-| Token             | Value      | Role                                  |
-| ----------------- | ---------- | ------------------------------------- |
-| `--bg`            | `#080a0c`  | Near-black                            |
-| `--bg-elevated`   | `#0e141a`  | Panel                                 |
-| `--bg-muted`      | `#121a22`  | Inset                                 |
-| `--bg-grid`       | `#0c1218`  | Grid line color (very dim)            |
-| `--fg`            | `#d8e6f0`  | Cool white text                       |
-| `--fg-muted`      | `#6a8090`  | Secondary                             |
-| `--border`        | `#1f2c38`  | Hairline panel                        |
-| `--accent`        | `#00e5ff`  | Cyan — data, primary action           |
-| `--accent-fg`     | `#001016`  | Inverted text on cyan                 |
-| `--accent-glow`   | rgba(0,229,255,0.35) | For shadow glows           |
-| `--hazard`        | `#ffb000`  | Amber alerts / warnings               |
-| `--alert`         | `#ff2bd6`  | Magenta — rare, severe                |
-| `--success`       | `#00ffa0`  | Mint — confirms                       |
-| `--danger`        | `#ff4a4a`  | Red — destructive                     |
-| `--warning`       | `#ffb000`  | Same as hazard                        |
-| `--id-mono`       | `#9bb4c4`  | Entity ID color                       |
+| Token           | Value                | Role                        |
+| --------------- | -------------------- | --------------------------- |
+| `--bg`          | `#080a0c`            | Near-black                  |
+| `--bg-elevated` | `#0e141a`            | Panel                       |
+| `--bg-muted`    | `#121a22`            | Inset                       |
+| `--bg-grid`     | `#0c1218`            | Grid line color (very dim)  |
+| `--fg`          | `#d8e6f0`            | Cool white text             |
+| `--fg-muted`    | `#6a8090`            | Secondary                   |
+| `--border`      | `#1f2c38`            | Hairline panel              |
+| `--accent`      | `#00e5ff`            | Cyan — data, primary action |
+| `--accent-fg`   | `#001016`            | Inverted text on cyan       |
+| `--accent-glow` | rgba(0,229,255,0.35) | For shadow glows            |
+| `--hazard`      | `#ffb000`            | Amber alerts / warnings     |
+| `--alert`       | `#ff2bd6`            | Magenta — rare, severe      |
+| `--success`     | `#00ffa0`            | Mint — confirms             |
+| `--danger`      | `#ff4a4a`            | Red — destructive           |
+| `--warning`     | `#ffb000`            | Same as hazard              |
+| `--id-mono`     | `#9bb4c4`            | Entity ID color             |
 
 ## Typography
 
@@ -62,8 +62,12 @@ Add to `index.html`:
    buttons, popovers, the drawer:
    ```css
    --clip: polygon(
-     0 0, calc(100% - 12px) 0, 100% 12px,
-     100% 100%, 12px 100%, 0 calc(100% - 12px)
+     0 0,
+     calc(100% - 12px) 0,
+     100% 12px,
+     100% 100%,
+     12px 100%,
+     0 calc(100% - 12px)
    );
    ```
    Replaces `border-radius` for the major surfaces. Border can't be drawn
@@ -71,9 +75,9 @@ Add to `index.html`:
    the border entirely and rely on surface contrast.
 2. **Grid background.** Subtle 32px grid on `body`:
    `background:
-     linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0/32px 32px,
-     linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0/32px 32px,
-     var(--bg);`. Layered below content; never on top.
+linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0/32px 32px,
+linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0/32px 32px,
+var(--bg);`. Layered below content; never on top.
 3. **Glowing focus.** Replace outlines with cyan rings:
    `box-shadow: 0 0 0 1px var(--accent), 0 0 16px var(--accent-glow);`.
 4. **HUD scan-line.** A 1px animated gradient bar travels horizontally
@@ -87,7 +91,7 @@ Add to `index.html`:
    `background-clip: text; -webkit-text-fill-color: transparent;`.
 7. **Hazard stripes.** Warning banners and the read-only banner get a
    1px top/bottom edge in `repeating-linear-gradient(45deg, hazard 0 8px,
-   transparent 8px 14px)`.
+transparent 8px 14px)`.
 8. **Severity language.** Three severities, three accents: cyan
    (informational / default), hazard (warning), magenta (critical). Use
    magenta sparingly — at most one element on screen at a time.
@@ -97,14 +101,14 @@ Add to `index.html`:
 - `:root` (`1-28`) — palette + clip variable + font tokens.
 - `body` / `html` (`30-42`) — grid background, dark fg, font stack.
 - `button` (`53-82`) — cyan fill, dark fg, clipped corners (`clip-path:
-  var(--clip);`), uppercase Rajdhani label, `padding: 0.55rem 1rem`.
+var(--clip);`), uppercase Rajdhani label, `padding: 0.55rem 1rem`.
   Hover: brighter cyan + glow shadow. Active: -1px translate.
 - `button.secondary` — transparent fill, cyan text, 1px cyan border (no
   clip-path so the border renders cleanly).
 - `button.danger` — red fill; magenta is reserved for critical alerts
   only.
 - `input/textarea/select` (`83-105`) — `background: var(--bg-muted);
-  border: 1px solid var(--border); color: var(--fg); border-radius: 2px;`
+border: 1px solid var(--border); color: var(--fg); border-radius: 2px;`
   Focus: glow ring (motif 3).
 - `.top-nav` (`120-127`) — panel surface with a cyan 1px bottom rule,
   uppercase Rajdhani link labels, mono session ID on the right
@@ -125,29 +129,69 @@ Add to `index.html`:
 ## New utilities
 
 ```css
-.clipped       { clip-path: var(--clip); }
-.glow-cyan     { box-shadow: 0 0 0 1px var(--accent), 0 0 16px var(--accent-glow); }
-.id-tag        { font-family: var(--font-mono); font-size: 0.75rem;
-                 color: var(--id-mono); letter-spacing: 0.04em; }
-.holo-text     { background: linear-gradient(90deg, var(--accent), var(--alert));
-                 -webkit-background-clip: text; background-clip: text;
-                 -webkit-text-fill-color: transparent; color: transparent; }
-.hex-badge     { clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%); }
-.severity-info { background: var(--accent); color: var(--accent-fg); }
-.severity-warn { background: var(--hazard); color: #100a00; }
-.severity-crit { background: var(--alert);  color: #170016; }
+.clipped {
+  clip-path: var(--clip);
+}
+.glow-cyan {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 16px var(--accent-glow);
+}
+.id-tag {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--id-mono);
+  letter-spacing: 0.04em;
+}
+.holo-text {
+  background: linear-gradient(90deg, var(--accent), var(--alert));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+.hex-badge {
+  clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%);
+}
+.severity-info {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.severity-warn {
+  background: var(--hazard);
+  color: #100a00;
+}
+.severity-crit {
+  background: var(--alert);
+  color: #170016;
+}
 .hazard-stripe {
-  background: repeating-linear-gradient(45deg,
-    var(--hazard) 0 8px, transparent 8px 14px);
+  background: repeating-linear-gradient(
+    45deg,
+    var(--hazard) 0 8px,
+    transparent 8px 14px
+  );
 }
 .hud-scan::before {
-  content: ""; position: absolute; inset: 0;
-  background: linear-gradient(90deg, transparent, var(--accent-glow),
-                              transparent);
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent-glow),
+    transparent
+  );
   animation: scan 2.4s ease-out 1;
 }
-@keyframes scan { from { transform: translateX(-100%); }
-                  to   { transform: translateX(100%); } }
+@keyframes scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
 ```
 
 ## Component-level notes

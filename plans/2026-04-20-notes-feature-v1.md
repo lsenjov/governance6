@@ -39,16 +39,16 @@ Notes surface via a small icon (with an unread/count indicator) that opens a pop
 4. **Visibility** — `private` is the default. Private visibility means author + GM only. Public means every participant in the game. The GM always sees every note regardless of visibility (as the rules already let the GM see all ledgers, rule 23; this extends the pattern to notes).
 5. **Editing / deletion** — only the author may edit their note body and flip its visibility. Only the author or the GM may delete a note. Editing a note updates `updatedAt`. Edits do not change the author or `createdAt`.
 6. **Target validity** — a note can only be created on a target that currently exists and is valid in this game:
-    - `game` — `gameId` exists.
-    - `syndicate` — syndicate exists (no requirement that it currently be selected; once a syndicate has been selected by a player in the game it is relevant; we still require any user to know the id, which they will only if the game view surfaces it — i.e. selected syndicates in the roster, plus the viewer's own). To keep scope simple, allow the mutation when the `syndicateId` is either (a) currently selected by some player in the game or (b) the viewer has access to it (owns it or `isShared`). This preserves live updates if the selection changes without losing existing notes.
-    - `minion` — minion exists and belongs to a syndicate that satisfies the syndicate-visibility rule above for this game. Practically: the minion's syndicate must be selected by some player in this game (so the minion is surfaced to the game at all), or owned/shared with the viewer.
+   - `game` — `gameId` exists.
+   - `syndicate` — syndicate exists (no requirement that it currently be selected; once a syndicate has been selected by a player in the game it is relevant; we still require any user to know the id, which they will only if the game view surfaces it — i.e. selected syndicates in the roster, plus the viewer's own). To keep scope simple, allow the mutation when the `syndicateId` is either (a) currently selected by some player in the game or (b) the viewer has access to it (owns it or `isShared`). This preserves live updates if the selection changes without losing existing notes.
+   - `minion` — minion exists and belongs to a syndicate that satisfies the syndicate-visibility rule above for this game. Practically: the minion's syndicate must be selected by some player in this game (so the minion is surfaced to the game at all), or owned/shared with the viewer.
 7. **Note body constraints** — trimmed, 1–2000 characters. No rich text in v1. Authorization is server-side (rule 24).
 8. **Cascade on entity deletion** — when a minion is deleted (only possible while its syndicate's `played=false`) and when a syndicate is deleted (rule 9), cascade-delete every note that targets it. Game archiving does **not** delete notes (they are game history). No separate "delete game" flow exists today.
 9. **UI placement** — a consistent `<NoteIcon kind=… id=… />` component, sized ~16px, with a small count badge when visible notes exist. Clicking opens an anchored popover with the list + add form. For v1 we add icons to:
-    - the game header next to the game name,
-    - each roster row's selected-syndicate line,
-    - each minion row in the minion buy panel.
-    Call queue rows are **out of scope** for v1 (the underlying minion already has a note icon in the buy panel).
+   - the game header next to the game name,
+   - each roster row's selected-syndicate line,
+   - each minion row in the minion buy panel.
+     Call queue rows are **out of scope** for v1 (the underlying minion already has a note icon in the buy panel).
 10. **Reactivity** — the notes popover fetches via `useQuery` so open popovers live-update across all viewers when another user adds/edits notes. Convex reactivity already drives the rest of the page.
 11. **No pagination in v1** — note counts per target are expected to be small (tens). Return sorted notes for a target directly; paginate only if we later see large note counts.
 12. **No unread tracking in v1** — the icon badge shows visible-note count, not an unread count.
@@ -90,12 +90,12 @@ Notes surface via a small icon (with an unread/count indicator) that opens a pop
 ### Phase 5 — Tests & Verification
 
 - [ ] Task 21. `convex-test` authorization matrix for `notes`:
-    - non-participant cannot create/read/update/delete any note in the game,
-    - participant Player can create on all three target kinds,
-    - participant Player can edit and delete **own** notes only,
-    - GM can delete any note but cannot edit a note whose author is someone else,
-    - private notes are invisible to other Players via `listNotesForTarget` and `getNoteCountsForGameView`,
-    - private notes are visible to GM.
+  - non-participant cannot create/read/update/delete any note in the game,
+  - participant Player can create on all three target kinds,
+  - participant Player can edit and delete **own** notes only,
+  - GM can delete any note but cannot edit a note whose author is someone else,
+  - private notes are invisible to other Players via `listNotesForTarget` and `getNoteCountsForGameView`,
+  - private notes are visible to GM.
 - [ ] Task 22. `convex-test` game-scoping: creating two games with the same syndicate selected in both; notes created in game A do **not** appear when listing notes for the same syndicate id in game B. Rationale: enforces "notes do not carry across games".
 - [ ] Task 23. `convex-test` cascade: deleting a minion removes its notes; deleting a syndicate (only possible while `played=false`) removes notes on that syndicate and on all minions belonging to it; non-cascade deletions (e.g. removing a Player row in `ready`) leave notes intact. Rationale: enforce Task 10/Task 11 invariants.
 - [ ] Task 24. `convex-test` edit flow: `updatedAt` moves forward on body change; visibility flip is persisted; editing by non-author is rejected; editing a note in an archived game is still allowed (notes remain editable after archive in v1) — confirm this matches design intent or restrict if stakeholder prefers otherwise.

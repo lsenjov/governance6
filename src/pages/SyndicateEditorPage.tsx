@@ -11,6 +11,13 @@ import type { Doc, Id } from "../../convex/_generated/dataModel";
  */
 const MAX_UNIQUE_SYNDICATE_SKILLS = 13;
 
+/**
+ * Above this length, a drawback/minion description is rendered as a
+ * separate `colspan` row beneath the row's compact summary so the
+ * prose has full table width to breathe. See plan Task 7.
+ */
+const LONG_DESCRIPTION_THRESHOLD = 80;
+
 function uniqueSkillCount(skillLists: string[][]): number {
   const seen = new Set<string>();
   for (const list of skillLists) {
@@ -73,12 +80,9 @@ export function SyndicateEditorPage() {
         </div>
       )}
 
-      <SyndicateCore
-        syndicate={data}
-        canEdit={data.canEdit}
-      />
+      <SyndicateCore syndicate={data} canEdit={data.canEdit} />
 
-      <div className="section-grid" style={{ marginTop: "1.5rem" }}>
+      <div className="stack" style={{ marginTop: "1.5rem" }}>
         <section>
           <h3>Drawbacks ({data.drawbacks.length}/5)</h3>
           <DrawbacksEditor
@@ -244,6 +248,8 @@ function DrawbacksEditor({
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<Id<"drawbacks"> | null>(null);
+  const [showForm, setShowForm] = useState(false);
 
   // Find the preset row whose name matches the typed name
   // (case-insensitive). Used to silently carry abbreviation+isRolled
@@ -252,9 +258,7 @@ function DrawbacksEditor({
     if (!presetDrawbacks) return null;
     const lower = newName.trim().toLowerCase();
     if (lower.length === 0) return null;
-    return (
-      presetDrawbacks.find((p) => p.name.toLowerCase() === lower) ?? null
-    );
+    return presetDrawbacks.find((p) => p.name.toLowerCase() === lower) ?? null;
   })();
 
   // When the typed name matches a preset and the description is empty
@@ -266,9 +270,7 @@ function DrawbacksEditor({
     if (!presetDrawbacks) return;
     const lower = value.trim().toLowerCase();
     if (lower.length === 0) return;
-    const preset = presetDrawbacks.find(
-      (p) => p.name.toLowerCase() === lower,
-    );
+    const preset = presetDrawbacks.find((p) => p.name.toLowerCase() === lower);
     if (preset && newDesc.trim().length === 0) {
       setNewDesc(preset.description);
     }
@@ -294,125 +296,259 @@ function DrawbacksEditor({
       }
       setNewName("");
       setNewDesc("");
+      setShowForm(false);
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Failed to add.");
     }
   }
 
+  const colCount = canEdit ? 3 : 2;
+  const showFooter = canEdit && drawbacks.length < 5;
+
   return (
-    <div className="stack">
-      {drawbacks.length === 0 && (
-        <div className="muted">No drawbacks yet.</div>
-      )}
-      {drawbacks.map((d) => (
-        <DrawbackRow
-          key={d._id}
-          drawback={d}
-          canEdit={canEdit}
-          onSave={(name, description) =>
-            update({ drawbackId: d._id, name, description })
-          }
-          onDelete={() => remove({ drawbackId: d._id })}
-        />
-      ))}
-      {canEdit && drawbacks.length < 5 && (
-        <form onSubmit={handleCreate} className="card tight stack">
-          {presetDrawbacks && presetDrawbacks.length > 0 && (
-            <datalist id={presetListId}>
-              {presetDrawbacks.map((p) => (
-                <option key={p._id} value={p.name} />
-              ))}
-            </datalist>
-          )}
-          <input
-            value={newName}
-            onChange={(e) => handleNameChange(e.target.value)}
-            required
-            maxLength={120}
-            list={
-              presetDrawbacks && presetDrawbacks.length > 0
-                ? presetListId
-                : undefined
-            }
-            aria-label="New drawback name"
-            placeholder="Drawback name"
-            style={{ width: "100%" }}
-          />
-          <textarea
-            value={newDesc}
-            onChange={(e) => setNewDesc(e.target.value)}
-            rows={2}
-            aria-label="New drawback description"
-            placeholder="Description"
-            style={{ width: "100%" }}
-          />
-          {err && <div className="error-text">{err}</div>}
-          <button type="submit">Add Drawback</button>
-        </form>
-      )}
+    <div className="table-scroll">
+      <table className="drawback-table">
+        <caption>
+          <strong>{drawbacks.length}</strong>/5 drawbacks
+        </caption>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Description</th>
+            {canEdit && <th aria-label="Actions"></th>}
+          </tr>
+        </thead>
+        {drawbacks.length === 0 ? (
+          <tbody>
+            <tr>
+              <td colSpan={colCount} className="muted">
+                No drawbacks yet.
+              </td>
+            </tr>
+          </tbody>
+        ) : (
+          drawbacks.map((d) => {
+            const isEditing = editingId === d._id;
+            const longDesc =
+              d.description.trim().length > LONG_DESCRIPTION_THRESHOLD;
+            return (
+              <tbody key={d._id} className={isEditing ? "editing" : undefined}>
+                {isEditing ? (
+                  <tr aria-label={`Edit drawback: ${d.name}`}>
+                    <td className="editor-cell" colSpan={colCount}>
+                      <DrawbackEditForm
+                        key={d._id}
+                        drawback={d}
+                        onCancel={() => setEditingId(null)}
+                        onSave={async (patch) => {
+                          await update({ drawbackId: d._id, ...patch });
+                          setEditingId(null);
+                        }}
+                        onDelete={async () => {
+                          await remove({ drawbackId: d._id });
+                          setEditingId(null);
+                        }}
+                      />
+                    </td>
+                  </tr>
+                ) : longDesc ? (
+                  <>
+                    <tr>
+                      <td style={{ fontWeight: 600 }}>{d.name}</td>
+                      <td></td>
+                      {canEdit && (
+                        <td className="actions">
+                          <div className="row-wrap" style={{ gap: "0.5rem" }}>
+                            <button
+                              type="button"
+                              onClick={() => setEditingId(d._id)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="danger"
+                              onClick={() => void remove({ drawbackId: d._id })}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                    <tr className="description-row">
+                      <td colSpan={colCount}>{d.description}</td>
+                    </tr>
+                  </>
+                ) : (
+                  <tr>
+                    <td style={{ fontWeight: 600 }}>{d.name}</td>
+                    <td style={{ whiteSpace: "pre-wrap" }}>
+                      {d.description.trim().length > 0 ? (
+                        d.description
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    {canEdit && (
+                      <td className="actions">
+                        <div className="row-wrap" style={{ gap: "0.5rem" }}>
+                          <button
+                            type="button"
+                            onClick={() => setEditingId(d._id)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() => void remove({ drawbackId: d._id })}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                )}
+              </tbody>
+            );
+          })
+        )}
+        {showFooter && (
+          <tfoot>
+            <tr>
+              <td className="editor-cell" colSpan={colCount}>
+                {!showForm ? (
+                  <div className="add-row-bar">
+                    <button type="button" onClick={() => setShowForm(true)}>
+                      Add Drawback
+                    </button>
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={handleCreate}
+                    className="card tight stack"
+                    style={{ margin: 0 }}
+                  >
+                    {presetDrawbacks && presetDrawbacks.length > 0 && (
+                      <datalist id={presetListId}>
+                        {presetDrawbacks.map((p) => (
+                          <option key={p._id} value={p.name} />
+                        ))}
+                      </datalist>
+                    )}
+                    <input
+                      value={newName}
+                      onChange={(e) => handleNameChange(e.target.value)}
+                      required
+                      maxLength={120}
+                      list={
+                        presetDrawbacks && presetDrawbacks.length > 0
+                          ? presetListId
+                          : undefined
+                      }
+                      aria-label="New drawback name"
+                      placeholder="Drawback name"
+                      autoFocus
+                      style={{ width: "100%" }}
+                    />
+                    <textarea
+                      value={newDesc}
+                      onChange={(e) => setNewDesc(e.target.value)}
+                      rows={2}
+                      aria-label="New drawback description"
+                      placeholder="Description"
+                      style={{ width: "100%" }}
+                    />
+                    {err && <div className="error-text">{err}</div>}
+                    <div className="row-wrap">
+                      <button type="submit">Add Drawback</button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          setShowForm(false);
+                          setErr(null);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </td>
+            </tr>
+          </tfoot>
+        )}
+      </table>
     </div>
   );
 }
 
-function DrawbackRow({
+function DrawbackEditForm({
   drawback,
-  canEdit,
+  onCancel,
   onSave,
   onDelete,
 }: {
   drawback: DrawbackDoc;
-  canEdit: boolean;
-  onSave: (name: string, description: string) => Promise<unknown>;
+  onCancel: () => void;
+  onSave: (patch: { name: string; description: string }) => Promise<unknown>;
   onDelete: () => Promise<unknown>;
 }) {
   const [name, setName] = useState(drawback.name);
   const [description, setDescription] = useState(drawback.description);
   const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   async function handleSave() {
     setErr(null);
+    setSaved(false);
     try {
-      await onSave(name, description);
+      await onSave({ name, description });
+      setSaved(true);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Save failed.");
     }
   }
 
   return (
-    <div className="card tight stack">
+    <div className="card tight stack" style={{ margin: 0 }}>
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}
-        disabled={!canEdit}
         maxLength={120}
         aria-label="Drawback name"
         placeholder="Drawback name"
+        autoFocus
         style={{ width: "100%", fontWeight: 600 }}
       />
       <textarea
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         rows={2}
-        disabled={!canEdit}
         aria-label="Drawback description"
         placeholder="Description"
         style={{ width: "100%" }}
       />
       {err && <div className="error-text">{err}</div>}
-      {canEdit && (
-        <div className="row-wrap">
-          <button type="button" onClick={() => void handleSave()}>
-            Save
-          </button>
-          <button
-            type="button"
-            className="danger"
-            onClick={() => void onDelete()}
-          >
-            Delete
-          </button>
-        </div>
-      )}
+      {saved && <div className="success-text">Saved.</div>}
+      <div className="row-wrap">
+        <button type="button" onClick={() => void handleSave()}>
+          Save
+        </button>
+        <button type="button" className="secondary" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="danger"
+          onClick={() => void onDelete()}
+        >
+          Delete
+        </button>
+      </div>
     </div>
   );
 }
@@ -433,51 +569,188 @@ function MinionsEditor({
   const remove = useMutation(api.minions.remove);
   const presetSkills = useQuery(api.presetSkills.list);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<Id<"minions"> | null>(null);
 
   const presetNames = presetSkills?.map((s) => s.name) ?? [];
   const uniqueUsed = uniqueSkillCount(minions.map((m) => m.skills));
   const overCap = uniqueUsed > MAX_UNIQUE_SYNDICATE_SKILLS;
 
+  const colCount = canEdit ? 5 : 4;
+  const showFooter = canEdit && minions.length < 8;
+
   return (
-    <div className="stack">
-      <div className="muted" style={{ fontSize: "0.9rem" }}>
-        Unique skills used across all Minions:{" "}
-        <strong style={{ color: overCap ? "var(--danger)" : undefined }}>
-          {uniqueUsed}
-        </strong>
-        /{MAX_UNIQUE_SYNDICATE_SKILLS}
-      </div>
-      {minions.length === 0 && (
-        <div className="muted">No Minions yet.</div>
-      )}
-      {minions.map((m) => (
-        <MinionRow
-          key={m._id}
-          minion={m}
-          canEdit={canEdit}
-          presetSkillNames={presetNames}
-          onSave={(patch) => update({ minionId: m._id, ...patch })}
-          onDelete={() => remove({ minionId: m._id })}
-        />
+    <div className="table-scroll">
+      <table className="minion-table">
+        <caption>
+          Unique skills used across all Minions:{" "}
+          <strong className={overCap ? "over-cap" : undefined}>
+            {uniqueUsed}
+          </strong>
+          /{MAX_UNIQUE_SYNDICATE_SKILLS}
+        </caption>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Accent</th>
+            <th>Description</th>
+            <th>Skills</th>
+            {canEdit && <th aria-label="Actions"></th>}
+          </tr>
+        </thead>
+        {minions.length === 0 ? (
+          <tbody>
+            <tr>
+              <td colSpan={colCount} className="muted">
+                No Minions yet.
+              </td>
+            </tr>
+          </tbody>
+        ) : (
+          minions.map((m) => {
+            const isEditing = editingId === m._id;
+            const desc = (m.description ?? "").trim();
+            const longDesc = desc.length > LONG_DESCRIPTION_THRESHOLD;
+            const hasDesc = desc.length > 0;
+            const skillsTrimmed = m.skills
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0);
+            return (
+              <tbody key={m._id} className={isEditing ? "editing" : undefined}>
+                {isEditing ? (
+                  <tr aria-label={`Edit minion: ${m.name}`}>
+                    <td className="editor-cell" colSpan={colCount}>
+                      <MinionEditForm
+                        key={m._id}
+                        minion={m}
+                        presetSkillNames={presetNames}
+                        onCancel={() => setEditingId(null)}
+                        onSave={async (patch) => {
+                          await update({ minionId: m._id, ...patch });
+                          setEditingId(null);
+                        }}
+                        onDelete={async () => {
+                          await remove({ minionId: m._id });
+                          setEditingId(null);
+                        }}
+                      />
+                    </td>
+                  </tr>
+                ) : longDesc ? (
+                  <>
+                    <tr>
+                      <td style={{ fontWeight: 600 }}>{m.name}</td>
+                      <td>
+                        {m.accent ? m.accent : <span className="muted">—</span>}
+                      </td>
+                      <td></td>
+                      <td>
+                        <SkillChipList skills={skillsTrimmed} />
+                      </td>
+                      {canEdit && (
+                        <td className="actions">
+                          <div className="row-wrap" style={{ gap: "0.5rem" }}>
+                            <button
+                              type="button"
+                              onClick={() => setEditingId(m._id)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="danger"
+                              onClick={() => void remove({ minionId: m._id })}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                    <tr className="description-row">
+                      <td colSpan={colCount}>{m.description}</td>
+                    </tr>
+                  </>
+                ) : (
+                  <tr>
+                    <td style={{ fontWeight: 600 }}>{m.name}</td>
+                    <td>
+                      {m.accent ? m.accent : <span className="muted">—</span>}
+                    </td>
+                    <td style={{ whiteSpace: "pre-wrap" }}>
+                      {hasDesc ? (
+                        m.description
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>
+                      <SkillChipList skills={skillsTrimmed} />
+                    </td>
+                    {canEdit && (
+                      <td className="actions">
+                        <div className="row-wrap" style={{ gap: "0.5rem" }}>
+                          <button
+                            type="button"
+                            onClick={() => setEditingId(m._id)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() => void remove({ minionId: m._id })}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                )}
+              </tbody>
+            );
+          })
+        )}
+        {showFooter && (
+          <tfoot>
+            <tr>
+              <td className="editor-cell" colSpan={colCount}>
+                {!showForm ? (
+                  <div className="add-row-bar">
+                    <button type="button" onClick={() => setShowForm(true)}>
+                      Add Minion
+                    </button>
+                  </div>
+                ) : (
+                  <NewMinionForm
+                    presetSkillNames={presetNames}
+                    onCancel={() => setShowForm(false)}
+                    onSubmit={async (formData) => {
+                      await create({ syndicateId, ...formData });
+                      setShowForm(false);
+                    }}
+                  />
+                )}
+              </td>
+            </tr>
+          </tfoot>
+        )}
+      </table>
+    </div>
+  );
+}
+
+function SkillChipList({ skills }: { skills: string[] }) {
+  if (skills.length === 0) {
+    return <span className="muted">no skills</span>;
+  }
+  return (
+    <div className="skill-chip-list">
+      {skills.map((s, i) => (
+        <span className="skill-chip" key={i}>
+          {s}
+        </span>
       ))}
-      {canEdit && minions.length < 8 && (
-        <>
-          {!showForm ? (
-            <button type="button" onClick={() => setShowForm(true)}>
-              Add Minion
-            </button>
-          ) : (
-            <NewMinionForm
-              presetSkillNames={presetNames}
-              onCancel={() => setShowForm(false)}
-              onSubmit={async (data) => {
-                await create({ syndicateId, ...data });
-                setShowForm(false);
-              }}
-            />
-          )}
-        </>
-      )}
     </div>
   );
 }
@@ -518,7 +791,11 @@ function NewMinionForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="card tight stack">
+    <form
+      onSubmit={handleSubmit}
+      className="card tight stack"
+      style={{ margin: 0 }}
+    >
       <h4 style={{ margin: 0 }}>New Minion</h4>
       <input
         value={name}
@@ -527,6 +804,7 @@ function NewMinionForm({
         maxLength={120}
         aria-label="Minion name"
         placeholder="Name *"
+        autoFocus
         style={{ width: "100%" }}
       />
       <input
@@ -561,15 +839,15 @@ function NewMinionForm({
   );
 }
 
-function MinionRow({
+function MinionEditForm({
   minion,
-  canEdit,
+  onCancel,
   onSave,
   onDelete,
   presetSkillNames,
 }: {
   minion: MinionDoc;
-  canEdit: boolean;
+  onCancel: () => void;
   onSave: (patch: {
     name: string;
     accent?: string;
@@ -603,20 +881,19 @@ function MinionRow({
   }
 
   return (
-    <div className="card tight stack">
+    <div className="card tight stack" style={{ margin: 0 }}>
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}
-        disabled={!canEdit}
         maxLength={120}
         aria-label="Minion name"
         placeholder="Name"
+        autoFocus
         style={{ width: "100%", fontWeight: 600 }}
       />
       <input
         value={accent}
         onChange={(e) => setAccent(e.target.value)}
-        disabled={!canEdit}
         maxLength={40}
         aria-label="Minion accent"
         placeholder="Accent"
@@ -625,7 +902,6 @@ function MinionRow({
       <textarea
         value={description}
         onChange={(e) => setDescription(e.target.value)}
-        disabled={!canEdit}
         rows={2}
         aria-label="Minion description"
         placeholder="Description"
@@ -634,25 +910,25 @@ function MinionRow({
       <SkillsField
         skills={skills}
         onChange={setSkills}
-        disabled={!canEdit}
         presetSkillNames={presetSkillNames}
       />
       {err && <div className="error-text">{err}</div>}
       {saved && <div className="success-text">Saved.</div>}
-      {canEdit && (
-        <div className="row-wrap">
-          <button type="button" onClick={() => void handleSave()}>
-            Save
-          </button>
-          <button
-            type="button"
-            className="danger"
-            onClick={() => void onDelete()}
-          >
-            Delete
-          </button>
-        </div>
-      )}
+      <div className="row-wrap">
+        <button type="button" onClick={() => void handleSave()}>
+          Save
+        </button>
+        <button type="button" className="secondary" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="danger"
+          onClick={() => void onDelete()}
+        >
+          Delete
+        </button>
+      </div>
     </div>
   );
 }

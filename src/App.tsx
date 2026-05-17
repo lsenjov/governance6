@@ -1,5 +1,10 @@
 import { Routes, Route, Link, Navigate } from "react-router-dom";
-import { Authenticated, Unauthenticated, AuthLoading, useQuery } from "convex/react";
+import {
+  Authenticated,
+  Unauthenticated,
+  AuthLoading,
+  useQuery,
+} from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "../convex/_generated/api";
 import { SignInPage } from "./pages/SignInPage";

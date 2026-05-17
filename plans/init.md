@@ -18,10 +18,11 @@ Users can create a game. The owner of a game is called a Game Master, or GM for 
 Games have a state (ready, playing, archived). All users can see the status, only the GM can change it.
 
 Games have a start time, which is nil by default.
+
 - The game tracks when a game is moved to "playing" status, and displays for all users how long a game has been going while it is in "playing" status.
 - While the game is in "ready" status, a user can be added or removed to the game by the GM. If they are added, they are called a Player.
 - While the game is in "ready" status, a Player can select which Syndicate to use
-    - A Player can select any of their own created Syndicates, or any Syndicate with a set "is-shared" boolean
+  - A Player can select any of their own created Syndicates, or any Syndicate with a set "is-shared" boolean
 - When the game leaves "ready" status, all Syndicates have the "played" boolean to true.
 
 In each game, each Player has an amount of POWER(integer). The GM can edit this at any time.

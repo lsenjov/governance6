@@ -173,11 +173,9 @@ describe("publicBids: startBidRound", () => {
 
     for (const actor of [h.ids.aId, h.ids.bId, h.ids.outsiderId]) {
       await expect(
-        h.t
-          .withIdentity(asUser(actor))
-          .mutation(api.publicBids.startBidRound, {
-            gameId: h.ids.gameId,
-          }),
+        h.t.withIdentity(asUser(actor)).mutation(api.publicBids.startBidRound, {
+          gameId: h.ids.gameId,
+        }),
       ).rejects.toThrow(/Game Master|not authenticated/i);
     }
   });
@@ -280,7 +278,9 @@ describe("publicBids: placeBid", () => {
     await startGame(h);
     const r = await startBidRound(h);
     await placeBid(h, h.ids.aId, r, 5);
-    await expect(placeBid(h, h.ids.bId, r, 5)).rejects.toThrow(/already taken/i);
+    await expect(placeBid(h, h.ids.bId, r, 5)).rejects.toThrow(
+      /already taken/i,
+    );
     // Both can bid 0.
     await placeBid(h, h.ids.aId, r, 0);
     await placeBid(h, h.ids.bId, r, 0);
@@ -293,7 +293,9 @@ describe("publicBids: placeBid", () => {
     await expect(placeBid(h, h.ids.outsiderId, r, 1)).rejects.toThrow(
       /not a Player/i,
     );
-    await expect(placeBid(h, h.ids.gmId, r, 1)).rejects.toThrow(/not a Player/i);
+    await expect(placeBid(h, h.ids.gmId, r, 1)).rejects.toThrow(
+      /not a Player/i,
+    );
   });
 
   test("placeBid rejected on closed/archived round", async () => {
@@ -480,7 +482,9 @@ describe("publicBids: archive from closed", () => {
     expect(round?.closedAt).toBeTypeOf("number");
     expect(round?.archivedAt).toBeTypeOf("number");
 
-    expect(await getLedger(h, h.ids.playerAId)).toHaveLength(beforeLedger.length);
+    expect(await getLedger(h, h.ids.playerAId)).toHaveLength(
+      beforeLedger.length,
+    );
     expect(await getPlayerPower(h, h.ids.playerAId)).toBe(beforePower);
 
     // A new round can be started.
@@ -700,6 +704,8 @@ describe("publicBids: uniqueness race (sequential)", () => {
     await startGame(h);
     const r = await startBidRound(h);
     await placeBid(h, h.ids.aId, r, 5);
-    await expect(placeBid(h, h.ids.bId, r, 5)).rejects.toThrow(/already taken/i);
+    await expect(placeBid(h, h.ids.bId, r, 5)).rejects.toThrow(
+      /already taken/i,
+    );
   });
 });

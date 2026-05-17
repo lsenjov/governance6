@@ -169,12 +169,7 @@ export const updateGrant = mutation({
     if (args.keyword !== undefined) {
       const { keyword, lower } = normaliseKeyword(args.keyword);
       if (lower !== grant.keywordLower) {
-        await assertKeywordUniqueInGame(
-          ctx,
-          grant.gameId,
-          lower,
-          grant._id,
-        );
+        await assertKeywordUniqueInGame(ctx, grant.gameId, lower, grant._id);
       }
       patch.keyword = keyword;
       patch.keywordLower = lower;
@@ -335,8 +330,7 @@ export const listGrantsForGame = query({
     return {
       gameState: game.state,
       grants: grants.map((g) => {
-        const isMine =
-          myPlayerId !== null && g.ownerPlayerId === myPlayerId;
+        const isMine = myPlayerId !== null && g.ownerPlayerId === myPlayerId;
         const canSeeDescription = isGm || isMine;
         const canTake =
           role === "player" &&

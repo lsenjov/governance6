@@ -26,7 +26,7 @@ All other affordances — Take (player-facing), Assign from… / Assign to… (G
 
 ## Assumptions
 
-- **Scope of "hide" is exactly the three buttons named** in the user's request: `Edit`, `Clear owner`, `Delete` on Treason Grants; `Edit`, `Delete` on Goals. The `Assign from…` / `Assign to…` buttons on Goals (`src/pages/GameDetailPage.tsx:3348-3367`) are *not* hidden — they are not destructive and were not named.
+- **Scope of "hide" is exactly the three buttons named** in the user's request: `Edit`, `Clear owner`, `Delete` on Treason Grants; `Edit`, `Delete` on Goals. The `Assign from…` / `Assign to…` buttons on Goals (`src/pages/GameDetailPage.tsx:3348-3367`) are _not_ hidden — they are not destructive and were not named.
 - **Create forms stay visible** — `+ New Grant` (`src/pages/GameDetailPage.tsx:2093-2100`) and `+ New Goal` (`src/pages/GameDetailPage.tsx:3117-3125`) are left unaffected; the toggle only hides per-row management actions, not authoring entry points. Rationale: the user described the toggle as hiding row-level buttons, and authoring is conceptually different.
 - **In-progress editors stay visible** — if a GM has clicked Edit and is mid-edit when they enable the toggle, the editor form (`GrantEditor` / `GoalEditor`) continues rendering until the GM saves or cancels. Hiding the row's "Edit/Cancel" toggle button while a form is open would orphan the form. Rationale: graceful, non-destructive UX; no data loss; matches "least surprise".
 - **Toggle is GM-only** — the toggle UI lives inside the existing `GmToolsDrawer`, which itself is only rendered when `viewer.isGm`. Non-GMs never see the affected buttons in the first place (`writable` / `goal.canEdit` / `goal.canDelete` are all server-gated to GMs).
@@ -34,7 +34,7 @@ All other affordances — Take (player-facing), Assign from… / Assign to… (G
 - **No Convex schema changes, no new mutations.** This is a purely client-side display preference.
 - **Section placement in drawer**: a new section titled "Display" sits below the existing "Game state" section, so future display preferences (e.g. show/hide other panels, tighten density, etc.) accumulate there. The section comment in `GmToolsDrawer` already notes additions are purely additive (`src/pages/GameDetailPage.tsx:311-317`).
 - **Toggle control**: a checkbox + label inside the "Display" section, matching the lightweight visual language already used in forms across the file. No new CSS.
-- **Drawer state ephemerality**: the drawer's `gmToolsOpen` boolean stays ephemeral as today; only the toggle's *value* persists. Closing the drawer does not change the toggle.
+- **Drawer state ephemerality**: the drawer's `gmToolsOpen` boolean stays ephemeral as today; only the toggle's _value_ persists. Closing the drawer does not change the toggle.
 
 ## Implementation Plan
 
@@ -47,7 +47,7 @@ All other affordances — Take (player-facing), Assign from… / Assign to… (G
 
 - [ ] Task 2. Thread the preference into `GameDetailPage` so the relevant sections can read it:
   - In `GameDetailPage` (`src/pages/GameDetailPage.tsx:52-194`), call `useHideManagementControls(gid)` once for the GM viewer (and unconditionally when `gid` is defined; the value is harmless for non-GMs because they never render the gated buttons). Default `false`.
-  - Pass the `hideManagementControls` boolean down to `TreasonGrantsSection` and `GoalsSection` as a new prop. Pass the *setter* down to `GameHud` so `GmToolsDrawer` can flip it.
+  - Pass the `hideManagementControls` boolean down to `TreasonGrantsSection` and `GoalsSection` as a new prop. Pass the _setter_ down to `GameHud` so `GmToolsDrawer` can flip it.
   - Rationale: a single source of truth at the page level avoids duplicate hook calls (and duplicate storage writes) inside two sibling sections, and matches how `viewer`/`gameState` are already threaded.
 
 - [ ] Task 3. Surface the toggle inside `GmToolsDrawer` (`src/pages/GameDetailPage.tsx:319-342`):
@@ -61,7 +61,7 @@ All other affordances — Take (player-facing), Assign from… / Assign to… (G
   - Compute `showRowManagement = writable && !hideManagementControls`.
   - Wrap the `<>` containing the **Edit**, **Clear owner**, and **Delete** buttons (`src/pages/GameDetailPage.tsx:2274-2304`) in `showRowManagement && (<>…</>)` instead of the current `writable && (<>…</>)`.
   - Leave the `editing && writable && <GrantEditor … />` block (`src/pages/GameDetailPage.tsx:2309-2317`) ungated by the new flag — see Assumption "in-progress editors stay visible".
-  - The **Take** button (`src/pages/GameDetailPage.tsx:2263-2272`) is *not* affected.
+  - The **Take** button (`src/pages/GameDetailPage.tsx:2263-2272`) is _not_ affected.
   - Rationale: minimum-surface change; `writable` already gates exactly the right cluster, so the new flag composes cleanly.
 
 - [ ] Task 5. Update `GoalsSection` (`src/pages/GameDetailPage.tsx:2978-3037`) to accept and forward `hideManagementControls` to each `GoalRowView`. In `GoalRowView` (`src/pages/GameDetailPage.tsx:3250-3432`):
@@ -71,7 +71,7 @@ All other affordances — Take (player-facing), Assign from… / Assign to… (G
   - Rationale: gates only the two named buttons; non-destructive assignment workflow continues to function while the GM is "presenting".
 
 - [ ] Task 6. Audit the rest of the Treason Grants and Goals row UI to ensure no orphaned trailing whitespace, separators, or layout artefacts when the buttons disappear:
-  - The action cluster is wrapped in `<span className="row-wrap" style={{ gap: "0.4rem" }}>` (Treason: `src/pages/GameDetailPage.tsx:2262-2306`; Goals: `src/pages/GameDetailPage.tsx:3347-3390`). With `gap` based layout, removing children leaves no stray separators. Verify visually that an *empty* action cluster (e.g. a Goal row where the only management buttons were Edit/Delete and both are now hidden) does not introduce odd spacing on the right edge.
+  - The action cluster is wrapped in `<span className="row-wrap" style={{ gap: "0.4rem" }}>` (Treason: `src/pages/GameDetailPage.tsx:2262-2306`; Goals: `src/pages/GameDetailPage.tsx:3347-3390`). With `gap` based layout, removing children leaves no stray separators. Verify visually that an _empty_ action cluster (e.g. a Goal row where the only management buttons were Edit/Delete and both are now hidden) does not introduce odd spacing on the right edge.
   - If an empty cluster is visually awkward, conditionally avoid rendering the `<span>` when it would have no children. Treat this as a polish step, not a blocker.
 
 - [ ] Task 7. Type and lint hygiene:
@@ -87,7 +87,7 @@ All other affordances — Take (player-facing), Assign from… / Assign to… (G
     - Tick the toggle → the rows immediately re-render without **Edit / Clear owner / Delete** on grants and without **Edit / Delete** on goals. **Take** still appears on takeable grants; **Assign from… / Assign to…** still appear on goals; `+ New Grant` / `+ New Goal` still appear above the lists.
     - Reload the page → toggle remains ticked; rows remain stripped.
     - Untick → controls return.
-  - Edge case: open Edit on a grant or goal, *then* tick the toggle → the existing editor form remains; the row's "Cancel" affordance (rendered as the Edit button switching label) is hidden; saving via the editor's own Save/Cancel still works.
+  - Edge case: open Edit on a grant or goal, _then_ tick the toggle → the existing editor form remains; the row's "Cancel" affordance (rendered as the Edit button switching label) is hidden; saving via the editor's own Save/Cancel still works.
   - Edge case: open in two browser tabs of the same game; verify the toggle in one does not leak into the other instantly (acceptable: `localStorage` is per-tab read on mount; explicit re-syncing across tabs is out of scope).
   - Switch to a different game → toggle starts unticked (per-game key) regardless of the other game's value.
 

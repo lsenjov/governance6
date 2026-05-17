@@ -2,7 +2,7 @@
 
 ## Concept
 
-The app *is* a confidential intelligence file. Every screen feels like a manila
+The app _is_ a confidential intelligence file. Every screen feels like a manila
 folder pulled from a cabinet: typewritten body copy, rubber-stamp badges,
 red-string accents, paper grain, and `[REDACTED]` blocks for sensitive fields.
 The "governance / syndicate / drawback" vocabulary already in the data model
@@ -12,20 +12,20 @@ maps directly onto the metaphor.
 
 Semantic tokens (replace `:root` block in `src/index.css:1-28`):
 
-| Token              | Value      | Role                                |
-| ------------------ | ---------- | ----------------------------------- |
-| `--bg`             | `#e8dcc4`  | Manila folder body                  |
-| `--bg-elevated`    | `#f1e7d2`  | Document / card surface             |
-| `--bg-muted`       | `#dccfb3`  | Inset fields, table stripes         |
-| `--fg`             | `#1a1612`  | Ink                                 |
-| `--fg-muted`       | `#6b6357`  | Faded carbon copy                   |
-| `--border`         | `#a89a7a`  | Hairline document rule              |
-| `--accent`         | `#a3201d`  | CLASSIFIED red — links, focus       |
-| `--accent-fg`      | `#f1e7d2`  | Stamp text on red                   |
-| `--stamp-blue`     | `#1d3a5f`  | Secondary stamps (FILED, RECEIVED)  |
-| `--danger`         | `#a3201d`  | Same as accent                      |
-| `--success`        | `#3f6b3a`  | Olive approval ink                  |
-| `--warning`        | `#b8893a`  | Aged-tape amber                     |
+| Token           | Value     | Role                               |
+| --------------- | --------- | ---------------------------------- |
+| `--bg`          | `#e8dcc4` | Manila folder body                 |
+| `--bg-elevated` | `#f1e7d2` | Document / card surface            |
+| `--bg-muted`    | `#dccfb3` | Inset fields, table stripes        |
+| `--fg`          | `#1a1612` | Ink                                |
+| `--fg-muted`    | `#6b6357` | Faded carbon copy                  |
+| `--border`      | `#a89a7a` | Hairline document rule             |
+| `--accent`      | `#a3201d` | CLASSIFIED red — links, focus      |
+| `--accent-fg`   | `#f1e7d2` | Stamp text on red                  |
+| `--stamp-blue`  | `#1d3a5f` | Secondary stamps (FILED, RECEIVED) |
+| `--danger`      | `#a3201d` | Same as accent                     |
+| `--success`     | `#3f6b3a` | Olive approval ink                 |
+| `--warning`     | `#b8893a` | Aged-tape amber                    |
 
 ## Typography
 
@@ -84,7 +84,7 @@ Concrete edits to `src/index.css:1-651`:
 - `button.secondary` (`73-77`) — outlined ink button on paper.
 - `input/textarea/select` (`83-105`) — paper-inset look:
   `background: var(--bg-muted); border-bottom: 1px solid var(--fg);
-  border-radius: 0;` (form-on-form style).
+border-radius: 0;` (form-on-form style).
 - `.top-nav` (`120-127`) — taller bar styled as a file header strip with
   a dotted bottom rule and a `FILE №` field on the left.
 - `.card` (`161-176`) — folder-tab corners, faint inner shadow, top
@@ -98,14 +98,35 @@ Concrete edits to `src/index.css:1-651`:
 ## New utilities
 
 ```css
-.stamp { /* generic stamped label */ }
-.stamp.classified { color: var(--accent); border-color: var(--accent); }
-.stamp.eyes-only  { color: var(--stamp-blue); border-color: var(--stamp-blue); }
-.redact { background: var(--fg); color: transparent; border-radius: 1px; }
-.redact.revealed { background: transparent; color: inherit; }
-.dotted-rule { border-bottom: 1px dashed var(--border); }
-.file-tab { /* card with folder-tab corner */ }
-.carbon { text-shadow: 1px 1px 0 rgba(26,22,18,0.25); }
+.stamp {
+  /* generic stamped label */
+}
+.stamp.classified {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.stamp.eyes-only {
+  color: var(--stamp-blue);
+  border-color: var(--stamp-blue);
+}
+.redact {
+  background: var(--fg);
+  color: transparent;
+  border-radius: 1px;
+}
+.redact.revealed {
+  background: transparent;
+  color: inherit;
+}
+.dotted-rule {
+  border-bottom: 1px dashed var(--border);
+}
+.file-tab {
+  /* card with folder-tab corner */
+}
+.carbon {
+  text-shadow: 1px 1px 0 rgba(26, 22, 18, 0.25);
+}
 ```
 
 ## Component-level notes
@@ -128,7 +149,7 @@ Concrete edits to `src/index.css:1-651`:
       due to rotation (use `transform-origin: center` and reserve space).
 - [ ] Noise overlay is GPU-friendly (single fixed element, not repeated
       backgrounds on every card).
-- [ ] Print stylesheet looks *correct* with this theme — bonus: it already
+- [ ] Print stylesheet looks _correct_ with this theme — bonus: it already
       reads as a printout.
 - [ ] Dark mode opt-out via `[data-theme="dossier-night"]` using a
       desk-lamp palette (`#2a241b` paper, `#e8dcc4` ink).

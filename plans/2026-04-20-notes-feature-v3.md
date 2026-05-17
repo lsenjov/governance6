@@ -42,9 +42,9 @@ Notes surface via a small icon (with a count indicator) that opens a popover lis
 5. **Immutability** — there is **no** note-edit flow. Once posted, a note's body, visibility, author, and `createdAt` are fixed. If the author wants to change what a note says, they post a new note and (if undesirable) ask the GM to delete the old one. Rationale: game-play notes act as a chat-like record; immutability prevents retroactive tampering and simplifies trust boundaries. No `updatedAt` field is required.
 6. **Deletion** — **only the GM of the game** may delete a note. Authors cannot delete their own notes. Non-GM participants cannot delete any note. Rationale: concentrates moderation in the GM role and removes one class of self-edit via delete-and-repost racing.
 7. **Target validity** — a note can only be created on a target that currently exists and is valid in this game:
-    - `game` — `gameId` exists.
-    - `syndicate` — syndicate exists and is either (a) currently selected by some Player in this game, or (b) accessible to the viewer (owned or `isShared`).
-    - `minion` — minion exists and belongs to a syndicate that satisfies the syndicate-visibility rule above for this game.
+   - `game` — `gameId` exists.
+   - `syndicate` — syndicate exists and is either (a) currently selected by some Player in this game, or (b) accessible to the viewer (owned or `isShared`).
+   - `minion` — minion exists and belongs to a syndicate that satisfies the syndicate-visibility rule above for this game.
 8. **Note body constraints** — trimmed, 1–2000 characters. No rich text in v1. All validation is server-side (rule 24).
 9. **Cascade on entity deletion** — when a minion is deleted (only possible while its syndicate's `played=false`) and when a syndicate is deleted (rule 9), cascade-delete every note that targets it. Game archiving does **not** delete notes (they are game history). No separate "delete game" flow exists today.
 10. **Ordering** — notes are **sorted newest first** (`createdAt` descending) everywhere they are listed.
@@ -52,7 +52,7 @@ Notes surface via a small icon (with a count indicator) that opens a popover lis
     - the game header next to the game name,
     - each roster row's selected-syndicate line,
     - each minion row in the minion buy panel.
-    Call queue rows are **out of scope** for v1 (the underlying minion already has a note icon in the buy panel).
+      Call queue rows are **out of scope** for v1 (the underlying minion already has a note icon in the buy panel).
 12. **Reactivity** — the notes popover fetches via `useQuery` so open popovers live-update across all viewers when another user adds/deletes notes.
 13. **No pagination in v1** — note counts per target are expected to be small (tens). Return sorted notes for a target directly; paginate only if we later see large note counts.
 14. **No unread tracking in v1** — the icon badge shows visible-note count, not an unread count.
@@ -94,12 +94,12 @@ Notes surface via a small icon (with a count indicator) that opens a popover lis
 ### Phase 5 — Tests & Verification
 
 - [ ] Task 21. `convex-test` authorization matrix for `notes`:
-    - non-participant cannot create, read, or delete any note in the game,
-    - participant Player can create on all three target kinds,
-    - participant Player **cannot** delete any note, including their own,
-    - GM can delete any note (own-authored, author-authored, private, public),
-    - private notes are invisible to other Players via `listNotesForTarget` and `getNoteCountsForGameView`,
-    - private notes are visible to the GM.
+  - non-participant cannot create, read, or delete any note in the game,
+  - participant Player can create on all three target kinds,
+  - participant Player **cannot** delete any note, including their own,
+  - GM can delete any note (own-authored, author-authored, private, public),
+  - private notes are invisible to other Players via `listNotesForTarget` and `getNoteCountsForGameView`,
+  - private notes are visible to the GM.
 - [ ] Task 22. `convex-test` absence of edit surface: assert that no `updateNote`-style mutation exists in `api.notes`, and that `notes` documents have no `updatedAt` field. Rationale: locks the immutability decision into the test suite.
 - [ ] Task 23. `convex-test` ordering: creating three notes on the same target at distinct timestamps returns them newest-first from `listNotesForTarget`. Rationale: enforces the "sorted newest first" requirement.
 - [ ] Task 24. `convex-test` game-scoping: creating two games with the same syndicate selected in both; notes created in game A do **not** appear when listing notes for the same syndicate id in game B. Rationale: enforces "notes do not carry across games".

@@ -43,9 +43,7 @@ export function deriveSkillResult(
  * a required field would force every chaos cell to carry a pass/fail
  * marker, which is more than the user asked for.
  */
-export function deriveChaosResult(
-  chaosRoll: number,
-): "failure" | undefined {
+export function deriveChaosResult(chaosRoll: number): "failure" | undefined {
   return chaosRoll === 1 ? "failure" : undefined;
 }
 
@@ -98,7 +96,7 @@ export function normaliseExtraRoll(input: ExtraRollInput): ExtraRoll {
   // Natural-1 rule: any die showing 1 is a failure. Override even
   // when the caller passed an explicit `"success"`.
   const result =
-    input.value === 1 ? ("failure" as const) : input.result ?? undefined;
+    input.value === 1 ? ("failure" as const) : (input.result ?? undefined);
 
   const out: ExtraRoll = { kind, name, value: input.value };
   if (result !== undefined) out.result = result;

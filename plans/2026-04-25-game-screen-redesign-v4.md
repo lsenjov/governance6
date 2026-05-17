@@ -35,7 +35,7 @@ Applied review feedback from the v3 review. Concrete changes:
    correctly attributed to Task 17 (was "Task 15" in v3).
 2. **`.main-content` padding promoted from risk to explicit task** — new
    Task 5b introduces a `.has-dock` class on `<body>` so the dock does not
-   cover the last row at *any* viewport width.
+   cover the last row at _any_ viewport width.
 3. **Queue-pill syndicate color data-flow spelled out** — Task 13 now
    specifies the client-side join (`roster.find(…).selectedSyndicate.name`),
    grounded in `convex/games.ts:88-94` (syndicate is frozen during
@@ -50,11 +50,11 @@ Applied review feedback from the v3 review. Concrete changes:
 6. **Tile-click vs Buy-button semantics clarified** — assumption #9 and
    Task 10 reworded: the Buy button on the front performs the buy; the
    bare face area flips.
-7. **Rollout disambiguated** — chose the *big-bang* path; Tasks 8 and 17
+7. **Rollout disambiguated** — chose the _big-bang_ path; Tasks 8 and 17
    delete v2 code in-phase; rollout step 5 removed.
 8. **Syndicate-color hash function specified** — assumption #10 now
    defines the hash.
-9. **HUD crowding mitigated** — Task 8 moves viewer POWER *out* of the
+9. **HUD crowding mitigated** — Task 8 moves viewer POWER _out_ of the
    HUD (stays only in the dock `.summary`); HUD metadata limited to
    `{yourName} · {syndicate}`.
 10. **GM overlay archived-state behaviour specified** — Task 18 notes
@@ -74,18 +74,18 @@ Strategy C introduces several UX decisions that were deliberately deferred
 from v2. Defaults are listed below; flag any you want to change before I
 start implementation.
 
-| # | Decision | Default |
-|---|----------|---------|
-| 1 | Does the action dock replace v2's mobile bottom-summary strip, or coexist? | **Replace** — one unified `.action-dock` at the bottom that adapts (mobile: queue summary + `[Buy]` `[Call]` `[•••]`; desktop: full dock). v2's `<BottomStrip>` is deleted in Task 17. |
-| 2 | Does `[Buy]` in the dock one-click-buy, or open a picker? | **Always a picker.** All unbought minions cost the same `nextPrice` (the ladder in `convex/minionBuys.ts:14` is based on `boughtCount`, not per-minion), so there is no "cheapest" shortcut. The dock button is labelled `[Buy {nextPrice} ▾]` and opens the unbought-minion picker on click. |
-| 3 | Tile grid breakpoints within each roster card | **Fixed 4×2** at all widths; tiles flex to match card width. |
-| 4 | Roster-card column count | **1** <900px, **2** 900–1399px, **3** 1400–1799px, **4** ≥1800px. |
-| 5 | Where do POWER standings live once the left rail holds the queue? | **New slim right rail** — 3-pane layout on ≥1280px (queue · roster · standings); right rail collapses into roster headers on 900–1279px; everything stacks <900px. |
-| 6 | GM slide-over scope | Δ power form + per-player ledger only. Archive/start buttons **stay in the HUD**. |
-| 7 | Notes drawer replaces `NoteIcon` popover **only inside the game screen** | Yes — other pages (Syndicate Editor, etc.) keep the existing popover. |
-| 8 | Minion description visibility in tile grid | **Tooltip (`title=`) + on-tap flip** — tap the bare face of a tile (not a button) to reveal description on the back; tap the back to flip forward. Buy/Call live on the front. (Fallback: hover reveal on desktop via the `title` attribute.) |
-| 9 | Tile Buy-button behaviour when unbought + affordable + self | **Buy immediately** (no confirm); error toast on failure. The Buy button lives on the front face; clicking the button fires `buyMinion` with `stopPropagation` so the flip does not also trigger. |
-| 10 | Syndicate color mapping for queue pills | Hash of syndicate name → one of 8 preset hues; deterministic across sessions. No schema changes. **Hash spec:** `Array.from(name).reduce((h, c) => ((h * 31 + c.charCodeAt(0)) >>> 0), 0) % 8`. |
+| #   | Decision                                                                   | Default                                                                                                                                                                                                                                                                                       |
+| --- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Does the action dock replace v2's mobile bottom-summary strip, or coexist? | **Replace** — one unified `.action-dock` at the bottom that adapts (mobile: queue summary + `[Buy]` `[Call]` `[•••]`; desktop: full dock). v2's `<BottomStrip>` is deleted in Task 17.                                                                                                        |
+| 2   | Does `[Buy]` in the dock one-click-buy, or open a picker?                  | **Always a picker.** All unbought minions cost the same `nextPrice` (the ladder in `convex/minionBuys.ts:14` is based on `boughtCount`, not per-minion), so there is no "cheapest" shortcut. The dock button is labelled `[Buy {nextPrice} ▾]` and opens the unbought-minion picker on click. |
+| 3   | Tile grid breakpoints within each roster card                              | **Fixed 4×2** at all widths; tiles flex to match card width.                                                                                                                                                                                                                                  |
+| 4   | Roster-card column count                                                   | **1** <900px, **2** 900–1399px, **3** 1400–1799px, **4** ≥1800px.                                                                                                                                                                                                                             |
+| 5   | Where do POWER standings live once the left rail holds the queue?          | **New slim right rail** — 3-pane layout on ≥1280px (queue · roster · standings); right rail collapses into roster headers on 900–1279px; everything stacks <900px.                                                                                                                            |
+| 6   | GM slide-over scope                                                        | Δ power form + per-player ledger only. Archive/start buttons **stay in the HUD**.                                                                                                                                                                                                             |
+| 7   | Notes drawer replaces `NoteIcon` popover **only inside the game screen**   | Yes — other pages (Syndicate Editor, etc.) keep the existing popover.                                                                                                                                                                                                                         |
+| 8   | Minion description visibility in tile grid                                 | **Tooltip (`title=`) + on-tap flip** — tap the bare face of a tile (not a button) to reveal description on the back; tap the back to flip forward. Buy/Call live on the front. (Fallback: hover reveal on desktop via the `title` attribute.)                                                 |
+| 9   | Tile Buy-button behaviour when unbought + affordable + self                | **Buy immediately** (no confirm); error toast on failure. The Buy button lives on the front face; clicking the button fires `buyMinion` with `stopPropagation` so the flip does not also trigger.                                                                                             |
+| 10  | Syndicate color mapping for queue pills                                    | Hash of syndicate name → one of 8 preset hues; deterministic across sessions. No schema changes. **Hash spec:** `Array.from(name).reduce((h, c) => ((h * 31 + c.charCodeAt(0)) >>> 0), 0) % 8`.                                                                                               |
 
 ## Implementation Plan
 
@@ -132,14 +132,14 @@ start implementation.
   - `.queue-pill { display: flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.4rem; border-radius: 999px; font-size: 0.72rem; line-height: 1; background: var(--bg-elevated); border: 1px solid var(--border); cursor: pointer; }`
   - `.queue-pill .num { font-weight: 700; font-size: 0.68rem; background: var(--accent); color: var(--bg); border-radius: 999px; padding: 0.1rem 0.35rem; min-width: 1.1rem; text-align: center; }`
   - Preset hues (8 slots, spaced around the wheel):
-    - `.queue-pill[data-color="0"] { --pill-hue: 210; }` /* blue */
-    - `.queue-pill[data-color="1"] { --pill-hue: 30; }`  /* orange */
-    - `.queue-pill[data-color="2"] { --pill-hue: 150; }` /* green */
-    - `.queue-pill[data-color="3"] { --pill-hue: 270; }` /* purple */
-    - `.queue-pill[data-color="4"] { --pill-hue: 90; }`  /* chartreuse */
-    - `.queue-pill[data-color="5"] { --pill-hue: 330; }` /* magenta */
-    - `.queue-pill[data-color="6"] { --pill-hue: 60; }`  /* yellow */
-    - `.queue-pill[data-color="7"] { --pill-hue: 180; }` /* teal */
+    - `.queue-pill[data-color="0"] { --pill-hue: 210; }` /_ blue _/
+    - `.queue-pill[data-color="1"] { --pill-hue: 30; }` /_ orange _/
+    - `.queue-pill[data-color="2"] { --pill-hue: 150; }` /_ green _/
+    - `.queue-pill[data-color="3"] { --pill-hue: 270; }` /_ purple _/
+    - `.queue-pill[data-color="4"] { --pill-hue: 90; }` /_ chartreuse _/
+    - `.queue-pill[data-color="5"] { --pill-hue: 330; }` /_ magenta _/
+    - `.queue-pill[data-color="6"] { --pill-hue: 60; }` /_ yellow _/
+    - `.queue-pill[data-color="7"] { --pill-hue: 180; }` /_ teal _/
   - `.queue-pill { border-color: hsl(var(--pill-hue, 210) 50% 45%); }`
   - Rationale: implements assumption #10 with concrete, enumerated hues.
 
@@ -153,7 +153,7 @@ start implementation.
     `<BottomStrip>` component is handled in **Task 17**.
 
 - [ ] Task 5b. Promote dock bottom-padding from v2's narrow-screen rule to
-  all widths, scoped behind a toggle class:
+      all widths, scoped behind a toggle class:
   - Move the `padding-bottom: calc(1.5rem + var(--bottom-strip-height))` rule
     currently nested inside `@media (max-width: 899px)` (`src/index.css:341-343`)
     out of that media query. Re-scope it to `body.has-dock .main-content`:
@@ -184,8 +184,8 @@ start implementation.
 ### Phase 2 — Bottom action dock (replaces v2 `<YouStrip>` + `<BottomStrip>`)
 
 - [ ] Task 7. Create `<ActionDock>` component in
-  `src/pages/GameDetailPage.tsx`. Rendered at the root of the game shell
-  (as the last child of `.game-shell`, after the grid).
+      `src/pages/GameDetailPage.tsx`. Rendered at the root of the game shell
+      (as the last child of `.game-shell`, after the grid).
   - **Gating predicate:** `showDock = viewer.playerId !== null && game.state === "playing"`.
   - `myPower` is threaded in from `GameDetailPage` (use the existing
     `indexBalances(balances, roster)` map at `src/pages/GameDetailPage.tsx:166-178`
@@ -267,9 +267,9 @@ start implementation.
     simpler list.
 
 - [ ] Task 10. Create `<MinionTileGrid>` component rendering
-  `.minion-tiles` with one `<MinionTile>` per minion of the player's
-  selected syndicate (same source data as today's `MinionBuyPanel` —
-  `api.minionBuys.listForPlayer` at `convex/minionBuys.ts:94-173`).
+      `.minion-tiles` with one `<MinionTile>` per minion of the player's
+      selected syndicate (same source data as today's `MinionBuyPanel` —
+      `api.minionBuys.listForPlayer` at `convex/minionBuys.ts:94-173`).
   - Tile front contents:
     - Top: minion name (2-line clamp, `title={m.description}`).
     - Bottom: one of:
@@ -327,19 +327,19 @@ start implementation.
     (`convex/calls.ts:97-138`).
   - **Syndicate color derivation (client-side join):** `activeCalls`
     currently returns only `playerId, minionId, createdAt, playerName,
-    minionName` (`convex/calls.ts:122-136`) — no syndicate. Derive the
+minionName` (`convex/calls.ts:122-136`) — no syndicate. Derive the
     hue per pill as:
-    ```ts
+    `ts
     const syndicateName =
-      roster.find(p => p._id === call.playerId)?.selectedSyndicate?.name
-      ?? "";
+      roster.find((p) => p._id === call.playerId)?.selectedSyndicate?.name ??
+      "";
     const colorSlot = syndicateName
       ? Array.from(syndicateName).reduce(
-          (h, c) => ((h * 31 + c.charCodeAt(0)) >>> 0),
+          (h, c) => (h * 31 + c.charCodeAt(0)) >>> 0,
           0,
         ) % 8
       : 0;
-    ```
+    `
     Apply as `data-color={colorSlot}`. This is safe because
     `selectSyndicate` only fires during `ready` (`convex/games.ts:88-94`,
     Rule 13) — so during `playing` the syndicate per player is frozen and
@@ -366,11 +366,11 @@ start implementation.
 ### Phase 5 — Unified notes drawer
 
 - [ ] Task 15. Extract the existing notes body into a reusable
-  `<NotesSurface target={…} gameId={…} label={…} />` helper:
+      `<NotesSurface target={…} gameId={…} label={…} />` helper:
   - Currently the form + list live inside `<NotesPopover>` at
     `src/components/NoteIcon.tsx:81-317`. Move the inner pieces (header
-    + list + compose form, but not the popover positioning/backdrop
-    logic) into a new `src/components/NotesSurface.tsx`.
+    - list + compose form, but not the popover positioning/backdrop
+      logic) into a new `src/components/NotesSurface.tsx`.
   - `<NotesPopover>` continues to render `<NotesSurface>` inside its
     absolute-positioned popover (preserves Syndicate Editor behaviour
     per assumption #7).
@@ -381,9 +381,9 @@ start implementation.
     risk of notes regressions.
 
 - [ ] Task 16. Inside the game screen only, replace `<NoteIcon>` with a
-  `<NotesOpener target={…} count={…} label={…} />` button that opens
-  `<NotesDrawer>` pre-targeted to the same target shape. Call sites
-  to update (all in `src/pages/GameDetailPage.tsx`):
+      `<NotesOpener target={…} count={…} label={…} />` button that opens
+      `<NotesDrawer>` pre-targeted to the same target shape. Call sites
+      to update (all in `src/pages/GameDetailPage.tsx`):
   - HUD game-level notes (line ~237).
   - Roster card syndicate notes (Task 9 `<RosterCard>` header).
   - Minion tile notes (optional: expose a small notes icon on the tile
@@ -407,8 +407,8 @@ start implementation.
 ### Phase 6 — GM slide-over overlay
 
 - [ ] Task 18. Add a `[GM]` button to the HUD, visible when
-  `viewer.isGm && game.state !== "ready"`. Clicking opens a
-  `<GmOverlay>` — a `<Drawer>` with `wide` modifier (Task 6).
+      `viewer.isGm && game.state !== "ready"`. Clicking opens a
+      `<GmOverlay>` — a `<Drawer>` with `wide` modifier (Task 6).
   - Contents:
     - `.drawer-section` header: `<h4>GM Tools</h4>`.
     - `.drawer-section` per player (same order as roster). For each:
@@ -429,18 +429,18 @@ start implementation.
     baseline layout.
 
 - [ ] Task 19. (Optional polish; skip if scope-squeezed.) Wire the GM
-  overlay open state through URL query `?gm=1`. Use `useSearchParams`
-  from `react-router-dom`. Rationale: easier deep-linking for GM work
-  during a live game.
+      overlay open state through URL query `?gm=1`. Use `useSearchParams`
+      from `react-router-dom`. Rationale: easier deep-linking for GM work
+      during a live game.
 
 ### Phase 7 — Health checks + manual verification
 
 - [ ] Task 20. Run `npm run typecheck`; resolve any regressions.
 - [ ] Task 21. Run `npm run lint`; address new issues.
 - [ ] Task 22. Run `npm test`; ensure existing tests
-  (`convex/notes.test.ts`) pass. No new tests mandated — same rationale
-  as v2 Task 23 (project has no React Testing Library / jsdom setup;
-  adding one is out of scope).
+      (`convex/notes.test.ts`) pass. No new tests mandated — same rationale
+      as v2 Task 23 (project has no React Testing Library / jsdom setup;
+      adding one is out of scope).
 - [ ] Task 23. Run `npm run build`; verify production bundle is clean.
 - [ ] Task 24. Manual visual verification matrix:
   - **Playing, self, 3 players × 8 minions, 2 calls.** Left queue rail
@@ -481,7 +481,7 @@ start implementation.
     `playing` per Task 7); GM overlay Δ-power section hidden per Task 18;
     standings rail visible at ≥1280px.
 
-  *Execution note:* as in v2, manual visual verification requires a live
+  _Execution note:_ as in v2, manual visual verification requires a live
   dev server and Convex state. The `typecheck` / `lint` / `test` /
   `build` gates remain the autonomous pass criteria; the matrix above is
   the human sign-off checklist.

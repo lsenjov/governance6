@@ -13,38 +13,38 @@ default; comfortable dark mode toggleable.
 
 Replace `:root` (`src/index.css:1-28`) and add semantic category tokens:
 
-| Token             | Value      | Role                                  |
-| ----------------- | ---------- | ------------------------------------- |
-| `--bg`            | `#faf8f4`  | Warm off-white                        |
-| `--bg-elevated`   | `#ffffff`  | Card surface                          |
-| `--bg-muted`      | `#f1ede5`  | Inset / subtle bands                  |
-| `--fg`            | `#1f2933`  | Ink, slightly cool                    |
-| `--fg-muted`      | `#5a6573`  | Secondary text                        |
-| `--border`        | `#e3ddd1`  | Soft hairline                         |
-| `--accent`        | `#4a7c59`  | Sage green — primary action           |
-| `--accent-fg`     | `#ffffff`  | White on sage                         |
-| `--accent-soft`   | `#dfe9e1`  | Tint surface for accent badges        |
-| `--c-power`       | `#4a7c59`  | Sage — POWER                          |
-| `--c-syndicate`   | `#3d5a8a`  | Indigo — SYNDICATE                    |
-| `--c-drawback`    | `#c66b4a`  | Terracotta — DRAWBACK                 |
-| `--c-minion`      | `#3d7ea6`  | Sky — MINION                          |
-| `--c-note`        | `#a07a3a`  | Mustard — NOTE                        |
-| `--success`       | `#3d7a4f`  | Deeper sage                           |
-| `--danger`        | `#b34a3a`  | Warm red                              |
-| `--warning`       | `#c9912e`  | Amber                                 |
-| `--info`          | `#3d7ea6`  | Sky                                   |
+| Token           | Value     | Role                           |
+| --------------- | --------- | ------------------------------ |
+| `--bg`          | `#faf8f4` | Warm off-white                 |
+| `--bg-elevated` | `#ffffff` | Card surface                   |
+| `--bg-muted`    | `#f1ede5` | Inset / subtle bands           |
+| `--fg`          | `#1f2933` | Ink, slightly cool             |
+| `--fg-muted`    | `#5a6573` | Secondary text                 |
+| `--border`      | `#e3ddd1` | Soft hairline                  |
+| `--accent`      | `#4a7c59` | Sage green — primary action    |
+| `--accent-fg`   | `#ffffff` | White on sage                  |
+| `--accent-soft` | `#dfe9e1` | Tint surface for accent badges |
+| `--c-power`     | `#4a7c59` | Sage — POWER                   |
+| `--c-syndicate` | `#3d5a8a` | Indigo — SYNDICATE             |
+| `--c-drawback`  | `#c66b4a` | Terracotta — DRAWBACK          |
+| `--c-minion`    | `#3d7ea6` | Sky — MINION                   |
+| `--c-note`      | `#a07a3a` | Mustard — NOTE                 |
+| `--success`     | `#3d7a4f` | Deeper sage                    |
+| `--danger`      | `#b34a3a` | Warm red                       |
+| `--warning`     | `#c9912e` | Amber                          |
+| `--info`        | `#3d7ea6` | Sky                            |
 
 Dark-mode tokens (under `[data-theme="soft-civic-night"]`):
 
-| Token             | Value     |
-| ----------------- | --------- |
-| `--bg`            | `#15181d` |
-| `--bg-elevated`   | `#1c2027` |
-| `--bg-muted`      | `#22272f` |
-| `--fg`            | `#e6eaf0` |
-| `--fg-muted`      | `#9aa4b0` |
-| `--border`        | `#2c323b` |
-| `--accent`        | `#7aaf8c` |
+| Token           | Value     |
+| --------------- | --------- |
+| `--bg`          | `#15181d` |
+| `--bg-elevated` | `#1c2027` |
+| `--bg-muted`    | `#22272f` |
+| `--fg`          | `#e6eaf0` |
+| `--fg-muted`    | `#9aa4b0` |
+| `--border`      | `#2c323b` |
+| `--accent`      | `#7aaf8c` |
 
 Category hues stay similar but shift ~10% lighter for the dark surface.
 
@@ -59,7 +59,7 @@ Category hues stay similar but shift ~10% lighter for the dark surface.
 ```
 
 - Body: 15.5px Inter, line-height 1.6, letter-spacing 0.
-- Display: Source Serif 4 for `h1` / `h2` (sentence case, *not* uppercase),
+- Display: Source Serif 4 for `h1` / `h2` (sentence case, _not_ uppercase),
   weight 600, letter-spacing -0.01em. `h3` stays Inter 600.
 - Numerics: tabular-nums Inter for inline; IBM Plex Mono for ledger /
   log columns.
@@ -76,13 +76,13 @@ Add to `index.html`:
 ## Motifs
 
 1. **Larger radii.** `--radius-sm: 6px; --radius-md: 12px; --radius-lg:
-   16px;`. Cards: 12px. Buttons: 8px. Popovers/drawer: 16px (drawer keeps
+16px;`. Cards: 12px. Buttons: 8px. Popovers/drawer: 16px (drawer keeps
    its outer edge straight against the viewport).
 2. **Soft elevation tokens.** Three steps:
    ```css
    --shadow-1: 0 1px 2px rgba(15, 20, 28, 0.06);
    --shadow-2: 0 6px 16px rgba(15, 20, 28, 0.08);
-   --shadow-3: 0 16px 40px rgba(15, 20, 28, 0.10);
+   --shadow-3: 0 16px 40px rgba(15, 20, 28, 0.1);
    ```
 3. **Generous spacing.** Card padding `1.25rem 1.5rem`. Section gaps
    `1.25rem`. Inputs at 40–44px tall for comfortable tap targets.
@@ -144,24 +144,51 @@ Add to `index.html`:
 ## New utilities
 
 ```css
-.entity-power     { border-left: 4px solid var(--c-power); }
-.entity-syndicate { border-left: 4px solid var(--c-syndicate); }
-.entity-drawback  { border-left: 4px solid var(--c-drawback); }
-.entity-minion    { border-left: 4px solid var(--c-minion); }
-.entity-note      { border-left: 4px solid var(--c-note); }
+.entity-power {
+  border-left: 4px solid var(--c-power);
+}
+.entity-syndicate {
+  border-left: 4px solid var(--c-syndicate);
+}
+.entity-drawback {
+  border-left: 4px solid var(--c-drawback);
+}
+.entity-minion {
+  border-left: 4px solid var(--c-minion);
+}
+.entity-note {
+  border-left: 4px solid var(--c-note);
+}
 
-.badge.power     { background: color-mix(in oklch, var(--c-power) 18%, transparent);
-                   color: color-mix(in oklch, var(--c-power) 75%, var(--fg)); }
-.badge.syndicate { background: color-mix(in oklch, var(--c-syndicate) 18%, transparent);
-                   color: color-mix(in oklch, var(--c-syndicate) 75%, var(--fg)); }
-.badge.drawback  { background: color-mix(in oklch, var(--c-drawback) 18%, transparent);
-                   color: color-mix(in oklch, var(--c-drawback) 75%, var(--fg)); }
-.badge.minion    { background: color-mix(in oklch, var(--c-minion) 18%, transparent);
-                   color: color-mix(in oklch, var(--c-minion) 75%, var(--fg)); }
+.badge.power {
+  background: color-mix(in oklch, var(--c-power) 18%, transparent);
+  color: color-mix(in oklch, var(--c-power) 75%, var(--fg));
+}
+.badge.syndicate {
+  background: color-mix(in oklch, var(--c-syndicate) 18%, transparent);
+  color: color-mix(in oklch, var(--c-syndicate) 75%, var(--fg));
+}
+.badge.drawback {
+  background: color-mix(in oklch, var(--c-drawback) 18%, transparent);
+  color: color-mix(in oklch, var(--c-drawback) 75%, var(--fg));
+}
+.badge.minion {
+  background: color-mix(in oklch, var(--c-minion) 18%, transparent);
+  color: color-mix(in oklch, var(--c-minion) 75%, var(--fg));
+}
 
-.surface-1 { background: var(--bg-elevated); box-shadow: var(--shadow-1); }
-.surface-2 { background: var(--bg-elevated); box-shadow: var(--shadow-2); }
-.surface-3 { background: var(--bg-elevated); box-shadow: var(--shadow-3); }
+.surface-1 {
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-1);
+}
+.surface-2 {
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-2);
+}
+.surface-3 {
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-3);
+}
 
 .focus-ring:focus-visible {
   outline: 3px solid color-mix(in oklch, var(--accent) 35%, transparent);

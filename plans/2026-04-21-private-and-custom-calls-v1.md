@@ -40,7 +40,7 @@ Extend the Call Queue so a Player may enqueue a **custom call** (free-form text 
   - Add `kind: v.optional(v.union(v.literal("minion"), v.literal("custom")))`. Treat undefined as `"minion"` in readers for back-compat with existing rows (all of which have `minionId` set).
   - Add `label: v.optional(v.string())`.
   - Keep all existing indexes unchanged (`by_game_active_time`, `by_game_removed_time`, `by_game_player_active`); the invariants they encode are kind-independent.
-  Rationale: smallest possible change that admits custom calls without disturbing existing rows or invariants.
+    Rationale: smallest possible change that admits custom calls without disturbing existing rows or invariants.
 
 ### Phase 2 — Backend mutations
 
@@ -52,7 +52,7 @@ Extend the Call Queue so a Player may enqueue a **custom call** (free-form text 
   - Require `requireGamePlayer` and `game.state === "playing"` (mirrors current minion mutation).
   - Validate `label`: trim; reject empty; reject length > 80 chars. Rationale: prevents blank or oversized entries; 80 matches short-title conventions elsewhere in the codebase (syndicate leader etc.) and is enough for "Need GM attention" style messages.
   - Use the helper: insert `{ gameId, playerId, kind: "custom", label, createdAt, isActive: true }` when no active call, otherwise patch `{ kind: "custom", label, minionId: undefined }` and treat same-`label` + `kind==="custom"` as a no-op.
-  Rationale: keeps a single clean entry point for custom calls; the Private button is a client-side shortcut, not a server-side concept.
+    Rationale: keeps a single clean entry point for custom calls; the Private button is a client-side shortcut, not a server-side concept.
 
 - [ ] Task 5. Leave `removeCall` (`convex/calls.ts:76-92`) unchanged. Rationale: soft-delete is kind-independent.
 
@@ -62,7 +62,7 @@ Extend the Call Queue so a Player may enqueue a **custom call** (free-form text 
   - When `kind === "custom"`: return `{ ..., kind: "custom", label: c.label ?? "" }` without fetching a minion.
   - Otherwise (including rows with `kind === undefined` for back-compat): resolve `minionId` as today and return `{ ..., kind: "minion", minionId, minionName }`.
   - Keep `playerName` resolution unchanged for both branches.
-  Rationale: single query remains the UI's source of truth; avoids a second round-trip from the client.
+    Rationale: single query remains the UI's source of truth; avoids a second round-trip from the client.
 
 - [ ] Task 7. Mirror the same branching in `recentlyRemovedCalls` (`convex/calls.ts:143-181`). Rationale: removed history must display the label for a custom call that was subsequently removed (or whose player switched off it — because our replace-in-place means a replaced call never appears in history, only GM-removed ones do).
 
@@ -73,8 +73,8 @@ Extend the Call Queue so a Player may enqueue a **custom call** (free-form text 
 - [ ] Task 9. In `src/pages/GameDetailPage.tsx:922-999` `CallQueuePanel`, update the active-list renderer to switch on `c.kind`:
   - For `"minion"`: keep the current `<strong>{playerName}</strong> called <strong>{minionName}</strong>` layout.
   - For `"custom"`: render `<strong>{playerName}</strong> called <strong>{label}</strong>` (no special badge; the label already communicates intent, per the feedback "Private Call" is just a specific label).
-  Apply the same branching to the recently-removed list.
-  Rationale: identical information architecture; only the trailing noun changes.
+    Apply the same branching to the recently-removed list.
+    Rationale: identical information architecture; only the trailing noun changes.
 
 - [ ] Task 10. Add a new sub-component `CustomCallForm` inside `CallQueuePanel` visible only when the viewer is a Player (not GM) **and** `gameState === "playing"`. It contains:
   - A controlled `<input>` for a custom label, client-side length-capped at 80 chars with trim-on-submit.
@@ -82,7 +82,7 @@ Extend the Call Queue so a Player may enqueue a **custom call** (free-form text 
   - A secondary "Private Call" button that calls the same mutation with a hard-coded `label: "Private Call"`.
   - Show a concise help line: "Replaces your current call, if any." to make the one-active-per-player rule discoverable.
   - Error surface using the same pattern as other mutations on this page.
-  Rationale: placing the form in the Call Queue section (rather than inside `MinionBuyPanel`) guarantees reachability for Players with no Syndicate selected; grouping it with the queue also provides immediate visual confirmation of the submitted call.
+    Rationale: placing the form in the Call Queue section (rather than inside `MinionBuyPanel`) guarantees reachability for Players with no Syndicate selected; grouping it with the queue also provides immediate visual confirmation of the submitted call.
 
 - [ ] Task 11. Extend `CallQueuePanel`'s props to include the viewer (e.g. `{ gameId, isGm, isPlayer, gameState }`). Update the call site in `src/pages/GameDetailPage.tsx:70-100` to pass the new props from the existing `viewer` and `game.state` values. Rationale: component needs to know both whether to render the mutating form and whether mutations are currently allowed.
 
@@ -99,7 +99,7 @@ Extend the Call Queue so a Player may enqueue a **custom call** (free-form text 
   - Empty/whitespace-only labels rejected; labels > 80 chars rejected.
   - Non-participant callers rejected; game state must be `"playing"`.
   - GM `removeCall` works on a custom call the same way (soft-delete; appears in removed history with its label intact).
-  Rationale: Rule 22's replace-in-place is the subtlest invariant in this feature (flagged in `plans/2026-04-20-init-v4.md:142`); custom calls must honour it.
+    Rationale: Rule 22's replace-in-place is the subtlest invariant in this feature (flagged in `plans/2026-04-20-init-v4.md:142`); custom calls must honour it.
 
 ### Phase 6 — Docs/comments
 
@@ -120,7 +120,7 @@ Extend the Call Queue so a Player may enqueue a **custom call** (free-form text 
 
 1. **Back-compat read of rows with undefined `kind`.** Existing rows in `calls` have `minionId` set and no `kind` field.
    Mitigation: Readers treat `kind === undefined` as `"minion"` and resolve `minionId` as today. No data migration required.
-2. **Kind/content drift on replace.** Replacing a custom call with a minion call (or vice versa) must patch *both* `kind` and the mutually-exclusive field, or a row could end up with both `minionId` and `label` set.
+2. **Kind/content drift on replace.** Replacing a custom call with a minion call (or vice versa) must patch _both_ `kind` and the mutually-exclusive field, or a row could end up with both `minionId` and `label` set.
    Mitigation: centralise in `upsertActiveCall` helper (Task 2); always write `kind` and explicitly `undefined`-out the unused field in the patch.
 3. **Injection-style abuse via free-form label.** A long or HTML-ish label could break the UI.
    Mitigation: server-side length cap + trim (Task 4); client renders labels as text (React's default escaping) — never `dangerouslySetInnerHTML`.

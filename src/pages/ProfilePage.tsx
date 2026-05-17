@@ -57,9 +57,7 @@ export function ProfilePage() {
         {status.kind === "err" && (
           <div className="error-text">{status.message}</div>
         )}
-        {status.kind === "ok" && (
-          <div className="success-text">Saved.</div>
-        )}
+        {status.kind === "ok" && <div className="success-text">Saved.</div>}
         <button type="submit">Save</button>
       </form>
     </div>

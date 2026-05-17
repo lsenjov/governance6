@@ -19,7 +19,8 @@
   /* Typography */
   --font-body: "Inter", "Helvetica Neue", Arial, sans-serif;
   --font-display: "Archivo Black", "Space Grotesk", "Inter", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 
   /* Layout offsets used by sticky HUD, right rail, and the mobile bottom strip. */
   --hud-height: 3rem;
@@ -645,6 +646,146 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 
+/*
+ * Syndicate Editor — Drawbacks + Minions tables. Each row lives in its
+ * own `<tbody>` so the long-description fallback (Design 2) can pair a
+ * compact summary row with a `colspan` description row that share a
+ * single zebra band. See `plans/2026-05-17-syndicate-editor-read-table-v1.md`.
+ */
+.table-scroll {
+  overflow-x: auto;
+  /* Hard-edged scroll boundary, no rounding. */
+  border: 0;
+}
+
+.table-scroll > table {
+  /* Ensure the table doesn't collapse below the sum of column minima at
+     narrow viewports. */
+  min-width: 640px;
+}
+
+.minion-table caption,
+.drawback-table caption {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 2px solid var(--border);
+  border-bottom: none;
+  caption-side: top;
+}
+
+.minion-table caption strong,
+.drawback-table caption strong {
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+
+.minion-table caption strong.over-cap {
+  color: var(--danger);
+}
+
+/*
+ * Per-tbody zebra alternation. `:nth-of-type` (not `:nth-child`) so the
+ * count is among `<tbody>` siblings and not skewed by `<caption>`,
+ * `<thead>`, `<tfoot>`. The `.editing` tbody is always rendered
+ * elevated so the colspan editor pops visually above the banded reads.
+ */
+table.minion-table > tbody:nth-of-type(odd) > tr > td,
+table.drawback-table > tbody:nth-of-type(odd) > tr > td {
+  background: var(--bg-elevated);
+}
+
+table.minion-table > tbody:nth-of-type(even) > tr > td,
+table.drawback-table > tbody:nth-of-type(even) > tr > td {
+  background: var(--bg-muted);
+}
+
+table.minion-table > tbody.editing > tr > td,
+table.drawback-table > tbody.editing > tr > td {
+  background: var(--bg-elevated);
+}
+
+/*
+ * Critical: restore the 2px inter-tbody separator. The global
+ * `tbody tr:last-child td { border-bottom: none }` rule strips the
+ * border from the final row of EVERY tbody; under the per-row-tbody
+ * structure that fuses adjacent rows into one blob. This override
+ * leaves only the final tbody's bottom border stripped (so the table
+ * outer border supplies the bottom edge).
+ */
+table.minion-table > tbody:not(:last-of-type) > tr:last-child > td,
+table.drawback-table > tbody:not(:last-of-type) > tr:last-child > td {
+  border-bottom: 2px solid var(--border);
+}
+
+/*
+ * Long-description fallback row inside the row's tbody. Looser padding
+ * lets prose breathe; the chip column lives in the row above.
+ */
+tr.description-row td {
+  padding: 0.25rem 0.75rem 0.75rem;
+  color: var(--fg);
+  white-space: pre-wrap;
+}
+
+/*
+ * Colspan cell hosting either the inline edit form (existing row) or
+ * the new-row form (tfoot). Zero padding + no bottom border so the
+ * `.card.tight` wrapper inside provides the only visible frame and we
+ * avoid 2px+2px doubled perimeters.
+ */
+td.editor-cell {
+  padding: 0;
+  vertical-align: top;
+  background: var(--bg-elevated);
+  /*
+   * No bottom border: the inner `.card.tight` supplies the visible
+   * 2px edge. Setting one here would double up against the card's
+   * own bottom border under `border-collapse: collapse`, producing
+   * a 4px black band. The inter-tbody separator override scoped
+   * above keeps adjacent rows visually distinct.
+   */
+  border-bottom: none;
+}
+
+/*
+ * Tfoot collapsed-state container around the [Add ...] button. Padded
+ * so the button's 4px hard shadow has room to land inside the cell
+ * boundary without being cropped by `overflow-x: auto` on the
+ * `.table-scroll` parent.
+ */
+.add-row-bar {
+  padding: 0.5rem 0.75rem;
+}
+
+/*
+ * Read-mode skill chips. Reuses the `.badge` family vocabulary at a
+ * smaller size so dense skill lists wrap cleanly inside the cell.
+ */
+.skill-chip {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  padding: 0.0625rem 0.375rem;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 2px solid var(--border);
+}
+
+.skill-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
 .sign-in-wrapper {
   max-width: 420px;
   margin: 4rem auto;
@@ -1183,4 +1324,3 @@ button.roll-cell.note-timer-cell-clickable:hover .roll-cell-footer {
   align-items: center;
   gap: 0.1rem;
 }
-

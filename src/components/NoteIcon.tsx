@@ -397,9 +397,7 @@ export function NoteList({
                         timer={n.timer}
                         viewerIsGm={n.canDelete}
                         onCycle={
-                          onCycleTimer
-                            ? () => onCycleTimer(n._id)
-                            : undefined
+                          onCycleTimer ? () => onCycleTimer(n._id) : undefined
                         }
                         size="sm"
                       />
@@ -413,9 +411,7 @@ export function NoteList({
                       timer={n.timer}
                       viewerIsGm={n.canDelete}
                       onCycle={
-                        onCycleTimer
-                          ? () => onCycleTimer(n._id)
-                          : undefined
+                        onCycleTimer ? () => onCycleTimer(n._id) : undefined
                       }
                       size="sm"
                     />

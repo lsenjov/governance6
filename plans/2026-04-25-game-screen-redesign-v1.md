@@ -13,18 +13,18 @@ and recommends a combined approach (A + B) as the target design.
 
 ## Background — Where screen space currently bleeds
 
-| Area                                            | File:lines                                 | Problem                                                                           |
-| ----------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------- |
-| Page header                                     | `src/pages/GameDetailPage.tsx:27-56`       | Back link, title, GM line each on their own row                                   |
-| Elapsed timer                                   | `src/pages/GameDetailPage.tsx:129-141`     | Full-width card, 1.1rem strong text, dedicated row                                |
-| GM controls                                     | `src/pages/GameDetailPage.tsx:164-206`     | Separate card, even when only one button is relevant                              |
-| Masonry sections                                | `src/index.css:190-221`                    | Column-first order, large 1.5rem gaps, short sections waste space next to long   |
-| Roster cards                                    | `src/pages/GameDetailPage.tsx:313-371`     | Every player is an elevated card with `1rem 1.25rem` padding + nested minion list |
-| Minion rows                                     | `src/pages/GameDetailPage.tsx:850-921`     | Each minion is its own card with description, skills, and actions stacked         |
-| Call queue                                      | `src/pages/GameDetailPage.tsx:950-992`     | Each call is a card with 3 lines (player/minion/time/remove)                      |
-| POWER + ledger + transfer + GM ledger           | `src/pages/GameDetailPage.tsx:467-511`     | Four stacked cards, always visible when you're the GM                             |
-| GM Tools                                        | `src/pages/GameDetailPage.tsx:530-656`     | Duplicates roster — a second list of every player with expand toggles             |
-| Global card padding                             | `src/index.css:156-162`                    | `1rem 1.25rem` + `1rem` margin on every card, including tiny ones                 |
+| Area                                  | File:lines                             | Problem                                                                           |
+| ------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------- |
+| Page header                           | `src/pages/GameDetailPage.tsx:27-56`   | Back link, title, GM line each on their own row                                   |
+| Elapsed timer                         | `src/pages/GameDetailPage.tsx:129-141` | Full-width card, 1.1rem strong text, dedicated row                                |
+| GM controls                           | `src/pages/GameDetailPage.tsx:164-206` | Separate card, even when only one button is relevant                              |
+| Masonry sections                      | `src/index.css:190-221`                | Column-first order, large 1.5rem gaps, short sections waste space next to long    |
+| Roster cards                          | `src/pages/GameDetailPage.tsx:313-371` | Every player is an elevated card with `1rem 1.25rem` padding + nested minion list |
+| Minion rows                           | `src/pages/GameDetailPage.tsx:850-921` | Each minion is its own card with description, skills, and actions stacked         |
+| Call queue                            | `src/pages/GameDetailPage.tsx:950-992` | Each call is a card with 3 lines (player/minion/time/remove)                      |
+| POWER + ledger + transfer + GM ledger | `src/pages/GameDetailPage.tsx:467-511` | Four stacked cards, always visible when you're the GM                             |
+| GM Tools                              | `src/pages/GameDetailPage.tsx:530-656` | Duplicates roster — a second list of every player with expand toggles             |
+| Global card padding                   | `src/index.css:156-162`                | `1rem 1.25rem` + `1rem` margin on every card, including tiny ones                 |
 
 ## Strategy A — Compaction pass (low risk, ~35% shorter)
 
@@ -57,7 +57,7 @@ Keeps today's structure, tightens every element.
 5. **Kill card-in-card.** Anywhere a `.card` is nested inside another `.card`
    (ledger table, minion list inside roster), use a borderless variant or just
    a divider. Introduce `.card.tight { padding: 0.5rem 0.75rem; margin-bottom:
-   0.5rem }` and use it for list-row cards.
+0.5rem }` and use it for list-row cards.
 
 6. **Inline labels for tiny inputs.** `GmEditPowerForm`
    (`src/pages/GameDetailPage.tsx:616-644`) and `TransferForm`
@@ -68,7 +68,7 @@ Keeps today's structure, tightens every element.
 ## Strategy B — Purpose-built 2-pane layout (removes masonry)
 
 Replace `.section-masonry` (`src/index.css:190-221`) with a layout that
-matches what people *do* on a game screen.
+matches what people _do_ on a game screen.
 
 ```
 ┌──────────────────────────────── sticky HUD ────────────────────────────────┐
@@ -109,7 +109,7 @@ Concretely:
   Ledger moves into an on-demand drawer.
 - **Layout change in CSS**: replace `.section-masonry` with
   `.game-grid { display: grid; grid-template-columns: minmax(0,1fr) 22rem;
-  gap: 1.25rem }` and stack on narrow screens.
+gap: 1.25rem }` and stack on narrow screens.
 - **Ready-state** reuses the same grid but swaps right rail for
   `AddPlayerForm` (GM) or `SyndicateSelector` (player).
 

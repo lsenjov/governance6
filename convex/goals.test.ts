@@ -236,18 +236,18 @@ describe("goals: create authorisation + validation", () => {
   test("keyword length and uniqueness (case-insensitive)", async () => {
     const h = await createHarness();
     await createGoalAsGm(h, { keyword: "Echo" });
-    await expect(
-      createGoalAsGm(h, { keyword: "   " }),
-    ).rejects.toThrow(/empty/i);
+    await expect(createGoalAsGm(h, { keyword: "   " })).rejects.toThrow(
+      /empty/i,
+    );
     await expect(
       createGoalAsGm(h, { keyword: "a".repeat(41) }),
     ).rejects.toThrow(/40/);
-    await expect(
-      createGoalAsGm(h, { keyword: "echo" }),
-    ).rejects.toThrow(/already exists/i);
-    await expect(
-      createGoalAsGm(h, { keyword: "  ECHO  " }),
-    ).rejects.toThrow(/already exists/i);
+    await expect(createGoalAsGm(h, { keyword: "echo" })).rejects.toThrow(
+      /already exists/i,
+    );
+    await expect(createGoalAsGm(h, { keyword: "  ECHO  " })).rejects.toThrow(
+      /already exists/i,
+    );
 
     // Same keyword in a different game is fine.
     const otherGameId = await h.t.run(async (ctx) =>
@@ -257,14 +257,12 @@ describe("goals: create authorisation + validation", () => {
         state: "ready",
       }),
     );
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.goals.createGoal, {
-        gameId: otherGameId,
-        keyword: "Echo",
-        description: "",
-        type: "regular",
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.goals.createGoal, {
+      gameId: otherGameId,
+      keyword: "Echo",
+      description: "",
+      type: "regular",
+    });
   });
 
   test("carrot range and stick range", async () => {
@@ -294,9 +292,9 @@ describe("goals: create authorisation + validation", () => {
   test("create rejected in archived game", async () => {
     const h = await createHarness();
     await archiveGame(h);
-    await expect(
-      createGoalAsGm(h, { keyword: "Late" }),
-    ).rejects.toThrow(/archived/i);
+    await expect(createGoalAsGm(h, { keyword: "Late" })).rejects.toThrow(
+      /archived/i,
+    );
   });
 });
 
@@ -313,18 +311,16 @@ describe("goals: update", () => {
       type: "regular",
     });
 
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.goals.updateGoal, {
-        goalId: id,
-        keyword: "Renamed",
-        description: "new",
-        type: "shared",
-        fromPlayerId: h.ids.playerAId,
-        toPlayerId: h.ids.playerBId,
-        carrot: 7,
-        stick: -3,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.goals.updateGoal, {
+      goalId: id,
+      keyword: "Renamed",
+      description: "new",
+      type: "shared",
+      fromPlayerId: h.ids.playerAId,
+      toPlayerId: h.ids.playerBId,
+      carrot: 7,
+      stick: -3,
+    });
 
     const view = await h.t
       .withIdentity(asUser(h.ids.gmId))
@@ -338,12 +334,10 @@ describe("goals: update", () => {
     expect(view.goals[0].stick).toBe(-3);
 
     await expect(
-      h.t
-        .withIdentity(asUser(h.ids.aId))
-        .mutation(api.goals.updateGoal, {
-          goalId: id,
-          keyword: "Hijacked",
-        }),
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.goals.updateGoal, {
+        goalId: id,
+        keyword: "Hijacked",
+      }),
     ).rejects.toThrow(/Game Master/i);
   });
 
@@ -356,15 +350,13 @@ describe("goals: update", () => {
       carrot: 10,
       stick: -5,
     });
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.goals.updateGoal, {
-        goalId: id,
-        fromPlayerId: null,
-        toPlayerId: null,
-        carrot: null,
-        stick: null,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.goals.updateGoal, {
+      goalId: id,
+      fromPlayerId: null,
+      toPlayerId: null,
+      carrot: null,
+      stick: null,
+    });
     const view = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.goals.listGoalsForGame, { gameId: h.ids.gameId });
@@ -380,20 +372,16 @@ describe("goals: update", () => {
     await createGoalAsGm(h, { keyword: "Whisper" });
 
     await expect(
-      h.t
-        .withIdentity(asUser(h.ids.gmId))
-        .mutation(api.goals.updateGoal, {
-          goalId: id1,
-          keyword: "whisper",
-        }),
+      h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.goals.updateGoal, {
+        goalId: id1,
+        keyword: "whisper",
+      }),
     ).rejects.toThrow(/already exists/i);
 
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.goals.updateGoal, {
-        goalId: id1,
-        keyword: "ECHO",
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.goals.updateGoal, {
+      goalId: id1,
+      keyword: "ECHO",
+    });
   });
 
   test("auto-clear: setting from to existing toPlayerId clears toPlayerId", async () => {
@@ -403,12 +391,10 @@ describe("goals: update", () => {
       fromPlayerId: h.ids.playerAId,
       toPlayerId: h.ids.playerBId,
     });
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.goals.updateGoal, {
-        goalId: id,
-        fromPlayerId: h.ids.playerBId,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.goals.updateGoal, {
+      goalId: id,
+      fromPlayerId: h.ids.playerBId,
+    });
     const view = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.goals.listGoalsForGame, { gameId: h.ids.gameId });
@@ -424,12 +410,10 @@ describe("goals: update", () => {
       toPlayerId: h.ids.playerBId,
     });
     await expect(
-      h.t
-        .withIdentity(asUser(h.ids.gmId))
-        .mutation(api.goals.updateGoal, {
-          goalId: id,
-          toPlayerId: h.ids.playerAId,
-        }),
+      h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.goals.updateGoal, {
+        goalId: id,
+        toPlayerId: h.ids.playerAId,
+      }),
     ).rejects.toThrow(/Clear or change from-player/i);
   });
 
@@ -440,13 +424,11 @@ describe("goals: update", () => {
       fromPlayerId: h.ids.playerAId,
       toPlayerId: h.ids.playerBId,
     });
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.goals.updateGoal, {
-        goalId: id,
-        fromPlayerId: h.ids.playerBId,
-        toPlayerId: h.ids.playerAId,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.goals.updateGoal, {
+      goalId: id,
+      fromPlayerId: h.ids.playerBId,
+      toPlayerId: h.ids.playerAId,
+    });
     const view = await h.t
       .withIdentity(asUser(h.ids.gmId))
       .query(api.goals.listGoalsForGame, { gameId: h.ids.gameId });
@@ -459,12 +441,10 @@ describe("goals: update", () => {
     const id = await createGoalAsGm(h, { keyword: "Frozen" });
     await archiveGame(h);
     await expect(
-      h.t
-        .withIdentity(asUser(h.ids.gmId))
-        .mutation(api.goals.updateGoal, {
-          goalId: id,
-          keyword: "X",
-        }),
+      h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.goals.updateGoal, {
+        goalId: id,
+        keyword: "X",
+      }),
     ).rejects.toThrow(/archived/i);
   });
 });
@@ -518,12 +498,10 @@ describe("goals: assignToPlayer", () => {
     await startGame(h);
     for (const actor of [h.ids.aId, h.ids.bId]) {
       await expect(
-        h.t
-          .withIdentity(asUser(actor))
-          .mutation(api.goals.assignToPlayer, {
-            goalId: id,
-            toPlayerId: h.ids.playerBId,
-          }),
+        h.t.withIdentity(asUser(actor)).mutation(api.goals.assignToPlayer, {
+          goalId: id,
+          toPlayerId: h.ids.playerBId,
+        }),
       ).rejects.toThrow(/no from-player/i);
     }
   });
@@ -536,12 +514,10 @@ describe("goals: assignToPlayer", () => {
     });
     await startGame(h);
     await expect(
-      h.t
-        .withIdentity(asUser(h.ids.bId))
-        .mutation(api.goals.assignToPlayer, {
-          goalId: id,
-          toPlayerId: h.ids.playerAId,
-        }),
+      h.t.withIdentity(asUser(h.ids.bId)).mutation(api.goals.assignToPlayer, {
+        goalId: id,
+        toPlayerId: h.ids.playerAId,
+      }),
     ).rejects.toThrow(/Only the from-player can assign/i);
   });
 
@@ -576,21 +552,17 @@ describe("goals: assignToPlayer", () => {
         toPlayerId: h.ids.playerBId,
       });
     await expect(
-      h.t
-        .withIdentity(asUser(h.ids.aId))
-        .mutation(api.goals.assignToPlayer, {
-          goalId: id,
-          toPlayerId: h.ids.playerAId,
-        }),
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.goals.assignToPlayer, {
+        goalId: id,
+        toPlayerId: h.ids.playerAId,
+      }),
     ).rejects.toThrow(/already has a to-player/i);
 
     // GM can still override via updateGoal.
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.goals.updateGoal, {
-        goalId: id,
-        toPlayerId: null,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.goals.updateGoal, {
+      goalId: id,
+      toPlayerId: null,
+    });
   });
 
   test("rejects from === to self-assign", async () => {
@@ -601,12 +573,10 @@ describe("goals: assignToPlayer", () => {
     });
     await startGame(h);
     await expect(
-      h.t
-        .withIdentity(asUser(h.ids.aId))
-        .mutation(api.goals.assignToPlayer, {
-          goalId: id,
-          toPlayerId: h.ids.playerAId,
-        }),
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.goals.assignToPlayer, {
+        goalId: id,
+        toPlayerId: h.ids.playerAId,
+      }),
     ).rejects.toThrow(/same as from-player/i);
   });
 
@@ -619,12 +589,10 @@ describe("goals: assignToPlayer", () => {
     await startGame(h);
     await archiveGame(h);
     await expect(
-      h.t
-        .withIdentity(asUser(h.ids.aId))
-        .mutation(api.goals.assignToPlayer, {
-          goalId: id,
-          toPlayerId: h.ids.playerBId,
-        }),
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.goals.assignToPlayer, {
+        goalId: id,
+        toPlayerId: h.ids.playerBId,
+      }),
     ).rejects.toThrow(/archived/i);
   });
 });
@@ -683,12 +651,10 @@ describe("goals: assignFromPlayer", () => {
     await startGame(h);
     for (const actor of [h.ids.aId, h.ids.bId, h.ids.outsiderId]) {
       await expect(
-        h.t
-          .withIdentity(asUser(actor))
-          .mutation(api.goals.assignFromPlayer, {
-            goalId: id,
-            fromPlayerId: h.ids.playerAId,
-          }),
+        h.t.withIdentity(asUser(actor)).mutation(api.goals.assignFromPlayer, {
+          goalId: id,
+          fromPlayerId: h.ids.playerAId,
+        }),
       ).rejects.toThrow(/Game Master|not authenticated/i);
     }
   });
@@ -845,13 +811,11 @@ describe("goals: delete and ledger no-op invariant", () => {
     await h.t
       .withIdentity(asUser(h.ids.gmId))
       .mutation(api.goals.clearToPlayer, { goalId: id2 });
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.goals.updateGoal, {
-        goalId: id2,
-        carrot: null,
-        stick: -25,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.goals.updateGoal, {
+      goalId: id2,
+      carrot: null,
+      stick: -25,
+    });
 
     // Delete one of them.
     await h.t
@@ -904,10 +868,7 @@ describe("goals: visibility (listGoalsForGame)", () => {
       description: "GM-only payload",
     });
 
-    const findByKeyword = async (
-      userId: Id<"users">,
-      keyword: string,
-    ) => {
+    const findByKeyword = async (userId: Id<"users">, keyword: string) => {
       const view = await h.t
         .withIdentity(asUser(userId))
         .query(api.goals.listGoalsForGame, { gameId: h.ids.gameId });
@@ -918,9 +879,9 @@ describe("goals: visibility (listGoalsForGame)", () => {
     expect((await findByKeyword(h.ids.gmId, "Both"))?.description).toBe(
       "AB-only payload",
     );
-    expect(
-      (await findByKeyword(h.ids.gmId, "FromOnly"))?.description,
-    ).toBe("Alice-only payload");
+    expect((await findByKeyword(h.ids.gmId, "FromOnly"))?.description).toBe(
+      "Alice-only payload",
+    );
     expect((await findByKeyword(h.ids.gmId, "Orphan"))?.description).toBe(
       "GM-only payload",
     );
@@ -929,12 +890,10 @@ describe("goals: visibility (listGoalsForGame)", () => {
     expect((await findByKeyword(h.ids.aId, "Both"))?.description).toBe(
       "AB-only payload",
     );
-    expect(
-      (await findByKeyword(h.ids.aId, "FromOnly"))?.description,
-    ).toBe("Alice-only payload");
-    expect(
-      (await findByKeyword(h.ids.aId, "Orphan"))?.description,
-    ).toBeNull();
+    expect((await findByKeyword(h.ids.aId, "FromOnly"))?.description).toBe(
+      "Alice-only payload",
+    );
+    expect((await findByKeyword(h.ids.aId, "Orphan"))?.description).toBeNull();
 
     // Bob (to on Both only) sees Both only.
     expect((await findByKeyword(h.ids.bId, "Both"))?.description).toBe(
@@ -943,9 +902,7 @@ describe("goals: visibility (listGoalsForGame)", () => {
     expect(
       (await findByKeyword(h.ids.bId, "FromOnly"))?.description,
     ).toBeNull();
-    expect(
-      (await findByKeyword(h.ids.bId, "Orphan"))?.description,
-    ).toBeNull();
+    expect((await findByKeyword(h.ids.bId, "Orphan"))?.description).toBeNull();
   });
 
   test("non-participant cannot list", async () => {

@@ -138,8 +138,7 @@ export function NoteTimerCell({
 
   let valueNode: React.ReactNode = null;
   if (effective === "running" || effective === "overdue") {
-    const remaining =
-      timer.kind === "ticking" ? timer.dueAt - now : 0;
+    const remaining = timer.kind === "ticking" ? timer.dueAt - now : 0;
     // Stack mm on the top line and ss on the line below. When the
     // timer is overdue the leading `-` is already part of `mm`, so
     // it stays on the top line beside the minutes. Wrapping both

@@ -213,9 +213,7 @@ export const createNote = mutation({
         throw new Error("Only the GM may post a note with a timer.");
       }
       if (
-        !(TIMER_PRESET_MINUTES as readonly number[]).includes(
-          args.timerMinutes,
-        )
+        !(TIMER_PRESET_MINUTES as readonly number[]).includes(args.timerMinutes)
       ) {
         throw new Error(
           `Timer duration must be one of ${TIMER_PRESET_MINUTES.join(", ")} minutes.`,
@@ -481,7 +479,8 @@ export const listGameNotesWithTimers = query({
     // rows project the parent syndicate too).
     const syndicateIdSet = new Set<string>();
     for (const n of timerNotes) {
-      if (n.targetSyndicateId) syndicateIdSet.add(n.targetSyndicateId as string);
+      if (n.targetSyndicateId)
+        syndicateIdSet.add(n.targetSyndicateId as string);
     }
     for (const m of minionById.values()) {
       syndicateIdSet.add(m.syndicateId as string);
@@ -691,7 +690,9 @@ export const listNotesForTarget = query({
         .map((n) => n.attachedRollSetId)
         .filter((id): id is Id<"callRollSets"> => id !== undefined);
       // De-dupe (multiple notes may pin the same roll set).
-      const uniqueIds = Array.from(new Set(rollSetIds.map((id) => id as string)));
+      const uniqueIds = Array.from(
+        new Set(rollSetIds.map((id) => id as string)),
+      );
       const idToRow = new Map<string, RollSetView>();
       for (const idStr of uniqueIds) {
         const row = await ctx.db.get(idStr as Id<"callRollSets">);

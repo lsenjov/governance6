@@ -25,8 +25,8 @@ export function AdminPage() {
       <div className="card">
         <h2>Admin</h2>
         <p className="muted">
-          You do not have site admin privileges. Site admin access can only
-          be granted directly from the database.
+          You do not have site admin privileges. Site admin access can only be
+          granted directly from the database.
         </p>
       </div>
     );
@@ -44,8 +44,7 @@ export function AdminPage() {
         <h3>Syndicates</h3>
         <p className="muted" style={{ fontSize: "0.9rem" }}>
           Site admins can view and edit every non-played syndicate in the
-          system. Played syndicates remain permanently read-only for
-          everyone.
+          system. Played syndicates remain permanently read-only for everyone.
         </p>
         <Link to="/admin/syndicates">All Syndicates →</Link>
       </section>
@@ -205,8 +204,7 @@ function AddPresetDrawbackForm() {
         description,
         // Empty-after-trim → undefined at the boundary. The mutation
         // applies the same normalisation server-side.
-        abbreviation:
-          abbreviation.trim().length > 0 ? abbreviation : undefined,
+        abbreviation: abbreviation.trim().length > 0 ? abbreviation : undefined,
         isRolled,
       });
       setName("");
@@ -272,18 +270,12 @@ function AddPresetDrawbackForm() {
   );
 }
 
-function PresetDrawbackRow({
-  drawback,
-}: {
-  drawback: Doc<"presetDrawbacks">;
-}) {
+function PresetDrawbackRow({ drawback }: { drawback: Doc<"presetDrawbacks"> }) {
   const updateDrawback = useMutation(api.presetDrawbacks.update);
   const removeDrawback = useMutation(api.presetDrawbacks.remove);
   const [name, setName] = useState(drawback.name);
   const [description, setDescription] = useState(drawback.description);
-  const [abbreviation, setAbbreviation] = useState(
-    drawback.abbreviation ?? "",
-  );
+  const [abbreviation, setAbbreviation] = useState(drawback.abbreviation ?? "");
   const [isRolled, setIsRolled] = useState(drawback.isRolled === true);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -370,7 +362,11 @@ function PresetDrawbackRow({
       {err && <div className="error-text">{err}</div>}
       {saved && <div className="success-text">Saved.</div>}
       <div className="row-wrap">
-        <button type="button" onClick={() => void handleSave()} disabled={!dirty}>
+        <button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={!dirty}
+        >
           Save
         </button>
         <button

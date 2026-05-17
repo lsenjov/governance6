@@ -51,9 +51,9 @@ export function AdminSyndicatesListPage() {
       </div>
       <p className="muted">
         Every syndicate in the system. Played syndicates are permanently
-        read-only for everyone, including admins. Open any row in the editor
-        to make changes; cascade and validation rules behave exactly as for
-        the owner.
+        read-only for everyone, including admins. Open any row in the editor to
+        make changes; cascade and validation rules behave exactly as for the
+        owner.
       </p>
 
       {syndicates === undefined && <div className="muted">Loading…</div>}
