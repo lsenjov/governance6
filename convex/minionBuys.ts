@@ -146,7 +146,9 @@ export const listForPlayer = query({
     ]);
     const byMinion = new Map<string, (typeof gpms)[number]>();
     for (const g of gpms) byMinion.set(g.minionId, g);
-    minions.sort((a, b) => a.order - b.order);
+    minions.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    );
     const boughtCount = gpms.filter((g) => g.bought).length;
     const nextPrice =
       boughtCount < MINION_PRICES.length ? MINION_PRICES[boughtCount] : null;

@@ -521,7 +521,6 @@ export const listGoalsForGame = query({
       .query("goals")
       .withIndex("by_game", (q) => q.eq("gameId", args.gameId))
       .collect();
-    goals.sort((a, b) => b._creationTime - a._creationTime);
 
     const players = await ctx.db
       .query("players")
@@ -545,52 +544,77 @@ export const listGoalsForGame = query({
     const myPlayerId = player?._id ?? null;
     const isGm = role === "gm";
 
+    const rows: GoalRow[] = goals.map((g) => {
+      const isFromMe =
+        myPlayerId !== null &&
+        g.fromPlayerId !== undefined &&
+        g.fromPlayerId === myPlayerId;
+      const isToMe =
+        myPlayerId !== null &&
+        g.toPlayerId !== undefined &&
+        g.toPlayerId === myPlayerId;
+      const canSeeDescription = isGm || isFromMe || isToMe;
+      const notArchived = game.state !== "archived";
+      const canAssignFromPlayer =
+        isGm && g.fromPlayerId === undefined && notArchived;
+      const canAssignToPlayer =
+        isFromMe && g.toPlayerId === undefined && notArchived;
+      const canEdit = isGm && notArchived;
+      const canDelete = isGm && notArchived;
+      return {
+        _id: g._id,
+        keyword: g.keyword,
+        type: g.type,
+        description: canSeeDescription ? g.description : null,
+        fromPlayerId: g.fromPlayerId ?? null,
+        fromDisplayName:
+          g.fromPlayerId !== undefined
+            ? (displayNameByPlayerId[g.fromPlayerId] ?? "Unknown")
+            : null,
+        toPlayerId: g.toPlayerId ?? null,
+        toDisplayName:
+          g.toPlayerId !== undefined
+            ? (displayNameByPlayerId[g.toPlayerId] ?? "Unknown")
+            : null,
+        carrot: g.carrot ?? null,
+        stick: g.stick ?? null,
+        createdAt: g.createdAt,
+        isFromMe,
+        isToMe,
+        canAssignFromPlayer,
+        canAssignToPlayer,
+        canEdit,
+        canDelete,
+      };
+    });
+
+    // Sort by viewer-relevance group, then alphabetically by keyword
+    // (case-insensitive). Group rank:
+    //   0 = to-me, 1 = from-me, 2 = assigned (any), 3 = unassigned.
+    // `isToMe` and `isFromMe` are mutually exclusive: the from/to
+    // invariant (`from !== to`) is enforced in every goal mutation,
+    // so a single viewer can't satisfy both. Per-game keyword
+    // uniqueness is enforced case-insensitively so an in-group
+    // keyword tie is impossible — no `_id` tiebreaker needed.
+    rows.sort((a, b) => {
+      const rank = (r: GoalRow) => {
+        if (r.isToMe) return 0;
+        if (r.isFromMe) return 1;
+        if (r.fromPlayerId !== null || r.toPlayerId !== null) return 2;
+        return 3;
+      };
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      return a.keyword.localeCompare(b.keyword, undefined, {
+        sensitivity: "base",
+      });
+    });
+
     return {
       gameState: game.state,
       eligiblePlayers,
-      goals: goals.map((g) => {
-        const isFromMe =
-          myPlayerId !== null &&
-          g.fromPlayerId !== undefined &&
-          g.fromPlayerId === myPlayerId;
-        const isToMe =
-          myPlayerId !== null &&
-          g.toPlayerId !== undefined &&
-          g.toPlayerId === myPlayerId;
-        const canSeeDescription = isGm || isFromMe || isToMe;
-        const notArchived = game.state !== "archived";
-        const canAssignFromPlayer =
-          isGm && g.fromPlayerId === undefined && notArchived;
-        const canAssignToPlayer =
-          isFromMe && g.toPlayerId === undefined && notArchived;
-        const canEdit = isGm && notArchived;
-        const canDelete = isGm && notArchived;
-        return {
-          _id: g._id,
-          keyword: g.keyword,
-          type: g.type,
-          description: canSeeDescription ? g.description : null,
-          fromPlayerId: g.fromPlayerId ?? null,
-          fromDisplayName:
-            g.fromPlayerId !== undefined
-              ? (displayNameByPlayerId[g.fromPlayerId] ?? "Unknown")
-              : null,
-          toPlayerId: g.toPlayerId ?? null,
-          toDisplayName:
-            g.toPlayerId !== undefined
-              ? (displayNameByPlayerId[g.toPlayerId] ?? "Unknown")
-              : null,
-          carrot: g.carrot ?? null,
-          stick: g.stick ?? null,
-          createdAt: g.createdAt,
-          isFromMe,
-          isToMe,
-          canAssignFromPlayer,
-          canAssignToPlayer,
-          canEdit,
-          canDelete,
-        };
-      }),
+      goals: rows,
     };
   },
 });

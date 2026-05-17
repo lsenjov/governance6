@@ -319,40 +319,56 @@ export const listGrantsForGame = query({
       .withIndex("by_game", (q) => q.eq("gameId", args.gameId))
       .collect();
 
-    // Newest first (matches notes ordering).
-    grants.sort((a, b) => b._creationTime - a._creationTime);
-
     const ownerNames = await hydrateOwnerNames(ctx, grants);
 
     const myPlayerId = player?._id ?? null;
     const isGm = role === "gm";
 
+    const rows: GrantRow[] = grants.map((g) => {
+      const isMine = myPlayerId !== null && g.ownerPlayerId === myPlayerId;
+      const canSeeDescription = isGm || isMine;
+      const canTake =
+        role === "player" &&
+        game.state === "playing" &&
+        g.ownerPlayerId === undefined;
+      const canEditPower = isGm && g.ownerPlayerId === undefined;
+      return {
+        _id: g._id,
+        keyword: g.keyword,
+        power: g.power,
+        description: canSeeDescription ? g.description : null,
+        ownerPlayerId: g.ownerPlayerId ?? null,
+        ownerDisplayName: g.ownerPlayerId
+          ? (ownerNames[g.ownerPlayerId] ?? "Unknown")
+          : null,
+        takenAt: g.takenAt ?? null,
+        createdAt: g.createdAt,
+        isMine,
+        canTake,
+        canEditPower,
+      };
+    });
+
+    // Sort by ownership group, then alphabetically by keyword
+    // (case-insensitive). Group rank:
+    //   0 = viewer-owned, 1 = other-owned, 2 = unclaimed.
+    // Per-game keyword uniqueness is enforced case-insensitively
+    // (see keyword-conflict checks in this file), so an in-group
+    // keyword tie is impossible — no `_id` tiebreaker needed.
+    rows.sort((a, b) => {
+      const rank = (r: GrantRow) =>
+        r.isMine ? 0 : r.ownerPlayerId !== null ? 1 : 2;
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      return a.keyword.localeCompare(b.keyword, undefined, {
+        sensitivity: "base",
+      });
+    });
+
     return {
       gameState: game.state,
-      grants: grants.map((g) => {
-        const isMine = myPlayerId !== null && g.ownerPlayerId === myPlayerId;
-        const canSeeDescription = isGm || isMine;
-        const canTake =
-          role === "player" &&
-          game.state === "playing" &&
-          g.ownerPlayerId === undefined;
-        const canEditPower = isGm && g.ownerPlayerId === undefined;
-        return {
-          _id: g._id,
-          keyword: g.keyword,
-          power: g.power,
-          description: canSeeDescription ? g.description : null,
-          ownerPlayerId: g.ownerPlayerId ?? null,
-          ownerDisplayName: g.ownerPlayerId
-            ? (ownerNames[g.ownerPlayerId] ?? "Unknown")
-            : null,
-          takenAt: g.takenAt ?? null,
-          createdAt: g.createdAt,
-          isMine,
-          canTake,
-          canEditPower,
-        };
-      }),
+      grants: rows,
     };
   },
 });

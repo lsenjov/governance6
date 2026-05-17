@@ -974,3 +974,38 @@ describe("goals: visibility (listGoalsForGame)", () => {
     expect(findTo(bView, idAlice)).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Ordering
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("goals: ordering", () => {
+  test("listGoalsForGame sorts by viewer-relevance group then keyword (case-insensitive)", async () => {
+    const h = await createHarness();
+    // Create four goals exercising every group rank for viewer = Alice.
+    //  Zulu:   to = Alice          → group 0 (to-me)
+    //  Yankee: from = Alice        → group 1 (from-me)
+    //  Alpha:  from = Bob          → group 2 (assigned, not Alice)
+    //  Mango:  no assignment       → group 3 (unassigned)
+    await createGoalAsGm(h, { keyword: "Zulu", toPlayerId: h.ids.playerAId });
+    await createGoalAsGm(h, {
+      keyword: "Yankee",
+      fromPlayerId: h.ids.playerAId,
+    });
+    await createGoalAsGm(h, {
+      keyword: "Alpha",
+      fromPlayerId: h.ids.playerBId,
+    });
+    await createGoalAsGm(h, { keyword: "Mango" });
+
+    const view = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.goals.listGoalsForGame, { gameId: h.ids.gameId });
+    expect(view.goals.map((g) => g.keyword)).toEqual([
+      "Zulu",
+      "Yankee",
+      "Alpha",
+      "Mango",
+    ]);
+  });
+});

@@ -611,3 +611,33 @@ describe("treasonGrants: visibility", () => {
     ).rejects.toThrow(/not a participant/i);
   });
 });
+
+describe("treasonGrants: ordering", () => {
+  test("listGrantsForGame sorts by ownership group then keyword (case-insensitive)", async () => {
+    const h = await createHarness();
+    // Create three grants in non-final order to exercise the sort.
+    const zebra = await createGrant(h, { keyword: "Zebra", power: 1 });
+    const alpha = await createGrant(h, { keyword: "Alpha", power: 1 });
+    await createGrant(h, { keyword: "Mango", power: 1 });
+    await startGame(h);
+
+    // Alice takes Zebra → viewer-owned (group 0).
+    await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.treasonGrants.takeGrant, { grantId: zebra });
+    // Bob takes Alpha → other-owned for Alice (group 1).
+    await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .mutation(api.treasonGrants.takeGrant, { grantId: alpha });
+    // Mango remains unclaimed (group 2).
+
+    const view = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.treasonGrants.listGrantsForGame, { gameId: h.ids.gameId });
+    expect(view.grants.map((g) => g.keyword)).toEqual([
+      "Zebra",
+      "Alpha",
+      "Mango",
+    ]);
+  });
+});

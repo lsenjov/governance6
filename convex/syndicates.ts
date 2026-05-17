@@ -235,7 +235,9 @@ export const getWithChildren = query({
         .collect(),
     ]);
     drawbacks.sort((a, b) => a.order - b.order);
-    minions.sort((a, b) => a.order - b.order);
+    minions.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    );
     // `isAdminView` is intentionally `isSiteAdmin && !isOwner`: an admin
     // viewing their own syndicate gets the normal owner experience, not
     // the "Editing as site admin" notice. The owner display name is

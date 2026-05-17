@@ -163,3 +163,37 @@ describe("minions: admin parity", () => {
     ).rejects.toThrow(/played|frozen/i);
   });
 });
+
+describe("minions: ordering", () => {
+  test("listForSyndicate returns minions alphabetically by name (case-insensitive)", async () => {
+    const h = await createAdminHarness();
+    // Insert in non-alphabetical order with `order` values that would
+    // surface a different sequence under the legacy `order` sort. The
+    // new contract is name-alphabetical with case-insensitive
+    // comparison, so the expected order is [alice, Bob, Charlie].
+    await h.t.run(async (ctx) => {
+      await ctx.db.insert("minions", {
+        syndicateId: h.ids.unplayedId,
+        name: "Charlie",
+        skills: [],
+        order: 0,
+      });
+      await ctx.db.insert("minions", {
+        syndicateId: h.ids.unplayedId,
+        name: "alice",
+        skills: [],
+        order: 1,
+      });
+      await ctx.db.insert("minions", {
+        syndicateId: h.ids.unplayedId,
+        name: "Bob",
+        skills: [],
+        order: 2,
+      });
+    });
+    const rows = await h.t
+      .withIdentity(asUser(h.ids.ownerId))
+      .query(api.minions.listForSyndicate, { syndicateId: h.ids.unplayedId });
+    expect(rows.map((m) => m.name)).toEqual(["alice", "Bob", "Charlie"]);
+  });
+});

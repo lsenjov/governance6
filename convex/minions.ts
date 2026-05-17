@@ -210,7 +210,9 @@ export const listForSyndicate = query({
       .query("minions")
       .withIndex("by_syndicate", (q) => q.eq("syndicateId", args.syndicateId))
       .collect();
-    minions.sort((a, b) => a.order - b.order);
+    minions.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    );
     return minions;
   },
 });
