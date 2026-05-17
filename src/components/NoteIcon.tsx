@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -161,15 +162,24 @@ function NotesPopover({
   );
 
   const [err, setErr] = useState<string | null>(null);
-  const [placement, setPlacement] = useState<{
-    vertical: "below" | "above";
-    horizontal: "left" | "right";
-  }>({ vertical: "below", horizontal: "left" });
+  // Viewport-relative pixel coords for the portalled popover. `null`
+  // pre-measure so we can render the popover off-screen on the first
+  // paint without it flashing at (0, 0) inside `document.body`.
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   // Reposition the popover so it never overflows the viewport. Flips above
   // when there isn't room below, and right-aligns to the anchor when there
   // isn't room to extend rightward. Re-measures on resize, scroll, and
   // whenever the popover's own size changes (e.g. notes loading in).
+  //
+  // The popover is rendered through a portal into `document.body` (see
+  // the `createPortal` call in the return statement) so it escapes the
+  // `overflow-y: auto` clipping of ancestor scroll containers — most
+  // notably the slide-over `.drawer` (`src/index.css:952-966`) used by
+  // the Game Log. Because the portalled node is no longer a descendant
+  // of the anchor, we use `position: fixed` plus explicit viewport
+  // coords here instead of the previous `position: absolute` +
+  // `calc(100% + 6px)` parent-relative offsets.
   const popoverRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     const anchor = anchorRef.current;
@@ -177,6 +187,7 @@ function NotesPopover({
     if (!anchor || !popover) return;
 
     const GAP = 6;
+    const EDGE_PAD = 8;
     function reposition() {
       if (!anchor || !popover) return;
       const a = anchor.getBoundingClientRect();
@@ -188,11 +199,33 @@ function NotesPopover({
       const fitsBelow = a.bottom + GAP + p.height <= vh;
       const fitsAbove = a.top - GAP - p.height >= 0;
 
-      setPlacement({
-        horizontal: fitsRight ? "left" : "right",
-        // Only flip above if there's actually more room there.
-        vertical: !fitsBelow && fitsAbove ? "above" : "below",
-      });
+      // Same horizontal/vertical decision as before: left-align to the
+      // anchor when it fits, otherwise right-align; below the anchor
+      // when it fits, otherwise above only when there's actually more
+      // room there.
+      const horizontal: "left" | "right" = fitsRight ? "left" : "right";
+      const vertical: "below" | "above" =
+        !fitsBelow && fitsAbove ? "above" : "below";
+
+      const rawTop =
+        vertical === "below" ? a.bottom + GAP : a.top - GAP - p.height;
+      const rawLeft =
+        horizontal === "left" ? a.left : a.right - p.width;
+
+      // Clamp to the viewport so nothing extends past the edge even on
+      // narrow viewports where neither alignment fits cleanly.
+      const top = Math.max(
+        EDGE_PAD,
+        Math.min(rawTop, vh - p.height - EDGE_PAD),
+      );
+      const left = Math.max(
+        EDGE_PAD,
+        Math.min(rawLeft, vw - p.width - EDGE_PAD),
+      );
+
+      setPos((prev) =>
+        prev && prev.top === top && prev.left === left ? prev : { top, left },
+      );
     }
 
     reposition();
@@ -246,17 +279,20 @@ function NotesPopover({
     }
   }
 
-  return (
+  return createPortal(
     <div
       ref={popoverRef}
       role="dialog"
       aria-label={`Notes for ${label}`}
       className="notes-popover"
       style={{
-        top: placement.vertical === "below" ? "calc(100% + 6px)" : "auto",
-        bottom: placement.vertical === "above" ? "calc(100% + 6px)" : "auto",
-        left: placement.horizontal === "left" ? 0 : "auto",
-        right: placement.horizontal === "right" ? 0 : "auto",
+        // Pre-measure: render off-screen so the popover can size itself
+        // before we know where to put it; the `useLayoutEffect` above
+        // runs synchronously before paint and replaces these with real
+        // coords, so users never see the off-screen frame.
+        top: pos ? pos.top : -9999,
+        left: pos ? pos.left : -9999,
+        visibility: pos ? "visible" : "hidden",
       }}
     >
       <div className="notes-popover-header">
@@ -292,7 +328,8 @@ function NotesPopover({
         className="notes-popover-form"
         timerEligible={timerCtx?.timerEligible ?? false}
       />
-    </div>
+    </div>,
+    document.body,
   );
 }
 

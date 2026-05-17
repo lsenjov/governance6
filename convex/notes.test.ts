@@ -582,6 +582,102 @@ describe("notes: counts query", () => {
       });
     expect(gmMinionList).toHaveLength(gmCounts.byMinion[h.ids.minionId]);
   });
+
+  /**
+   * Plan: `plans/2026-05-17-game-log-minion-notes-v1.md` Task 6 / Design
+   * Decision 9. The Game Log drawer surfaces a `<NoteIcon>` for the
+   * minion on each `kind === "minion"` row in Recently Removed Calls
+   * and feeds it from the same shared `getNoteCountsForGameView`
+   * subscription used everywhere else on the page. The invariant is
+   * that note counts are keyed by minion id, not by call state — i.e.
+   * removing the call must not change `byMinion[minionId]`.
+   */
+  test("byMinion counts are unchanged by call removal (note counts are scoped by minion id, not call state)", async () => {
+    const h = await createHarness();
+
+    // Setup playing game with Raven bought by Alice (inline; no new
+    // helper per plan instructions — uses only existing api calls).
+    await h.t.run(async (ctx) => {
+      // Ensure every player on the game has a syndicate selected
+      // (the game-start transition requires it).
+      const allPlayers = await ctx.db
+        .query("players")
+        .withIndex("by_game_user", (q) => q.eq("gameId", h.ids.gameId))
+        .collect();
+      for (const row of allPlayers) {
+        if (!row.selectedSyndicateId) {
+          await ctx.db.patch(row._id, {
+            selectedSyndicateId: h.ids.syndicateId,
+          });
+        }
+      }
+      // Mark Raven as bought for Alice so addOrReplaceCall succeeds.
+      await ctx.db.insert("gamePlayerMinions", {
+        gameId: h.ids.gameId,
+        playerId: h.ids.playerAId,
+        minionId: h.ids.minionId,
+        bought: true,
+        boughtAt: Date.now(),
+        pricePaid: 0,
+      });
+    });
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.games.transitionState, {
+        gameId: h.ids.gameId,
+        target: "playing",
+      });
+
+    // Alice places a call on Raven (the call this row will represent
+    // once removed).
+    const aliceCallId = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.calls.addOrReplaceCall, {
+        gameId: h.ids.gameId,
+        minionId: h.ids.minionId,
+      });
+
+    // Alice authors one public + one private note on the minion while
+    // her call is active.
+    await h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "minion",
+      targetMinionId: h.ids.minionId,
+      body: "alice public on minion",
+      visibility: "public",
+    });
+    await h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "minion",
+      targetMinionId: h.ids.minionId,
+      body: "alice private on minion",
+      visibility: "private",
+    });
+
+    // GM removes the call — the row will now surface in Recently
+    // Removed Calls, which is where the new icon is rendered.
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.removeCall, { callId: aliceCallId });
+
+    // Assert AFTER removal: byMinion counts are still keyed by
+    // minionId and unaffected by the call's lifecycle.
+    const authorCounts = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.notes.getNoteCountsForGameView, { gameId: h.ids.gameId });
+    expect(authorCounts.byMinion[h.ids.minionId]).toBe(2);
+
+    const gmCounts = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.getNoteCountsForGameView, { gameId: h.ids.gameId });
+    expect(gmCounts.byMinion[h.ids.minionId]).toBe(2);
+
+    // Bob is a non-author Player: sees only the public note.
+    const bobCounts = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.notes.getNoteCountsForGameView, { gameId: h.ids.gameId });
+    expect(bobCounts.byMinion[h.ids.minionId]).toBe(1);
+  });
 });
 
 /**

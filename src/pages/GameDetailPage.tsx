@@ -87,6 +87,7 @@ export function GameDetailPage() {
         startedAt={game.startedAt ?? null}
         rosterSize={roster.length}
         gameNoteCount={resolveNoteCount(noteCounts, { kind: "game" })}
+        noteCounts={noteCounts}
         hideManagementControls={hideManagementControls}
         onHideManagementControlsChange={setHideManagementControls}
       />
@@ -241,6 +242,7 @@ function GameHud({
   startedAt,
   rosterSize,
   gameNoteCount,
+  noteCounts,
   hideManagementControls,
   onHideManagementControlsChange,
 }: {
@@ -252,6 +254,7 @@ function GameHud({
   startedAt: number | null;
   rosterSize: number;
   gameNoteCount: number;
+  noteCounts: ReturnType<typeof useNotesCountMap>;
   hideManagementControls: boolean;
   onHideManagementControlsChange: (next: boolean) => void;
 }) {
@@ -318,7 +321,12 @@ function GameHud({
         </button>
       </header>
       {logOpen && (
-        <GameLogDrawer gameId={gameId} onClose={() => setLogOpen(false)} />
+        <GameLogDrawer
+          gameId={gameId}
+          noteCounts={noteCounts}
+          hideManagementControls={hideManagementControls}
+          onClose={() => setLogOpen(false)}
+        />
       )}
       {viewerIsGm && gmToolsOpen && (
         <GmToolsDrawer
@@ -822,9 +830,13 @@ function ActionPopover({
  */
 function GameLogDrawer({
   gameId,
+  noteCounts,
+  hideManagementControls,
   onClose,
 }: {
   gameId: GameId;
+  noteCounts: ReturnType<typeof useNotesCountMap>;
+  hideManagementControls: boolean;
   onClose: () => void;
 }) {
   const removed = useQuery(api.calls.recentlyRemovedCalls, { gameId });
@@ -848,6 +860,21 @@ function GameLogDrawer({
                   <>
                     <span className="muted"> called </span>
                     <strong>{c.minionName}</strong>
+                    <span
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ display: "inline-flex", marginLeft: "0.25rem" }}
+                    >
+                      <NoteIcon
+                        gameId={gameId}
+                        target={{ kind: "minion", minionId: c.minionId }}
+                        count={resolveNoteCount(noteCounts, {
+                          kind: "minion",
+                          minionId: c.minionId,
+                        })}
+                        label={c.minionName}
+                        hideManagementControls={hideManagementControls}
+                      />
+                    </span>
                   </>
                 ) : (
                   <>

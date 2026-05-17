@@ -886,10 +886,16 @@ body:has(.sign-in-wrapper) {
   font-weight: 700;
 }
 
+/*
+ * Notes popover. Rendered through a portal into `document.body` (see
+ * `src/components/NoteIcon.tsx`) so it escapes the `overflow-y: auto`
+ * clipping of ancestor scroll containers like the slide-over
+ * `.drawer`. Positioned with `position: fixed` plus explicit pixel
+ * `top` / `left` set inline from JS \u2014 do not add `top` / `left`
+ * defaults here.
+ */
 .notes-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
+  position: fixed;
   z-index: 50;
   width: min(22rem, 90vw);
   background: var(--bg-elevated);
