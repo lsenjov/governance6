@@ -253,17 +253,25 @@ export const listForPlayer = query({
     const nextPrice =
       boughtCount < MINION_PRICES.length ? MINION_PRICES[boughtCount] : null;
 
+    // Other Players may only see the bought Minions of this Player, and
+    // never their skills. The GM and the Player themselves see everything.
+    const canSeeAll = isGm || isSelf;
+
+    const visibleMinions = canSeeAll
+      ? minions
+      : minions.filter((m) => byMinion.get(m._id)?.bought === true);
+
     return {
       isSelf,
       syndicateId: player.selectedSyndicateId,
-      minions: minions.map((m) => {
+      minions: visibleMinions.map((m) => {
         const row = byMinion.get(m._id);
         return {
           _id: m._id,
           name: m.name,
           accent: m.accent,
           description: m.description,
-          skills: m.skills,
+          skills: canSeeAll ? m.skills : [],
           order: m.order,
           bought: row?.bought ?? false,
           pricePaid: row?.pricePaid,

@@ -356,3 +356,66 @@ describe("minionBuys.toggleNextMinion", () => {
     ).rejects.toThrow(/playing/i);
   });
 });
+
+describe("minionBuys.listForPlayer visibility", () => {
+  test("self sees every minion (incl. unbought) with skills", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    const data = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.minionBuys.listForPlayer, {
+        gameId: h.ids.gameId,
+        playerId: h.ids.playerAId,
+      });
+
+    expect(data!.isSelf).toBe(true);
+    expect(data!.minions.map((m) => m._id).sort()).toEqual(
+      [h.ids.minionAId, h.ids.minionBId, h.ids.unboughtMinionId].sort(),
+    );
+    for (const m of data!.minions) {
+      expect(m.skills).toEqual(["s"]);
+    }
+  });
+
+  test("GM sees every minion (incl. unbought) with skills", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    const data = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.minionBuys.listForPlayer, {
+        gameId: h.ids.gameId,
+        playerId: h.ids.playerAId,
+      });
+
+    expect(data!.minions.map((m) => m._id).sort()).toEqual(
+      [h.ids.minionAId, h.ids.minionBId, h.ids.unboughtMinionId].sort(),
+    );
+    for (const m of data!.minions) {
+      expect(m.skills).toEqual(["s"]);
+    }
+  });
+
+  test("other player sees only bought minions, without skills", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    // Bob views Alice: Alice bought MinionA and MinionB only.
+    const data = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.minionBuys.listForPlayer, {
+        gameId: h.ids.gameId,
+        playerId: h.ids.playerAId,
+      });
+
+    expect(data!.isSelf).toBe(false);
+    expect(data!.minions.map((m) => m._id).sort()).toEqual(
+      [h.ids.minionAId, h.ids.minionBId].sort(),
+    );
+    for (const m of data!.minions) {
+      expect(m.bought).toBe(true);
+      expect(m.skills).toEqual([]);
+    }
+  });
+});
