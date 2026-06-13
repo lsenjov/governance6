@@ -1443,7 +1443,7 @@ describe("notes: timers", () => {
 });
 
 /**
- * GM Todo Drawer — `listGameNotesWithTimers`.
+ * Notes drawer timer aggregation — `listGameTimerNotes`.
  *
  * Plan: `plans/2026-04-28-gm-todo-drawer-v1.md` Task 3.
  *
@@ -1453,7 +1453,7 @@ describe("notes: timers", () => {
  * `createdAt` descending (newest-first), matching the rest of the
  * notes UI.
  */
-describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
+describe("notes: timer aggregation (listGameTimerNotes)", () => {
   /** Same fixture skeleton used by `notes: timers`. */
   async function preparePlayingGame(h: Harness, playerUserId: Id<"users">) {
     const playerId = await h.t.run(async (ctx) => {
@@ -1512,12 +1512,12 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
     await expect(
       h.t
         .withIdentity(asUser(h.ids.aId))
-        .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId }),
+        .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId }),
     ).rejects.toThrow();
     await expect(
       h.t
         .withIdentity(asUser(h.ids.outsiderId))
-        .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId }),
+        .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId }),
     ).rejects.toThrow();
   });
 
@@ -1528,7 +1528,7 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
     await createGameNote(h, h.ids.gmId, "no clock");
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
-      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+      .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId });
     expect(rows).toEqual([]);
   });
 
@@ -1548,7 +1548,7 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
       });
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
-      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+      .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId });
     expect(rows.map((r) => r._id)).toEqual([timerNoteId]);
   });
 
@@ -1565,7 +1565,7 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
     });
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
-      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+      .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId });
     expect(rows).toHaveLength(1);
     const row = rows[0];
     expect(row.targetKind).toBe("minion");
@@ -1592,7 +1592,7 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
     });
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
-      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+      .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId });
     expect(rows).toHaveLength(1);
     const row = rows[0];
     expect(row.targetKind).toBe("syndicate");
@@ -1615,7 +1615,7 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
     });
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
-      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+      .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId });
     expect(rows).toHaveLength(1);
     const row = rows[0];
     expect(row.targetKind).toBe("game");
@@ -1641,7 +1641,7 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
     });
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
-      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+      .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId });
     expect(rows).toHaveLength(1);
     const row = rows[0];
     expect(row.minionName).toBe("Raven");
@@ -1677,7 +1677,7 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
     });
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
-      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+      .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId });
     expect(rows).toHaveLength(1);
     const row = rows[0];
     expect(row.syndicateName).toBe("Orphan Cabal");
@@ -1759,7 +1759,7 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
 
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
-      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+      .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId });
     const order = rows.map((r) => r._id);
     // Strict createdAt-desc, regardless of timer kind:
     //   doneNewer (5_000), tickNear (4_000), dueManual (3_000),
@@ -1795,7 +1795,7 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
       });
     const rows = await h.t
       .withIdentity(asUser(emailOnlyGmId))
-      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+      .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId });
     expect(rows[0].authorDisplayName).toBe("");
     // Note: the chain is `displayName ?? email ?? "Unknown"`. Empty
     // string is a valid `displayName`, so it wins. This documents
@@ -1839,7 +1839,7 @@ describe("notes: GM Todo Drawer (listGameNotesWithTimers)", () => {
     });
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
-      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+      .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId });
     expect(rows).toHaveLength(1);
     expect(rows[0].body).toBe("this game timer");
   });
@@ -2144,13 +2144,7 @@ describe("notes on grants/goals: visibility", () => {
       keyword: "Whisper",
       description: "redacted-for-B",
     });
-    await createGrantNote(
-      h,
-      h.ids.aId,
-      grantId,
-      "public note body",
-      "public",
-    );
+    await createGrantNote(h, h.ids.aId, grantId, "public note body", "public");
 
     // Description is redacted to Bob (no ownership).
     const grantsView = await h.t
@@ -2174,13 +2168,7 @@ describe("notes on grants/goals: visibility", () => {
       description: "redacted",
       fromPlayerId: h.ids.playerAId,
     });
-    await createGoalNote(
-      h,
-      h.ids.aId,
-      goalId,
-      "public goal note",
-      "public",
-    );
+    await createGoalNote(h, h.ids.aId, goalId, "public goal note", "public");
 
     const goalsView = await h.t
       .withIdentity(asUser(h.ids.bId))
@@ -2481,7 +2469,7 @@ describe("notes on grants/goals: count query", () => {
   });
 });
 
-describe("notes on grants/goals: timer eligibility + GM Todo projection", () => {
+describe("notes on grants/goals: timer eligibility + timer-note projection", () => {
   test("getTimerCreateContext returns timerEligible=false for grant and goal", async () => {
     // Plan Task 33.
     const h = await createHarness();
@@ -2561,28 +2549,24 @@ describe("notes on grants/goals: timer eligibility + GM Todo projection", () => 
 
     // GM authors timer-bearing notes on both targets (server accepts even
     // though the UI never offers the buttons for these kinds).
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.notes.createNote, {
-        gameId: h.ids.gameId,
-        targetKind: "grant",
-        targetGrantId: grantId,
-        body: "grant timer",
-        timerMinutes: 5,
-      });
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.notes.createNote, {
-        gameId: h.ids.gameId,
-        targetKind: "goal",
-        targetGoalId: goalId,
-        body: "goal timer",
-        timerMinutes: 5,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "grant",
+      targetGrantId: grantId,
+      body: "grant timer",
+      timerMinutes: 5,
+    });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "goal",
+      targetGoalId: goalId,
+      body: "goal timer",
+      timerMinutes: 5,
+    });
 
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
-      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+      .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId });
     expect(rows).toHaveLength(2);
 
     const grantRow = rows.find((r) => r.targetKind === "grant");
@@ -2604,7 +2588,7 @@ describe("notes on grants/goals: timer eligibility + GM Todo projection", () => 
     await expect(
       h.t
         .withIdentity(asUser(h.ids.aId))
-        .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId }),
+        .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId }),
     ).rejects.toThrow();
   });
 
@@ -2613,28 +2597,24 @@ describe("notes on grants/goals: timer eligibility + GM Todo projection", () => 
     const grantId = await createGrant(h, { keyword: "Orphan" });
     const goalId = await createGoal(h, { keyword: "Drifter" });
 
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.notes.createNote, {
-        gameId: h.ids.gameId,
-        targetKind: "grant",
-        targetGrantId: grantId,
-        body: "unowned grant timer",
-        timerMinutes: 5,
-      });
-    await h.t
-      .withIdentity(asUser(h.ids.gmId))
-      .mutation(api.notes.createNote, {
-        gameId: h.ids.gameId,
-        targetKind: "goal",
-        targetGoalId: goalId,
-        body: "unowned goal timer",
-        timerMinutes: 5,
-      });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "grant",
+      targetGrantId: grantId,
+      body: "unowned grant timer",
+      timerMinutes: 5,
+    });
+    await h.t.withIdentity(asUser(h.ids.gmId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "goal",
+      targetGoalId: goalId,
+      body: "unowned goal timer",
+      timerMinutes: 5,
+    });
 
     const rows = await h.t
       .withIdentity(asUser(h.ids.gmId))
-      .query(api.notes.listGameNotesWithTimers, { gameId: h.ids.gameId });
+      .query(api.notes.listGameTimerNotes, { gameId: h.ids.gameId });
     const grantRow = rows.find((r) => r.targetKind === "grant");
     const goalRow = rows.find((r) => r.targetKind === "goal");
     expect(grantRow!.grantKeyword).toBe("Orphan");

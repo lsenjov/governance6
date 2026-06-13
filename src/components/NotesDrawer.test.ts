@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ReactElement } from "react";
-import { formatGmTodoTarget } from "./GmTodoDrawer";
-import type { GmTodoNoteRow } from "../../convex/notes";
+import { formatNoteTarget } from "./NotesDrawer";
+import type { TimerNoteRow } from "../../convex/notes";
 import type { Id } from "../../convex/_generated/dataModel";
 
 /**
@@ -9,7 +9,7 @@ import type { Id } from "../../convex/_generated/dataModel";
  *
  * Plan: `plans/2026-04-28-gm-todo-drawer-v1.md` Task 13.
  *
- * Covers `formatGmTodoTarget(row)` — JSX assembly for the target
+ * Covers `formatNoteTarget(row)` — JSX assembly for the target
  * context line. Tested by inspecting the React element tree directly
  * so we don't drag in a DOM (Vitest env: edge-runtime).
  *
@@ -17,7 +17,7 @@ import type { Id } from "../../convex/_generated/dataModel";
  * / click-cell branches are covered by the broader behavioural stack
  * (manual smoke + the existing notes test corpus).
  *
- * Sort order: rows arrive from `listGameNotesWithTimers` already
+ * Sort order: rows arrive from `listGameTimerNotes` already
  * ordered `createdAt` descending and the drawer renders them as-is.
  * The server-side ordering is pinned by the corresponding test in
  * `convex/notes.test.ts` ("server-side sort: createdAt desc across
@@ -27,7 +27,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 const NOTE_ID = "n1" as Id<"notes">;
 const USER_ID = "u1" as Id<"users">;
 
-function baseRow(extra: Partial<GmTodoNoteRow>): GmTodoNoteRow {
+function baseRow(extra: Partial<TimerNoteRow>): TimerNoteRow {
   return {
     _id: NOTE_ID,
     createdAt: 0,
@@ -43,7 +43,7 @@ function baseRow(extra: Partial<GmTodoNoteRow>): GmTodoNoteRow {
 
 /**
  * Walk a React element tree and pull the rendered text content out.
- * `formatGmTodoTarget` returns small fragments — bare strings inside
+ * `formatNoteTarget` returns small fragments — bare strings inside
  * `<span>`s separated by `•`. We don't need a real renderer; we just
  * traverse the children prop.
  */
@@ -64,14 +64,14 @@ function extractText(node: unknown): string {
   return "";
 }
 
-describe("formatGmTodoTarget", () => {
+describe("formatNoteTarget", () => {
   it("renders 'Game-wide' for game-target rows", () => {
-    const node = formatGmTodoTarget(baseRow({ targetKind: "game" }));
+    const node = formatNoteTarget(baseRow({ targetKind: "game" }));
     expect(extractText(node)).toBe("Game-wide");
   });
 
   it("renders Syndicate • Player for syndicate-target rows with a selector", () => {
-    const node = formatGmTodoTarget(
+    const node = formatNoteTarget(
       baseRow({
         targetKind: "syndicate",
         targetSyndicateId: "s1" as Id<"syndicates">,
@@ -84,7 +84,7 @@ describe("formatGmTodoTarget", () => {
   });
 
   it("renders Syndicate • (unassigned) when no player has selected", () => {
-    const node = formatGmTodoTarget(
+    const node = formatNoteTarget(
       baseRow({
         targetKind: "syndicate",
         targetSyndicateId: "s1" as Id<"syndicates">,
@@ -95,7 +95,7 @@ describe("formatGmTodoTarget", () => {
   });
 
   it("renders Minion • Syndicate • Player for minion-target rows", () => {
-    const node = formatGmTodoTarget(
+    const node = formatNoteTarget(
       baseRow({
         targetKind: "minion",
         targetMinionId: "m1" as Id<"minions">,
@@ -109,7 +109,7 @@ describe("formatGmTodoTarget", () => {
   });
 
   it("renders (unassigned) on the player slot for minion-target rows with no selector", () => {
-    const node = formatGmTodoTarget(
+    const node = formatNoteTarget(
       baseRow({
         targetKind: "minion",
         targetMinionId: "m1" as Id<"minions">,

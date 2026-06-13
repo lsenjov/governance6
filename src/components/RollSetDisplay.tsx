@@ -1,16 +1,25 @@
 /**
- * RollSetDisplay — brutalist GM-only dice readout.
+ * RollSetDisplay — GM-only dice readout.
  *
- * Renders a row of square cells (Skill, Chaos, then any conditional
- * extras) for a roll set produced by `convex/lib/rolls.ts`. Visual
- * primitives reuse the existing brutalist tokens — hard 2px borders,
- * zero radius, mono numerals, riot-red top rule for failures, mint
- * bottom strip for successes. No new design tokens.
+ * Two render variants:
+ *
+ *   - `stacked` (default) — the original brutalist square cells
+ *     (Skill, Chaos, extras), each a caption over a big mono numeral
+ *     over an optional footer + Pass/Fail badge. Used by the Current
+ *     Call section, minion detail, and the GM Todo drawer.
+ *   - `terminal` — design 19: inline mono text for the note's
+ *     terminal prefix bar (`skill 7/4 OK  chaos 5  drw 3 FAIL`). The
+ *     component returns a bare fragment of `.term-stat` spans; the
+ *     caller wraps them in the `.note-terminal-bar` strip. Result is
+ *     shown as an OK / FAIL word, coloured for legibility on the bar's
+ *     black background.
  *
  * Universal natural-1 rule (defence-in-depth): the helper writes the
  * derived `*Result` fields at insert time, but this component
  * re-derives them on render so any historical row, or any future code
  * path that bypasses the helper, still highlights a 1 as a failure.
+ * The chaos die additionally reads a natural-6 as a success at render
+ * time (see `chaosEffective`).
  *
  * Visibility is enforced server-side: non-GM viewers never receive
  * the `rolls` payload, so the component never renders for them.
@@ -36,6 +45,8 @@ export type RollSet = {
 
 type Size = "sm" | "md";
 
+type Variant = "stacked" | "terminal";
+
 type Effective = "failure" | "success" | "neutral";
 
 /** Re-applies the natural-1 rule and folds in the persisted result. */
@@ -47,6 +58,23 @@ function effective(
   if (stored === "failure") return "failure";
   if (stored === "success") return "success";
   return "neutral";
+}
+
+/**
+ * Chaos-specific effective result. Same natural-1 failure rule as
+ * `effective`, plus a render-time natural-6 → success rule: a chaos
+ * die showing its max value reads as a success (mint OK) even though
+ * the data layer leaves `chaosResult` unscored for 2..6. Kept as a
+ * display rule so the persisted shape (chaos scored only on a 1) is
+ * untouched.
+ */
+function chaosEffective(
+  value: number,
+  stored: "success" | "failure" | null | undefined,
+): Effective {
+  if (value === 1) return "failure";
+  if (value === 6) return "success";
+  return effective(value, stored);
 }
 
 function cellClassName(size: Size, result: Effective): string {
@@ -67,22 +95,86 @@ function ResultBadge({ result }: { result: Effective }) {
   return null;
 }
 
+/** One inline stat for the terminal bar: `label value [OK|FAIL]`. */
+function TermStat({
+  label,
+  value,
+  result,
+}: {
+  label: string;
+  value: ReactNode;
+  result: Effective;
+}) {
+  return (
+    <span className="term-stat">
+      <span className="term-key">{label}</span>
+      <span className="term-val">{value}</span>
+      {result === "success" && <span className="term-res ok">OK</span>}
+      {result === "failure" && <span className="term-res fail">FAIL</span>}
+    </span>
+  );
+}
+
 export function RollSetDisplay({
   rolls,
   size = "md",
+  variant = "stacked",
   trailing,
 }: {
   rolls: RollSet | null;
   size?: Size;
+  variant?: Variant;
   /**
-   * Optional additional cells rendered inside the same `.roll-set`
-   * flex container, after the Skill / Chaos / extras cells. Used by
-   * note timers v1 to render the clock cell inline with the dice row.
-   * Pass JSX that renders `.roll-cell`-shaped children for visual
-   * consistency.
+   * Optional additional content rendered after the Skill / Chaos /
+   * extras stats. In `stacked` mode pass `.roll-cell`-shaped children
+   * (e.g. the note timer cell); in `terminal` mode pass a
+   * `.term-stat`-shaped node (the terminal-variant timer).
    */
   trailing?: ReactNode;
 }) {
+  // ---- Terminal variant: inline mono text, no cell chrome. ----------
+  if (variant === "terminal") {
+    if (rolls === null) {
+      return (
+        <>
+          <span className="term-stat">
+            <span className="term-key">skill</span>
+            <span className="term-val">—</span>
+          </span>
+          <span className="term-stat">
+            <span className="term-key">chaos</span>
+            <span className="term-val">—</span>
+          </span>
+          {trailing}
+        </>
+      );
+    }
+    return (
+      <>
+        <TermStat
+          label="skill"
+          value={`${rolls.skillRoll}/${rolls.skillCount}`}
+          result={effective(rolls.skillRoll, rolls.skillResult)}
+        />
+        <TermStat
+          label="chaos"
+          value={rolls.chaosRoll}
+          result={chaosEffective(rolls.chaosRoll, rolls.chaosResult)}
+        />
+        {rolls.extras.map((extra, i) => (
+          <TermStat
+            key={`${extra.kind}-${i}`}
+            label={extra.name.toLowerCase()}
+            value={extra.value}
+            result={effective(extra.value, extra.result ?? null)}
+          />
+        ))}
+        {trailing}
+      </>
+    );
+  }
+
+  // ---- Stacked variant (default). -----------------------------------
   // Race-only branch: roll generation runs in the same mutation
   // transaction as the call insert, so external readers should never
   // observe `null`. We render a quiet pending state anyway so the
@@ -106,7 +198,7 @@ export function RollSetDisplay({
   }
 
   const skillEffective = effective(rolls.skillRoll, rolls.skillResult);
-  const chaosEffective = effective(rolls.chaosRoll, rolls.chaosResult);
+  const chaosEff = chaosEffective(rolls.chaosRoll, rolls.chaosResult);
 
   return (
     <div className="roll-set" aria-label="Dice rolls (GM)">
@@ -121,14 +213,14 @@ export function RollSetDisplay({
         <ResultBadge result={skillEffective} />
       </div>
 
-      {/* Chaos cell — neutral unless natural-1. */}
+      {/* Chaos cell — neutral unless natural-1 (fail) or natural-6 (pass). */}
       <div
-        className={cellClassName(size, chaosEffective)}
+        className={cellClassName(size, chaosEff)}
         aria-label={`Chaos ${rolls.chaosRoll}`}
       >
         <span className="roll-cell-caption">Chaos</span>
         <span className="roll-cell-value">{rolls.chaosRoll}</span>
-        <ResultBadge result={chaosEffective} />
+        <ResultBadge result={chaosEff} />
       </div>
 
       {/* Extras: every entry has a required `name` (schema + helper

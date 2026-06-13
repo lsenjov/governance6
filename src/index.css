@@ -1330,3 +1330,106 @@ button.roll-cell.note-timer-cell-clickable:hover .roll-cell-footer {
   align-items: center;
   gap: 0.1rem;
 }
+
+/* -------------------------------------------------------------------------
+/* -------------------------------------------------------------------------
+ * Terminal prefix bar (design 19) — GM-only roll + clock readout.
+ *
+ * A full-bleed black mono strip across the top of a `.note-item`, like a
+ * shell prompt: `skill 7/4 OK   chaos 5   drw 3 FAIL   clk 04:32`. Opt-in
+ * via `.note-terminal-bar` wrapping RollSetDisplay / NoteTimerCell in
+ * `variant="terminal"`. Replaces the tall stacked cell row that used to
+ * sit below the note body, so the whole readout costs ~one line.
+ *
+ * Colour contract (legibility on the black bar): values are off-white,
+ * keys are a dimmed off-white (NOT `--fg-muted` #555, which is unreadable
+ * on black), `OK` is mint, `FAIL` / overdue / due are riot-red.
+ * ------------------------------------------------------------------------- */
+/* Notes drawer GM filter toggle (clocks-only). Inline label sitting
+ * above the row list, consistent with the brutalist control palette. */
+.notes-drawer-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 1rem 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.note-terminal-bar {
+  /* Negative margins match `.note-item` padding (0.5rem 0.625rem) so the
+   * bar bleeds to the card's inner edges and butts against its top border. */
+  margin: -0.5rem -0.625rem 0.5rem;
+  background: var(--fg);
+  color: var(--bg-elevated);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  padding: 0.3rem 0.625rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 1rem;
+}
+
+.term-stat {
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.term-key {
+  /* Dimmed off-white rather than a grey token — readable on black. */
+  color: rgba(244, 241, 234, 0.55);
+  font-weight: 400;
+  margin-right: 0.35rem;
+}
+
+.term-val {
+  color: var(--bg-elevated);
+}
+
+.term-res {
+  margin-left: 0.35rem;
+}
+
+.term-res.ok,
+.term-val.ok {
+  color: var(--accent);
+}
+
+.term-res.fail,
+.term-val.fail {
+  color: var(--alt-accent);
+}
+
+/* Clock stat is a bare inline button for the GM. Strip every default
+ * button affordance (the global brutalist shadow / press transform) so it
+ * reads as text in the bar, then mark interactivity with a mint underline
+ * on hover/focus. */
+button.term-clock {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+button.term-clock:hover,
+button.term-clock:focus-visible {
+  background: none;
+  box-shadow: none;
+  transform: none;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  outline: none;
+}

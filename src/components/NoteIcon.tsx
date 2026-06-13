@@ -377,94 +377,83 @@ export function NoteList({
   }
   return (
     <>
-      {notes.map((n) => (
-        <div key={n._id} className="note-item">
-          <div className="note-item-meta">
-            <strong>{n.authorDisplayName}</strong>
-            {n.isMine && <span className="muted"> (you)</span>}
-            <span
-              className={`badge ${n.visibility === "public" ? "accent" : ""}`}
-              style={{ marginLeft: "0.5rem" }}
-            >
-              {n.visibility}
-            </span>
-            <span
-              className="muted"
-              style={{ marginLeft: "0.5rem", fontSize: "0.8rem" }}
-            >
-              {new Date(n.createdAt).toLocaleString()}
-            </span>
-            {n.canDelete && !hideManagementControls && (
-              <button
-                type="button"
-                className="danger"
-                onClick={() => void onDelete(n._id)}
-                style={{
-                  marginLeft: "auto",
-                  padding: "0.125rem 0.5rem",
-                  fontSize: "0.8rem",
-                }}
-              >
-                Delete
-              </button>
-            )}
-          </div>
-          <div className="note-item-body">{n.body}</div>
-          {/* Dice rolls v1: when the note was frozen against a call's
-              roll set, display the GM-only readout below the body.
-              Server omits the key entirely for non-GMs and for notes
-              with no pinned roll set, so this never renders for
-              Players.
+      {notes.map((n) => {
+        // Design 19 (terminal prefix bar): the GM-only roll + timer
+        // readout renders as a full-bleed black mono strip across the
+        // top of the note card (`skill 7/4 OK  chaos 5  clk 04:32`)
+        // instead of a tall stacked cell row below the body. The server
+        // omits `attachedRolls` / `timer` entirely for non-GMs, so the
+        // bar never renders for Players.
+        //
+        // Edge case: a note may carry a `timer` with no `attachedRolls`
+        // (in theory; gating prevents it in practice) — render the
+        // terminal-variant timer on its own in the bar.
+        const timerEl =
+          n.timer !== undefined ? (
+            <NoteTimerCell
+              timer={n.timer}
+              viewerIsGm={n.canDelete}
+              onCycle={onCycleTimer ? () => onCycleTimer(n._id) : undefined}
+              variant="terminal"
+            />
+          ) : null;
 
-              Note timers v1: when the note also has a `timer`, render
-              the clock cell inside the same `.roll-set` flex container
-              (via `RollSetDisplay`'s `trailing` prop) so it sits
-              inline with the dice (Skill, Chaos, drawbacks, clock).
-              The container's `flex-wrap` rule handles narrow viewports
-              gracefully. Server strips `timer` for non-GMs, so a
-              Player path never reaches this branch.
-
-              Edge case: a note may have a `timer` but no
-              `attachedRolls` (in theory; gating prevents it in
-              practice). Render the timer in a standalone `.roll-set`
-              wrapper to preserve layout. */}
-          {(n.attachedRolls !== undefined || n.timer !== undefined) && (
-            <div style={{ marginTop: "0.4rem" }}>
+        const terminalBar =
+          n.attachedRolls !== undefined || n.timer !== undefined ? (
+            <div className="note-terminal-bar" aria-label="Dice rolls (GM)">
               {n.attachedRolls !== undefined ? (
                 <RollSetDisplay
                   rolls={n.attachedRolls}
-                  size="sm"
-                  trailing={
-                    n.timer !== undefined ? (
-                      <NoteTimerCell
-                        timer={n.timer}
-                        viewerIsGm={n.canDelete}
-                        onCycle={
-                          onCycleTimer ? () => onCycleTimer(n._id) : undefined
-                        }
-                        size="sm"
-                      />
-                    ) : null
-                  }
+                  variant="terminal"
+                  trailing={timerEl}
                 />
               ) : (
-                <div className="roll-set" aria-label="Note timer (GM)">
-                  {n.timer !== undefined && (
-                    <NoteTimerCell
-                      timer={n.timer}
-                      viewerIsGm={n.canDelete}
-                      onCycle={
-                        onCycleTimer ? () => onCycleTimer(n._id) : undefined
-                      }
-                      size="sm"
-                    />
-                  )}
-                </div>
+                timerEl
               )}
             </div>
-          )}
-        </div>
-      ))}
+          ) : null;
+
+        return (
+          <div key={n._id} className="note-item">
+            {terminalBar}
+            <div className="note-item-meta">
+              <strong>{n.authorDisplayName}</strong>
+              {n.isMine && <span className="muted"> (you)</span>}
+              <span
+                className={`badge ${n.visibility === "public" ? "accent" : ""}`}
+                style={{ marginLeft: "0.5rem" }}
+              >
+                {n.visibility}
+              </span>
+              <span
+                className="muted"
+                title={new Date(n.createdAt).toLocaleString()}
+                style={{ marginLeft: "0.5rem", fontSize: "0.8rem" }}
+              >
+                {new Date(n.createdAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+              {n.canDelete && !hideManagementControls && (
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={() => void onDelete(n._id)}
+                  style={{
+                    marginLeft: "auto",
+                    padding: "0.125rem 0.5rem",
+                    fontSize: "0.8rem",
+                  }}
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+            <div className="note-item-body">{n.body}</div>
+          </div>
+        );
+      })}
     </>
   );
 }

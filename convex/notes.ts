@@ -44,9 +44,9 @@ import {
  * not); when the note pins a live skill check the timer accompanies
  * the pinned roll set, otherwise the timer stands alone.
  *
- * GM Todo (plans/2026-04-28-gm-todo-drawer-v1.md): the
- * `listGameNotesWithTimers` query is the GM-only aggregation that
- * powers the GM Todo drawer. Like `attachedRollSetId` and `timer`,
+ * Notes drawer (plans/2026-04-28-gm-todo-drawer-v1.md): the
+ * `listGameTimerNotes` query is the GM-only aggregation of
+ * timer-bearing notes. Like `attachedRollSetId` and `timer`,
  * the projected payload never reaches Player sessions — the handler
  * gates on `requireGameGm` before reading any rows.
  */
@@ -431,11 +431,10 @@ type NoteListItem = {
 };
 
 /**
- * GM Todo Drawer (`plans/2026-04-28-gm-todo-drawer-v1.md`) — projected
- * row shape for `listGameNotesWithTimers`. One row per timer-bearing
- * note in the game, denormalised with the joined entity names so the
- * drawer can render a `Player • Syndicate • Minion` context line
- * without further client-side queries.
+ * Projected row shape for `listGameTimerNotes`. One row per
+ * timer-bearing note in the game, denormalised with the joined entity
+ * names so the drawer can render a `Player • Syndicate • Minion`
+ * context line without further client-side queries.
  *
  *  - `timer` is always present (the query post-filters
  *    `n.timer !== undefined`).
@@ -456,11 +455,9 @@ type NoteListItem = {
  *  - `minionName` / `syndicateName` are denormalised at the server so
  *    the drawer renders without per-row joins.
  *
- * Naming chosen for parallelism with `NoteListItem`; leaves the
- * unqualified `GmTodoRow` symbol available for a future v2 that
- * aggregates non-note items into the same drawer.
+ * Naming chosen for parallelism with `NoteListItem` / `GameNoteRow`.
  */
-export type GmTodoNoteRow = {
+export type TimerNoteRow = {
   _id: Id<"notes">;
   createdAt: number;
   body: string;
@@ -483,282 +480,316 @@ export type GmTodoNoteRow = {
 };
 
 /**
- * GM-only aggregation that powers the GM Todo drawer. Returns every
- * timer-bearing note in `gameId`, denormalised with the joined entity
- * names (minion / syndicate / selecting player + author) so the
- * drawer can render a row without further round-trips.
- *
- * Sort order: `createdAt` descending (newest-first). This matches
- * the rest of the notes UI (`listNotesForTarget`) and is fully
- * time-INDEPENDENT — Convex queries do not react to wall-clock
- * changes, and `createdAt` is frozen at insert time so the order is
- * stable until a new note is created or an existing one is deleted.
- *
- * Read amplification: minions, syndicates, players, users, and roll
- * sets are bulk-resolved with deduplicated per-id reads (one dedupe
- * pass per kind, then a `for (const id of unique) await ctx.db.get`
- * loop — Convex has no `getMany`). No new indices are introduced;
- * the in-memory `n.timer !== undefined` filter is appropriate for
- * the bounded per-game working set.
- *
- * GM-only — Rule 24, server-side authoritative. The handler gates
- * on `requireGameGm` before reading any rows so a forged direct
- * call from a Player session is rejected with the same error
- * surface as `cycleNoteTimer`.
+ * Notes drawer row — superset of `TimerNoteRow` with an OPTIONAL
+ * `timer` (the drawer lists every visible note, not just
+ * timer-bearing ones). GM-only fields (`timer`, `attachedRolls`) are
+ * present only on GM payloads; Players receive the row without them.
  */
-export const listGameNotesWithTimers = query({
-  args: { gameId: v.id("games") },
-  handler: async (ctx, args): Promise<GmTodoNoteRow[]> => {
-    // GM-only — Rule 24. Defence in depth alongside the client-side
-    // mount gate; a Player forging a direct call gets the same error
-    // surface as `cycleNoteTimer`.
-    await requireGameGm(ctx, args.gameId);
+export type GameNoteRow = Omit<TimerNoteRow, "timer"> & {
+  timer?: NoteTimer;
+};
 
-    // Walk every note for this game (range over the gameId prefix of
-    // `by_game_kind_created`). Per-game working sets are bounded —
-    // notes are GM-driven and per-skill-check — so a single index
-    // walk + in-memory filter is fine. A dedicated
-    // `(gameId, hasTimer)` index would not cover the optionality of
-    // a sub-object cheaply; rejected in the plan's Alternative #2.
+/**
+ * Shared denormalisation for the Notes drawer + GM Todo aggregation.
+ * Resolves the joined entity names (minion / syndicate / selecting
+ * player / grant / goal / author) for a PRE-FILTERED list of notes and
+ * projects them newest-first.
+ *
+ * GM-only fields (`timer`, `attachedRolls`) are included only when
+ * `opts.includeGmFields` is true — callers pass the viewer's GM status
+ * so non-GM payloads never leak the clock or pinned rolls.
+ *
+ * Sort order: `createdAt` descending (newest-first), time-INDEPENDENT —
+ * `createdAt` is frozen at insert time so order is stable until a note
+ * is created or deleted. Read amplification: bulk-resolved with
+ * deduplicated per-id reads (Convex has no `getMany`).
+ */
+async function projectNoteRows(
+  ctx: QueryCtx,
+  notes: Doc<"notes">[],
+  opts: { gameId: Id<"games">; includeGmFields: boolean },
+): Promise<GameNoteRow[]> {
+  const timerNotes = notes;
+
+  // ── Bulk-resolve auxiliaries with deduplicated per-id reads ───
+  // Pattern: collect distinct ids, fetch once each, build a Map for
+  // O(1) lookup during projection. Mirrors the existing roll-set
+  // join in `listNotesForTarget`.
+
+  // Minions (only minion-target rows reference `targetMinionId`).
+  const minionIds = Array.from(
+    new Set(
+      timerNotes
+        .map((n) => n.targetMinionId)
+        .filter((id): id is Id<"minions"> => id !== undefined),
+    ),
+  );
+  const minionById = new Map<string, Doc<"minions">>();
+  for (const id of minionIds) {
+    const row = await ctx.db.get(id);
+    if (row) minionById.set(row._id as string, row);
+  }
+
+  // Treason grants (only grant-target rows reference `targetGrantId`).
+  const grantIds = Array.from(
+    new Set(
+      timerNotes
+        .map((n) => n.targetGrantId)
+        .filter((id): id is Id<"treasonGrants"> => id !== undefined),
+    ),
+  );
+  const grantById = new Map<string, Doc<"treasonGrants">>();
+  for (const id of grantIds) {
+    const row = await ctx.db.get(id);
+    if (row) grantById.set(row._id as string, row);
+  }
+
+  // Goals (only goal-target rows reference `targetGoalId`).
+  const goalIds = Array.from(
+    new Set(
+      timerNotes
+        .map((n) => n.targetGoalId)
+        .filter((id): id is Id<"goals"> => id !== undefined),
+    ),
+  );
+  const goalById = new Map<string, Doc<"goals">>();
+  for (const id of goalIds) {
+    const row = await ctx.db.get(id);
+    if (row) goalById.set(row._id as string, row);
+  }
+
+  // Syndicates: union of `targetSyndicateId` (syndicate-target
+  // rows) and the loaded minions' `syndicateId` (minion-target
+  // rows project the parent syndicate too).
+  const syndicateIdSet = new Set<string>();
+  for (const n of timerNotes) {
+    if (n.targetSyndicateId) syndicateIdSet.add(n.targetSyndicateId as string);
+  }
+  for (const m of minionById.values()) {
+    syndicateIdSet.add(m.syndicateId as string);
+  }
+  const syndicateById = new Map<string, Doc<"syndicates">>();
+  for (const idStr of syndicateIdSet) {
+    const row = await ctx.db.get(idStr as Id<"syndicates">);
+    if (row) syndicateById.set(idStr, row);
+  }
+
+  // Selecting players per syndicate, restricted to this game. Walk
+  // the `by_selected_syndicate` index for each distinct syndicate
+  // id, in-memory filter to `p.gameId === args.gameId`, then pick
+  // the deterministic match (lowest `joinedAt`, ties by `_id`
+  // ascending). Task 0d makes this a single hit in production data
+  // created via `selectSyndicate`; the tiebreaker is for resilience
+  // against test fixtures that bypass the mutation.
+  const playerBySyndicateId = new Map<string, Doc<"players">>();
+  for (const idStr of syndicateIdSet) {
+    const candidates = await ctx.db
+      .query("players")
+      .withIndex("by_selected_syndicate", (q) =>
+        q.eq("selectedSyndicateId", idStr as Id<"syndicates">),
+      )
+      .collect();
+    const inGame = candidates.filter((p) => p.gameId === opts.gameId);
+    if (inGame.length === 0) continue;
+    inGame.sort((a, b) => {
+      if (a.joinedAt !== b.joinedAt) return a.joinedAt - b.joinedAt;
+      return (a._id as string).localeCompare(b._id as string);
+    });
+    playerBySyndicateId.set(idStr, inGame[0]);
+  }
+
+  // Players: in addition to syndicate-derived players above, grant
+  // rows carry an optional `ownerPlayerId` and goal rows carry an
+  // optional `fromPlayerId`. Collect those for direct lookup.
+  const playerIdSet = new Set<string>();
+  for (const g of grantById.values()) {
+    if (g.ownerPlayerId) playerIdSet.add(g.ownerPlayerId as string);
+  }
+  for (const g of goalById.values()) {
+    if (g.fromPlayerId) playerIdSet.add(g.fromPlayerId as string);
+  }
+  const playerById = new Map<string, Doc<"players">>();
+  for (const idStr of playerIdSet) {
+    const row = await ctx.db.get(idStr as Id<"players">);
+    if (row) playerById.set(idStr, row);
+  }
+
+  // Users: union of every author user id and every selecting
+  // player's user id. One bulk pass.
+  const userIdSet = new Set<string>();
+  for (const n of timerNotes) userIdSet.add(n.authorUserId as string);
+  for (const p of playerBySyndicateId.values()) {
+    userIdSet.add(p.userId as string);
+  }
+  for (const p of playerById.values()) {
+    userIdSet.add(p.userId as string);
+  }
+  const userById = new Map<string, Doc<"users">>();
+  for (const idStr of userIdSet) {
+    const row = await ctx.db.get(idStr as Id<"users">);
+    if (row) userById.set(idStr, row);
+  }
+
+  // Roll sets: deduplicate `attachedRollSetId`s and project once.
+  // Mirrors the existing GM-only decoration in `listNotesForTarget`.
+  const rollSetIds = Array.from(
+    new Set(
+      timerNotes
+        .map((n) => n.attachedRollSetId)
+        .filter((id): id is Id<"callRollSets"> => id !== undefined)
+        .map((id) => id as string),
+    ),
+  );
+  const rollSetById = new Map<string, RollSetView>();
+  for (const idStr of rollSetIds) {
+    const row = await ctx.db.get(idStr as Id<"callRollSets">);
+    if (row) rollSetById.set(idStr, projectRollSet(row));
+  }
+
+  // ── Project rows ───────────────────────────────────────────
+  function userDisplay(userId: Id<"users">): string {
+    const u = userById.get(userId as string);
+    return u?.displayName ?? u?.email ?? "Unknown";
+  }
+
+  const projected: GameNoteRow[] = timerNotes.map((n) => {
+    // Resolve the joined syndicate id for this row: direct on
+    // syndicate-target, parent on minion-target, undefined on
+    // game-target.
+    const syndId: Id<"syndicates"> | undefined =
+      n.targetKind === "syndicate"
+        ? n.targetSyndicateId
+        : n.targetKind === "minion" && n.targetMinionId
+          ? minionById.get(n.targetMinionId as string)?.syndicateId
+          : undefined;
+
+    const row: GameNoteRow = {
+      _id: n._id,
+      createdAt: n.createdAt,
+      body: n.body,
+      visibility: n.visibility,
+      authorUserId: n.authorUserId,
+      authorDisplayName: userDisplay(n.authorUserId),
+      targetKind: n.targetKind,
+    };
+    // GM-only: the clock never reaches non-GM viewers.
+    if (opts.includeGmFields && n.timer) row.timer = n.timer;
+
+    if (n.targetKind === "syndicate" && n.targetSyndicateId) {
+      row.targetSyndicateId = n.targetSyndicateId;
+    }
+    if (n.targetKind === "minion" && n.targetMinionId) {
+      row.targetMinionId = n.targetMinionId;
+      const m = minionById.get(n.targetMinionId as string);
+      if (m) row.minionName = m.name;
+    }
+    if (n.targetKind === "grant" && n.targetGrantId) {
+      row.targetGrantId = n.targetGrantId;
+      const g = grantById.get(n.targetGrantId as string);
+      if (g) {
+        row.grantKeyword = g.keyword;
+        if (g.ownerPlayerId) {
+          const p = playerById.get(g.ownerPlayerId as string);
+          if (p) {
+            row.playerId = p._id;
+            row.playerDisplayName = userDisplay(p.userId);
+          }
+        }
+      }
+    }
+    if (n.targetKind === "goal" && n.targetGoalId) {
+      row.targetGoalId = n.targetGoalId;
+      const g = goalById.get(n.targetGoalId as string);
+      if (g) {
+        row.goalKeyword = g.keyword;
+        if (g.fromPlayerId) {
+          const p = playerById.get(g.fromPlayerId as string);
+          if (p) {
+            row.playerId = p._id;
+            row.playerDisplayName = userDisplay(p.userId);
+          }
+        }
+      }
+    }
+
+    if (syndId) {
+      const s = syndicateById.get(syndId as string);
+      if (s) row.syndicateName = s.name;
+      const p = playerBySyndicateId.get(syndId as string);
+      if (p) {
+        row.playerId = p._id;
+        row.playerDisplayName = userDisplay(p.userId);
+      }
+    }
+
+    // GM-only: pinned rolls never reach non-GM viewers. KEY OMITTED
+    // when absent; KEY PRESENT (with `null` fallback) when the note
+    // pins a roll set whose row may have been deleted.
+    if (opts.includeGmFields && n.attachedRollSetId) {
+      row.attachedRolls =
+        rollSetById.get(n.attachedRollSetId as string) ?? null;
+    }
+    return row;
+  });
+
+  // ── Server-side time-INDEPENDENT sort ─────────────────────
+  // Newest-first by `createdAt`. `createdAt` is frozen at insert
+  // time so the order is stable until a new timer-bearing note is
+  // created or an existing one is deleted — no wall-clock reads,
+  // no client refinement.
+  projected.sort((a, b) => b.createdAt - a.createdAt);
+
+  return projected;
+}
+
+/**
+ * GM-only aggregation: every timer-bearing note in `gameId`,
+ * newest-first. Retained as a dedicated GM entry point alongside the
+ * broader `listGameNotes`. GM-only — Rule 24, server-side
+ * authoritative (`requireGameGm` before reads).
+ */
+export const listGameTimerNotes = query({
+  args: { gameId: v.id("games") },
+  handler: async (ctx, args): Promise<TimerNoteRow[]> => {
+    await requireGameGm(ctx, args.gameId);
     const allNotes = await ctx.db
       .query("notes")
       .withIndex("by_game_kind_created", (q) => q.eq("gameId", args.gameId))
       .collect();
     const timerNotes = allNotes.filter((n) => n.timer !== undefined);
-
-    // ── Bulk-resolve auxiliaries with deduplicated per-id reads ───
-    // Pattern: collect distinct ids, fetch once each, build a Map for
-    // O(1) lookup during projection. Mirrors the existing roll-set
-    // join in `listNotesForTarget`.
-
-    // Minions (only minion-target rows reference `targetMinionId`).
-    const minionIds = Array.from(
-      new Set(
-        timerNotes
-          .map((n) => n.targetMinionId)
-          .filter((id): id is Id<"minions"> => id !== undefined),
-      ),
-    );
-    const minionById = new Map<string, Doc<"minions">>();
-    for (const id of minionIds) {
-      const row = await ctx.db.get(id);
-      if (row) minionById.set(row._id as string, row);
-    }
-
-    // Treason grants (only grant-target rows reference `targetGrantId`).
-    const grantIds = Array.from(
-      new Set(
-        timerNotes
-          .map((n) => n.targetGrantId)
-          .filter((id): id is Id<"treasonGrants"> => id !== undefined),
-      ),
-    );
-    const grantById = new Map<string, Doc<"treasonGrants">>();
-    for (const id of grantIds) {
-      const row = await ctx.db.get(id);
-      if (row) grantById.set(row._id as string, row);
-    }
-
-    // Goals (only goal-target rows reference `targetGoalId`).
-    const goalIds = Array.from(
-      new Set(
-        timerNotes
-          .map((n) => n.targetGoalId)
-          .filter((id): id is Id<"goals"> => id !== undefined),
-      ),
-    );
-    const goalById = new Map<string, Doc<"goals">>();
-    for (const id of goalIds) {
-      const row = await ctx.db.get(id);
-      if (row) goalById.set(row._id as string, row);
-    }
-
-    // Syndicates: union of `targetSyndicateId` (syndicate-target
-    // rows) and the loaded minions' `syndicateId` (minion-target
-    // rows project the parent syndicate too).
-    const syndicateIdSet = new Set<string>();
-    for (const n of timerNotes) {
-      if (n.targetSyndicateId)
-        syndicateIdSet.add(n.targetSyndicateId as string);
-    }
-    for (const m of minionById.values()) {
-      syndicateIdSet.add(m.syndicateId as string);
-    }
-    const syndicateById = new Map<string, Doc<"syndicates">>();
-    for (const idStr of syndicateIdSet) {
-      const row = await ctx.db.get(idStr as Id<"syndicates">);
-      if (row) syndicateById.set(idStr, row);
-    }
-
-    // Selecting players per syndicate, restricted to this game. Walk
-    // the `by_selected_syndicate` index for each distinct syndicate
-    // id, in-memory filter to `p.gameId === args.gameId`, then pick
-    // the deterministic match (lowest `joinedAt`, ties by `_id`
-    // ascending). Task 0d makes this a single hit in production data
-    // created via `selectSyndicate`; the tiebreaker is for resilience
-    // against test fixtures that bypass the mutation.
-    const playerBySyndicateId = new Map<string, Doc<"players">>();
-    for (const idStr of syndicateIdSet) {
-      const candidates = await ctx.db
-        .query("players")
-        .withIndex("by_selected_syndicate", (q) =>
-          q.eq("selectedSyndicateId", idStr as Id<"syndicates">),
-        )
-        .collect();
-      const inGame = candidates.filter((p) => p.gameId === args.gameId);
-      if (inGame.length === 0) continue;
-      inGame.sort((a, b) => {
-        if (a.joinedAt !== b.joinedAt) return a.joinedAt - b.joinedAt;
-        return (a._id as string).localeCompare(b._id as string);
-      });
-      playerBySyndicateId.set(idStr, inGame[0]);
-    }
-
-    // Players: in addition to syndicate-derived players above, grant
-    // rows carry an optional `ownerPlayerId` and goal rows carry an
-    // optional `fromPlayerId`. Collect those for direct lookup.
-    const playerIdSet = new Set<string>();
-    for (const g of grantById.values()) {
-      if (g.ownerPlayerId) playerIdSet.add(g.ownerPlayerId as string);
-    }
-    for (const g of goalById.values()) {
-      if (g.fromPlayerId) playerIdSet.add(g.fromPlayerId as string);
-    }
-    const playerById = new Map<string, Doc<"players">>();
-    for (const idStr of playerIdSet) {
-      const row = await ctx.db.get(idStr as Id<"players">);
-      if (row) playerById.set(idStr, row);
-    }
-
-    // Users: union of every author user id and every selecting
-    // player's user id. One bulk pass.
-    const userIdSet = new Set<string>();
-    for (const n of timerNotes) userIdSet.add(n.authorUserId as string);
-    for (const p of playerBySyndicateId.values()) {
-      userIdSet.add(p.userId as string);
-    }
-    for (const p of playerById.values()) {
-      userIdSet.add(p.userId as string);
-    }
-    const userById = new Map<string, Doc<"users">>();
-    for (const idStr of userIdSet) {
-      const row = await ctx.db.get(idStr as Id<"users">);
-      if (row) userById.set(idStr, row);
-    }
-
-    // Roll sets: deduplicate `attachedRollSetId`s and project once.
-    // Mirrors the existing GM-only decoration in `listNotesForTarget`.
-    const rollSetIds = Array.from(
-      new Set(
-        timerNotes
-          .map((n) => n.attachedRollSetId)
-          .filter((id): id is Id<"callRollSets"> => id !== undefined)
-          .map((id) => id as string),
-      ),
-    );
-    const rollSetById = new Map<string, RollSetView>();
-    for (const idStr of rollSetIds) {
-      const row = await ctx.db.get(idStr as Id<"callRollSets">);
-      if (row) rollSetById.set(idStr, projectRollSet(row));
-    }
-
-    // ── Project rows ───────────────────────────────────────────
-    function userDisplay(userId: Id<"users">): string {
-      const u = userById.get(userId as string);
-      return u?.displayName ?? u?.email ?? "Unknown";
-    }
-
-    const projected: GmTodoNoteRow[] = timerNotes.map((n) => {
-      // Resolve the joined syndicate id for this row: direct on
-      // syndicate-target, parent on minion-target, undefined on
-      // game-target.
-      const syndId: Id<"syndicates"> | undefined =
-        n.targetKind === "syndicate"
-          ? n.targetSyndicateId
-          : n.targetKind === "minion" && n.targetMinionId
-            ? minionById.get(n.targetMinionId as string)?.syndicateId
-            : undefined;
-
-      const row: GmTodoNoteRow = {
-        _id: n._id,
-        createdAt: n.createdAt,
-        body: n.body,
-        visibility: n.visibility,
-        authorUserId: n.authorUserId,
-        authorDisplayName: userDisplay(n.authorUserId),
-        // `timerNotes` is filtered to `n.timer !== undefined`, so the
-        // `!` here is sound. Convex's typed Doc<"notes"> still carries
-        // `timer?` because it's optional in the schema.
-        timer: n.timer!,
-        targetKind: n.targetKind,
-      };
-
-      if (n.targetKind === "syndicate" && n.targetSyndicateId) {
-        row.targetSyndicateId = n.targetSyndicateId;
-      }
-      if (n.targetKind === "minion" && n.targetMinionId) {
-        row.targetMinionId = n.targetMinionId;
-        const m = minionById.get(n.targetMinionId as string);
-        if (m) row.minionName = m.name;
-      }
-      if (n.targetKind === "grant" && n.targetGrantId) {
-        row.targetGrantId = n.targetGrantId;
-        const g = grantById.get(n.targetGrantId as string);
-        if (g) {
-          row.grantKeyword = g.keyword;
-          if (g.ownerPlayerId) {
-            const p = playerById.get(g.ownerPlayerId as string);
-            if (p) {
-              row.playerId = p._id;
-              row.playerDisplayName = userDisplay(p.userId);
-            }
-          }
-        }
-      }
-      if (n.targetKind === "goal" && n.targetGoalId) {
-        row.targetGoalId = n.targetGoalId;
-        const g = goalById.get(n.targetGoalId as string);
-        if (g) {
-          row.goalKeyword = g.keyword;
-          if (g.fromPlayerId) {
-            const p = playerById.get(g.fromPlayerId as string);
-            if (p) {
-              row.playerId = p._id;
-              row.playerDisplayName = userDisplay(p.userId);
-            }
-          }
-        }
-      }
-
-      if (syndId) {
-        const s = syndicateById.get(syndId as string);
-        if (s) row.syndicateName = s.name;
-        const p = playerBySyndicateId.get(syndId as string);
-        if (p) {
-          row.playerId = p._id;
-          row.playerDisplayName = userDisplay(p.userId);
-        }
-      }
-
-      // `attachedRolls` follows the GM-only invariant of
-      // `listNotesForTarget`: KEY OMITTED when there's no
-      // `attachedRollSetId`; KEY PRESENT (with `null` fallback) when
-      // there is one.
-      if (n.attachedRollSetId) {
-        row.attachedRolls =
-          rollSetById.get(n.attachedRollSetId as string) ?? null;
-      }
-      return row;
+    const rows = await projectNoteRows(ctx, timerNotes, {
+      gameId: args.gameId,
+      includeGmFields: true,
     });
+    return rows as TimerNoteRow[];
+  },
+});
 
-    // ── Server-side time-INDEPENDENT sort ─────────────────────
-    // Newest-first by `createdAt`. `createdAt` is frozen at insert
-    // time so the order is stable until a new timer-bearing note is
-    // created or an existing one is deleted — no wall-clock reads,
-    // no client refinement.
-    projected.sort((a, b) => b.createdAt - a.createdAt);
-
-    return projected;
+/**
+ * Notes drawer aggregation — every note in `gameId` the viewer may see
+ * (`canViewNote`: own + public for Players, all for the GM), projected
+ * newest-first with denormalised target context. GM-only fields
+ * (`timer`, `attachedRolls`) are stripped for Players.
+ *
+ * `clocksOnly` (GM-only) narrows the list to timer-bearing notes; the
+ * flag is ignored for Players, who never receive timers anyway.
+ */
+export const listGameNotes = query({
+  args: { gameId: v.id("games"), clocksOnly: v.optional(v.boolean()) },
+  handler: async (ctx, args): Promise<GameNoteRow[]> => {
+    const { userId, role } = await requireGameParticipant(ctx, args.gameId);
+    const allNotes = await ctx.db
+      .query("notes")
+      .withIndex("by_game_kind_created", (q) => q.eq("gameId", args.gameId))
+      .collect();
+    let visible = allNotes.filter((n) => canViewNote(n, { userId, role }));
+    if (args.clocksOnly && role === "gm") {
+      visible = visible.filter((n) => n.timer !== undefined);
+    }
+    return await projectNoteRows(ctx, visible, {
+      gameId: args.gameId,
+      includeGmFields: role === "gm",
+    });
   },
 });
 
@@ -822,9 +853,7 @@ export const listNotesForTarget = query({
       rows = await ctx.db
         .query("notes")
         .withIndex("by_game_grant_created", (q) =>
-          q
-            .eq("gameId", args.gameId)
-            .eq("targetGrantId", args.targetGrantId!),
+          q.eq("gameId", args.gameId).eq("targetGrantId", args.targetGrantId!),
         )
         .order("desc")
         .collect();
@@ -835,9 +864,7 @@ export const listNotesForTarget = query({
       rows = await ctx.db
         .query("notes")
         .withIndex("by_game_goal_created", (q) =>
-          q
-            .eq("gameId", args.gameId)
-            .eq("targetGoalId", args.targetGoalId!),
+          q.eq("gameId", args.gameId).eq("targetGoalId", args.targetGoalId!),
         )
         .order("desc")
         .collect();

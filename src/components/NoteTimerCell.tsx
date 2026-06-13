@@ -51,6 +51,11 @@ export type NoteTimerState =
 
 type Size = "sm" | "md";
 
+/** See `RollSetDisplay`'s `Variant`: `terminal` renders the clock as an
+ * inline `.term-stat` for the note's terminal prefix bar, `stacked` the
+ * original square cell. */
+type Variant = "stacked" | "terminal";
+
 /**
  * Format a remaining-ms value as a `{ mm, ss }` pair so the cell can
  * render minutes on the top line and seconds below. Positive
@@ -107,6 +112,7 @@ export function NoteTimerCell({
   viewerIsGm,
   onCycle,
   size = "sm",
+  variant = "stacked",
 }: {
   timer: NoteTimerState;
   /**
@@ -118,6 +124,7 @@ export function NoteTimerCell({
   viewerIsGm: boolean;
   onCycle?: () => void | Promise<void>;
   size?: Size;
+  variant?: Variant;
 }) {
   // Tick driver: subscribe to the shared 1Hz heartbeat. Every visible
   // cell on the page re-renders on the same second-boundary; see the
@@ -126,7 +133,58 @@ export function NoteTimerCell({
 
   const effective = deriveTimerState(timer, now);
 
-  // Compute cell variant + body content + badge per state.
+  // Terminal variant (design 19): one inline `.term-stat` matching
+  // RollSetDisplay's terminal output, so the clock sits in the same
+  // mono prefix bar as the dice. Clickable for the GM, static span
+  // otherwise. `done` reads mint, `overdue` / `due` read riot-red,
+  // `running` is neutral white.
+  if (variant === "terminal") {
+    let value: string;
+    let resClass = "";
+    if (effective === "running" || effective === "overdue") {
+      const remaining = timer.kind === "ticking" ? timer.dueAt - now : 0;
+      const { mm, ss } = formatTimerValue(remaining);
+      value = `${mm}:${ss}`;
+      if (effective === "overdue") resClass = "fail";
+    } else if (effective === "due_manual") {
+      value = "due";
+      resClass = "fail";
+    } else {
+      value = "done";
+      resClass = "ok";
+    }
+    const inner = (
+      <>
+        <span className="term-key">clk</span>
+        <span className={resClass ? `term-val ${resClass}` : "term-val"}>
+          {value}
+        </span>
+      </>
+    );
+    if (viewerIsGm) {
+      const ariaLabel = ariaLabelFor(effective);
+      return (
+        <button
+          type="button"
+          className="term-stat term-clock"
+          aria-label={ariaLabel}
+          title={ariaLabel}
+          onClick={() => {
+            if (onCycle) void onCycle();
+          }}
+        >
+          {inner}
+        </button>
+      );
+    }
+    return (
+      <span className="term-stat term-clock" aria-label="Note timer">
+        {inner}
+      </span>
+    );
+  }
+
+  // Compute cell variant + body content + badge per state (stacked).
   const classNames = ["roll-cell"];
   if (size === "sm") classNames.push("sm");
   if (effective === "overdue" || effective === "due_manual") {

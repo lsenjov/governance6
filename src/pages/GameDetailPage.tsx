@@ -16,7 +16,7 @@ import {
 } from "../components/NoteIcon";
 import { RollSetDisplay } from "../components/RollSetDisplay";
 import { Drawer } from "../components/Drawer";
-import { GmTodoDrawer } from "../components/GmTodoDrawer";
+import { NotesDrawer } from "../components/NotesDrawer";
 
 type GameId = Id<"games">;
 type PlayerId = Id<"players">;
@@ -260,7 +260,7 @@ function GameHud({
 }) {
   const [logOpen, setLogOpen] = useState(false);
   const [gmToolsOpen, setGmToolsOpen] = useState(false);
-  const [gmTodoOpen, setGmTodoOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   return (
     <>
       <header className="game-hud">
@@ -296,15 +296,13 @@ function GameHud({
             GM Tools
           </button>
         )}
-        {viewerIsGm && (
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => setGmTodoOpen(true)}
-          >
-            GM Todo
-          </button>
-        )}
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => setNotesOpen(true)}
+        >
+          Notes
+        </button>
         <NoteIcon
           gameId={gameId}
           target={{ kind: "game" }}
@@ -338,8 +336,12 @@ function GameHud({
           onClose={() => setGmToolsOpen(false)}
         />
       )}
-      {viewerIsGm && gmTodoOpen && (
-        <GmTodoDrawer gameId={gameId} onClose={() => setGmTodoOpen(false)} />
+      {notesOpen && (
+        <NotesDrawer
+          gameId={gameId}
+          viewerIsGm={viewerIsGm}
+          onClose={() => setNotesOpen(false)}
+        />
       )}
     </>
   );

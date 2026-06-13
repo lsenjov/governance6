@@ -2,43 +2,44 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import type { GmTodoNoteRow } from "../../convex/notes";
+import type { GameNoteRow } from "../../convex/notes";
 import { Drawer } from "./Drawer";
 import { NoteTimerCell } from "./NoteTimerCell";
 import { RollSetDisplay } from "./RollSetDisplay";
 
 /**
- * GM Todo drawer — at-a-glance "todo list" of every note in the
- * current game that has a clock attached. See
- * `plans/2026-04-28-gm-todo-drawer-v1.md`.
+ * Notes drawer — at-a-glance list of every note in the current game
+ * the viewer may see (own + public for Players, all for the GM),
+ * newest-first. Open to all participants
+ * (`plans/2026-04-28-gm-todo-drawer-v1.md` for the GM-only origin).
  *
- * Subscribes to the GM-only `listGameNotesWithTimers` query. Each row
- * carries its own `<NoteTimerCell>` (shared `useNow()` heartbeat) and
- * its own pinned roll set when present. Cycling a clock reuses
- * `cycleNoteTimer` verbatim — there is no parallel write path.
+ * Subscribes to `listGameNotes`. Each row carries its own
+ * `<NoteTimerCell>` (shared `useNow()` heartbeat, GM-only) and pinned
+ * roll set when present. Cycling a clock reuses `cycleNoteTimer`
+ * verbatim — there is no parallel write path.
  *
- * Sort order: server returns rows newest-first by `createdAt`. The
- * order is fully time-INDEPENDENT — `createdAt` is frozen at insert
- * time, so the drawer order only changes when a timer-bearing note
- * is added or removed. No client-side refinement is needed.
+ * Sort order: server returns rows newest-first by `createdAt`, fully
+ * time-INDEPENDENT — `createdAt` is frozen at insert time, so order
+ * only changes when a note is added or removed.
  *
- * Visibility — GM only. The button gate, the conditional mount in
- * `GameDetailPage`, and the server-side `requireGameGm` form three
- * layers of defence. Player sessions never reach this component.
- *
- * Scope: v1 deliberately exposes ONLY the cycle-on-click action.
- * Other note operations (delete, change visibility — neither exists
- * today: notes are author-immutable post-creation) stay in the
- * popover so the drawer doesn't drift into a second source of truth.
+ * GM-only `clocksOnly` toggle narrows the list to timer-bearing notes;
+ * the toggle is hidden for Players (who never receive timers), and the
+ * server ignores the flag for non-GM callers.
  */
-export function GmTodoDrawer({
+export function NotesDrawer({
   gameId,
+  viewerIsGm,
   onClose,
 }: {
   gameId: Id<"games">;
+  viewerIsGm: boolean;
   onClose: () => void;
 }) {
-  const rows = useQuery(api.notes.listGameNotesWithTimers, { gameId });
+  const [clocksOnly, setClocksOnly] = useState(false);
+  const rows = useQuery(api.notes.listGameNotes, {
+    gameId,
+    ...(viewerIsGm && clocksOnly ? { clocksOnly: true } : {}),
+  });
   const cycleTimer = useMutation(api.notes.cycleNoteTimer);
   const [err, setErr] = useState<string | null>(null);
 
@@ -52,51 +53,100 @@ export function GmTodoDrawer({
   }
 
   return (
-    <Drawer onClose={onClose} title="GM Todo">
+    <Drawer onClose={onClose} title="Notes">
       {err && (
         <div className="error" role="alert" style={{ margin: "0 1rem" }}>
           {err}
         </div>
       )}
-      <GmTodoBody rows={rows} onCycle={handleCycle} />
+      {viewerIsGm && (
+        <label className="notes-drawer-filter">
+          <input
+            type="checkbox"
+            checked={clocksOnly}
+            onChange={(e) => setClocksOnly(e.target.checked)}
+          />
+          Clocks only
+        </label>
+      )}
+      <NotesDrawerBody
+        rows={rows}
+        viewerIsGm={viewerIsGm}
+        onCycle={handleCycle}
+      />
     </Drawer>
   );
 }
 
-function GmTodoBody({
+function NotesDrawerBody({
   rows,
+  viewerIsGm,
   onCycle,
 }: {
-  rows: GmTodoNoteRow[] | undefined;
+  rows: GameNoteRow[] | undefined;
+  viewerIsGm: boolean;
   onCycle: (noteId: Id<"notes">) => void | Promise<void>;
 }) {
   if (rows === undefined) {
     return <div className="muted">Loading…</div>;
   }
   if (rows.length === 0) {
-    return <div className="muted">No clocks running.</div>;
+    return <div className="muted">No notes yet.</div>;
   }
   return (
     <>
       {rows.map((r) => (
-        <GmTodoRow key={r._id} row={r} onCycle={onCycle} />
+        <NotesDrawerRow
+          key={r._id}
+          row={r}
+          viewerIsGm={viewerIsGm}
+          onCycle={onCycle}
+        />
       ))}
     </>
   );
 }
 
-function GmTodoRow({
+function NotesDrawerRow({
   row,
+  viewerIsGm,
   onCycle,
 }: {
-  row: GmTodoNoteRow;
+  row: GameNoteRow;
+  viewerIsGm: boolean;
   onCycle: (noteId: Id<"notes">) => void | Promise<void>;
 }) {
   // Layout mirrors `<NoteList>`'s `.note-item` block so spacing,
-  // borders, and metadata typography stay consistent with the
-  // popover. The body excerpt sits above the clock + dice line.
+  // borders, and metadata typography stay consistent with the popover.
+  // Design 19: the clock + dice render as a terminal prefix bar across
+  // the top of the card (`variant="terminal"`). GM-only fields (timer /
+  // rolls) are absent on Player payloads, so the bar is suppressed for
+  // them entirely.
+  const hasRolls =
+    row.attachedRolls !== undefined && row.attachedRolls !== null;
+  const timerEl = row.timer ? (
+    <NoteTimerCell
+      timer={row.timer}
+      viewerIsGm={viewerIsGm}
+      onCycle={() => onCycle(row._id)}
+      variant="terminal"
+    />
+  ) : null;
   return (
     <div className="note-item">
+      {(hasRolls || timerEl) && (
+        <div className="note-terminal-bar" aria-label="Dice rolls (GM)">
+          {hasRolls ? (
+            <RollSetDisplay
+              rolls={row.attachedRolls!}
+              variant="terminal"
+              trailing={timerEl ?? undefined}
+            />
+          ) : (
+            timerEl
+          )}
+        </div>
+      )}
       <div className="note-item-meta">
         <strong>{row.authorDisplayName}</strong>
         <span
@@ -107,11 +157,15 @@ function GmTodoRow({
         </span>
         <span
           className="muted"
+          title={new Date(row.createdAt).toLocaleString()}
           style={{ marginLeft: "0.5rem", fontSize: "0.8rem" }}
         >
-          {new Date(row.createdAt).toLocaleString()}
+          {new Date(row.createdAt).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
         </span>
-        <span style={{ marginLeft: "auto" }}>{formatGmTodoTarget(row)}</span>
+        <span style={{ marginLeft: "auto" }}>{formatNoteTarget(row)}</span>
       </div>
       <div
         className="note-item-body"
@@ -124,37 +178,12 @@ function GmTodoRow({
       >
         {row.body}
       </div>
-      <div style={{ marginTop: "0.4rem" }}>
-        {row.attachedRolls !== undefined && row.attachedRolls !== null ? (
-          <RollSetDisplay
-            rolls={row.attachedRolls}
-            size="sm"
-            trailing={
-              <NoteTimerCell
-                timer={row.timer}
-                viewerIsGm={true}
-                onCycle={() => onCycle(row._id)}
-                size="sm"
-              />
-            }
-          />
-        ) : (
-          <div className="roll-set" aria-label="Note timer (GM)">
-            <NoteTimerCell
-              timer={row.timer}
-              viewerIsGm={true}
-              onCycle={() => onCycle(row._id)}
-              size="sm"
-            />
-          </div>
-        )}
-      </div>
     </div>
   );
 }
 
 /**
- * Render the target context line for a GM Todo row. JSX so individual
+ * Render the target context line for a note row. JSX so individual
  * segments can carry the existing `.muted` separator class.
  *
  *   - minion-target: `Minion • Syndicate • Player`
@@ -168,9 +197,19 @@ function GmTodoRow({
  * syndicate yet (or, for grant/goal targets, when the row has no
  * owner / from-player).
  *
- * Exported for unit tests (Task 13).
+ * Exported for unit tests.
  */
-export function formatGmTodoTarget(row: GmTodoNoteRow): React.ReactNode {
+export function formatNoteTarget(
+  row: Pick<
+    GameNoteRow,
+    | "targetKind"
+    | "minionName"
+    | "syndicateName"
+    | "grantKeyword"
+    | "goalKeyword"
+    | "playerDisplayName"
+  >,
+): React.ReactNode {
   if (row.targetKind === "game") {
     return <span className="muted">Game-wide</span>;
   }
