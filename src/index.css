@@ -1383,8 +1383,10 @@ button.roll-cell.note-timer-cell-clickable:hover .roll-cell-footer {
 }
 
 .term-key {
-  /* Dimmed off-white rather than a grey token — readable on black. */
-  color: rgba(244, 241, 234, 0.55);
+  /* Dimmed off-white rather than a grey token — readable on black.
+   * Kept reasonably bright (0.78) so the skill/chaos labels stay legible
+   * against the bar while still reading dimmer than the white values. */
+  color: rgba(244, 241, 234, 0.78);
   font-weight: 400;
   margin-right: 0.35rem;
 }
