@@ -11,7 +11,9 @@ export async function assertNotesHaveNoReplies(
       .withIndex("by_note", (q) => q.eq("targetNoteId", note._id))
       .take(1);
     if (replies.length > 0) {
-      throw new Error("Delete note replies first, before deleting their target.");
+      throw new Error(
+        "Delete note replies first, before deleting their target.",
+      );
     }
   }
 }
