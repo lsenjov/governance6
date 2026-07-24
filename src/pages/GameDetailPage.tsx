@@ -17,6 +17,7 @@ import {
 import { RollSetDisplay } from "../components/RollSetDisplay";
 import { Drawer } from "../components/Drawer";
 import { NotesDrawer } from "../components/NotesDrawer";
+import { AnnouncementsSection } from "../components/AnnouncementsSection";
 
 type GameId = Id<"games">;
 type PlayerId = Id<"players">;
@@ -165,6 +166,14 @@ export function GameDetailPage() {
             gameState={gameState}
             viewerIsGm={viewer.isGm}
             viewerPlayerId={viewer.playerId}
+            hideManagementControls={hideManagementControls}
+            noteCounts={noteCounts}
+          />
+
+          <AnnouncementsSection
+            gameId={gid}
+            gameState={gameState}
+            viewerIsGm={viewer.isGm}
             hideManagementControls={hideManagementControls}
             noteCounts={noteCounts}
           />
@@ -409,9 +418,8 @@ function GmToolsDrawer({
           className="muted"
           style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}
         >
-          Hides + New Grant, + New Goal, and the Edit / Clear owner / Delete
-          buttons on Treason Grants and Goals. The toggle is remembered for this
-          game.
+          Hides creation, editing, and deletion controls for Treason Grants,
+          Goals, and Announcements. The toggle is remembered for this game.
         </div>
       </section>
     </Drawer>

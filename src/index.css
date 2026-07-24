@@ -1088,6 +1088,155 @@ body:has(.sign-in-wrapper) {
   min-height: 3.5rem;
 }
 
+/* Announcements */
+
+.announcements-section {
+  border-top: 8px solid var(--border);
+  padding-top: 0.875rem;
+}
+
+.announcements-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.announcements-heading h3 {
+  margin: 0.125rem 0 0;
+}
+
+.announcement-total {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.announcement-new-button {
+  margin-bottom: 0.75rem;
+}
+
+.announcement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.announcement-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  background: var(--bg-elevated);
+  border: 2px solid var(--border);
+  min-width: 0;
+}
+
+.announcement-ordinal {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  background: var(--fg);
+  color: var(--bg-elevated);
+  border-right: 2px solid var(--border);
+  padding: 0.9rem 0.5rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+}
+
+.announcement-content {
+  min-width: 0;
+  padding: 0.75rem 0.875rem 0.875rem;
+}
+
+.announcement-row-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  min-height: 2rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.45rem;
+}
+
+.announcement-actions {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.announcement-actions button {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.72rem;
+}
+
+.announcement-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0.75rem 0 0;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.announcement-form,
+.announcement-edit-form {
+  background: var(--bg-muted);
+  border: 2px solid var(--border);
+  padding: 0.75rem;
+}
+
+.announcement-form {
+  margin-bottom: 0.75rem;
+}
+
+.announcement-edit-form {
+  margin-top: 0.75rem;
+}
+
+.announcement-form textarea,
+.announcement-edit-form textarea {
+  display: block;
+  width: 100%;
+}
+
+.announcement-form-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.announcement-form-footer .muted {
+  margin-right: auto;
+  font-size: 0.75rem;
+}
+
+.announcements-empty {
+  border: 2px dashed var(--border);
+  padding: 0.875rem;
+  color: var(--fg-muted);
+  background: var(--bg-muted);
+}
+
+@media (max-width: 520px) {
+  .announcement-row {
+    grid-template-columns: 1fr;
+  }
+
+  .announcement-ordinal {
+    justify-content: flex-start;
+    border-right: 0;
+    border-bottom: 2px solid var(--border);
+    padding: 0.4rem 0.75rem;
+  }
+}
+
 /* ---------------------------------------------------------------------------
  * Brutalist utilities
  * ------------------------------------------------------------------------- */
