@@ -363,7 +363,6 @@ export default defineSchema({
     .index("by_grant", ["targetGrantId"])
     .index("by_goal", ["targetGoalId"])
     .index("by_announcement", ["targetAnnouncementId"])
-    .index("by_note", ["targetNoteId"])
     .index("by_author_game", ["authorUserId", "gameId"]),
 
   // Rule 26: Treason Grants — per-game GM-authored bundles of
