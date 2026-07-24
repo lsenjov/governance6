@@ -16,6 +16,7 @@ import type * as games from "../games.js";
 import type * as goals from "../goals.js";
 import type * as http from "../http.js";
 import type * as ledger from "../ledger.js";
+import type * as lib_announcements from "../lib/announcements.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_calls from "../lib/calls.js";
 import type * as lib_rolls from "../lib/rolls.js";
@@ -44,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   goals: typeof goals;
   http: typeof http;
   ledger: typeof ledger;
+  "lib/announcements": typeof lib_announcements;
   "lib/auth": typeof lib_auth;
   "lib/calls": typeof lib_calls;
   "lib/rolls": typeof lib_rolls;

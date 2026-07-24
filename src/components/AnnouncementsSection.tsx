@@ -154,7 +154,11 @@ function NewAnnouncementForm({ gameId }: { gameId: Id<"games"> }) {
           Cancel
         </button>
       </div>
-      {err && <div className="error-text">{err}</div>}
+      {err && (
+        <div className="error-text" role="alert">
+          {err}
+        </div>
+      )}
     </form>
   );
 }
@@ -255,6 +259,9 @@ function AnnouncementRow({
                 type="button"
                 className="secondary"
                 disabled={busy}
+                aria-label={
+                  editing ? `Cancel editing ${ordinal}` : `Edit ${ordinal}`
+                }
                 onClick={() => {
                   setBody(announcement.body);
                   setErr(null);
@@ -267,6 +274,7 @@ function AnnouncementRow({
                 type="button"
                 className="danger"
                 disabled={busy}
+                aria-label={`Delete ${ordinal}`}
                 onClick={() => void handleDelete()}
               >
                 Delete
@@ -302,7 +310,11 @@ function AnnouncementRow({
           <p className="announcement-body">{announcement.body}</p>
         )}
 
-        {err && <div className="error-text">{err}</div>}
+        {err && (
+          <div className="error-text" role="alert">
+            {err}
+          </div>
+        )}
       </div>
     </article>
   );

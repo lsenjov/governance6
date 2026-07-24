@@ -8,6 +8,7 @@ import {
   projectRollSet,
   type RollSetView,
 } from "./lib/rolls";
+import { MAX_ANNOUNCEMENT_NOTES } from "./lib/announcements";
 
 /**
  * Notes — per-game textual annotations on the game, a syndicate, a
@@ -135,6 +136,7 @@ export const createNote = mutation({
       ctx,
       args.gameId,
     );
+    assertNoteTargetVisibleInState(args.targetKind, game.state, role);
 
     // Target consistency — exactly the right id(s) must be supplied.
     if (args.targetKind === "game") {
@@ -246,9 +248,17 @@ export const createNote = mutation({
       if (announcement.gameId !== args.gameId) {
         throw new Error("That Announcement is not in this game.");
       }
-      if (game.state === "ready" && role !== "gm") {
+      const existingNotes = await ctx.db
+        .query("notes")
+        .withIndex("by_game_announcement_created", (q) =>
+          q
+            .eq("gameId", args.gameId)
+            .eq("targetAnnouncementId", announcement._id),
+        )
+        .take(MAX_ANNOUNCEMENT_NOTES);
+      if (existingNotes.length >= MAX_ANNOUNCEMENT_NOTES) {
         throw new Error(
-          "Announcements are only visible to the Game Master before play begins.",
+          `An announcement may have at most ${MAX_ANNOUNCEMENT_NOTES} notes.`,
         );
       }
     }
@@ -889,6 +899,7 @@ export const listNotesForTarget = query({
       ctx,
       args.gameId,
     );
+    assertNoteTargetVisibleInState(args.targetKind, game.state, role);
 
     let rows: Doc<"notes">[];
     if (args.targetKind === "game") {
@@ -957,11 +968,6 @@ export const listNotesForTarget = query({
       if (!announcement) throw new Error("Announcement not found.");
       if (announcement.gameId !== args.gameId) {
         throw new Error("That Announcement is not in this game.");
-      }
-      if (game.state === "ready" && role !== "gm") {
-        throw new Error(
-          "Announcements are only visible to the Game Master before play begins.",
-        );
       }
       rows = await ctx.db
         .query("notes")
@@ -1122,6 +1128,22 @@ function canViewNoteTarget(
   return (
     note.targetKind !== "announcement" || role === "gm" || gameState !== "ready"
   );
+}
+
+function assertNoteTargetVisibleInState(
+  targetKind: Doc<"notes">["targetKind"],
+  gameState: Doc<"games">["state"],
+  role: "gm" | "player",
+): void {
+  if (
+    targetKind === "announcement" &&
+    gameState === "ready" &&
+    role === "player"
+  ) {
+    throw new Error(
+      "Announcements are only visible to the Game Master before play begins.",
+    );
+  }
 }
 
 /**

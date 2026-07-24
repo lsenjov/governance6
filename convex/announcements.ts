@@ -3,6 +3,7 @@ import type { MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireGameGm, requireGameParticipant } from "./lib/auth";
+import { MAX_ANNOUNCEMENT_NOTES } from "./lib/announcements";
 
 const BODY_MAX = 2000;
 
@@ -71,7 +72,12 @@ export const deleteAnnouncement = mutation({
       .withIndex("by_announcement", (q) =>
         q.eq("targetAnnouncementId", announcement._id),
       )
-      .collect();
+      .take(MAX_ANNOUNCEMENT_NOTES + 1);
+    if (notes.length > MAX_ANNOUNCEMENT_NOTES) {
+      throw new Error(
+        "Announcement has more notes than the supported deletion limit.",
+      );
+    }
     for (const note of notes) await ctx.db.delete(note._id);
 
     await ctx.db.delete(announcement._id);

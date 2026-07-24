@@ -1235,6 +1235,12 @@ body:has(.sign-in-wrapper) {
     border-bottom: 2px solid var(--border);
     padding: 0.4rem 0.75rem;
   }
+
+  .announcement-actions button,
+  .announcement-row-header .note-icon-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 /* ---------------------------------------------------------------------------

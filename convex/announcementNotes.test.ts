@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
 import type { Id } from "./_generated/dataModel";
+import { MAX_ANNOUNCEMENT_NOTES } from "./lib/announcements";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -111,6 +112,54 @@ describe("announcement notes: lifecycle visibility", () => {
           targetAnnouncementId: h.ids.announcementId,
         }),
     ).rejects.toThrow(/only visible.*Game Master/i);
+  });
+
+  test("ready Players receive the same secrecy error for every announcement id", async () => {
+    const h = await createHarness();
+    const { deletedId, foreignId } = await h.t.run(async (ctx) => {
+      const deletedId = await ctx.db.insert("announcements", {
+        gameId: h.ids.gameId,
+        body: "Deleted",
+        createdAt: 2,
+        createdByUserId: h.ids.gmId,
+      });
+      await ctx.db.delete(deletedId);
+      const otherGameId = await ctx.db.insert("games", {
+        gmId: h.ids.gmId,
+        state: "ready",
+      });
+      const foreignId = await ctx.db.insert("announcements", {
+        gameId: otherGameId,
+        body: "Foreign",
+        createdAt: 3,
+        createdByUserId: h.ids.gmId,
+      });
+      return { deletedId, foreignId };
+    });
+    const player = h.t.withIdentity(asUser(h.ids.playerId));
+    const ids = [h.ids.announcementId, deletedId, foreignId];
+
+    for (const targetAnnouncementId of ids) {
+      await expect(
+        player.mutation(api.notes.createNote, {
+          gameId: h.ids.gameId,
+          targetKind: "announcement",
+          targetAnnouncementId,
+          body: "Probe",
+        }),
+      ).rejects.toThrow(
+        "Announcements are only visible to the Game Master before play begins.",
+      );
+      await expect(
+        player.query(api.notes.listNotesForTarget, {
+          gameId: h.ids.gameId,
+          targetKind: "announcement",
+          targetAnnouncementId,
+        }),
+      ).rejects.toThrow(
+        "Announcements are only visible to the Game Master before play begins.",
+      );
+    }
   });
 
   test("ready announcement notes are absent from player drawer and counts", async () => {
@@ -249,5 +298,41 @@ describe("announcement notes: target integrity and projection", () => {
       note: await ctx.db.get(noteId),
     }));
     expect(stored).toEqual({ announcement: null, note: null });
+  });
+
+  test("the note cap keeps a maximum-size deletion transaction bounded", async () => {
+    const h = await createHarness();
+    await h.t.run(async (ctx) => {
+      for (let index = 0; index < MAX_ANNOUNCEMENT_NOTES; index += 1) {
+        await ctx.db.insert("notes", {
+          gameId: h.ids.gameId,
+          targetKind: "announcement",
+          targetAnnouncementId: h.ids.announcementId,
+          authorUserId: h.ids.gmId,
+          visibility: "private",
+          body: `Note ${index}`,
+          createdAt: index,
+        });
+      }
+    });
+
+    await expect(
+      createAnnouncementNote(h, h.ids.gmId, "Over the limit"),
+    ).rejects.toThrow(new RegExp(`${MAX_ANNOUNCEMENT_NOTES} notes`));
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.announcements.deleteAnnouncement, {
+        announcementId: h.ids.announcementId,
+      });
+    const remaining = await h.t.run((ctx) =>
+      ctx.db
+        .query("notes")
+        .withIndex("by_announcement", (q) =>
+          q.eq("targetAnnouncementId", h.ids.announcementId),
+        )
+        .take(1),
+    );
+    expect(remaining).toEqual([]);
   });
 });

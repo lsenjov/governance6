@@ -23,6 +23,8 @@ per-game management-controls toggle.
   the GM and rostered Players can read them.
 - Announcement notes use the existing note rules. Participants may continue
   adding notes after archiving.
+- An announcement accepts at most 100 notes. This keeps its note cascade within
+  one bounded Convex transaction when the GM deletes it.
 - A Player cannot create, list, count, or discover announcement notes while the
   game is `ready`, including through the Notes drawer.
 - Deleting an announcement deletes its attached notes in the same transaction.
