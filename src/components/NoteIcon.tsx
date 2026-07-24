@@ -210,8 +210,7 @@ function NotesPopover({
 
       const rawTop =
         vertical === "below" ? a.bottom + GAP : a.top - GAP - p.height;
-      const rawLeft =
-        horizontal === "left" ? a.left : a.right - p.width;
+      const rawLeft = horizontal === "left" ? a.left : a.right - p.width;
 
       // Clamp to the viewport so nothing extends past the edge even on
       // narrow viewports where neither alignment fits cleanly.

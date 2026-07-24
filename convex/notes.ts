@@ -145,9 +145,7 @@ export const createNote = mutation({
         args.targetGoalId !== undefined ||
         args.targetAnnouncementId !== undefined
       ) {
-        throw new Error(
-          "Game-kind notes must not include another target id.",
-        );
+        throw new Error("Game-kind notes must not include another target id.");
       }
     } else if (args.targetKind === "syndicate") {
       if (
@@ -1100,10 +1098,7 @@ export const getNoteCountsForGameView = query({
         byGrant[n.targetGrantId] = (byGrant[n.targetGrantId] ?? 0) + 1;
       } else if (n.targetKind === "goal" && n.targetGoalId) {
         byGoal[n.targetGoalId] = (byGoal[n.targetGoalId] ?? 0) + 1;
-      } else if (
-        n.targetKind === "announcement" &&
-        n.targetAnnouncementId
-      ) {
+      } else if (n.targetKind === "announcement" && n.targetAnnouncementId) {
         byAnnouncement[n.targetAnnouncementId] =
           (byAnnouncement[n.targetAnnouncementId] ?? 0) + 1;
       }
@@ -1125,9 +1120,7 @@ function canViewNoteTarget(
   role: "gm" | "player",
 ): boolean {
   return (
-    note.targetKind !== "announcement" ||
-    role === "gm" ||
-    gameState !== "ready"
+    note.targetKind !== "announcement" || role === "gm" || gameState !== "ready"
   );
 }
 

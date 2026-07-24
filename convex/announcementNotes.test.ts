@@ -231,18 +231,12 @@ describe("announcement notes: target integrity and projection", () => {
     expect(drawerRows).toHaveLength(1);
     expect(drawerRows[0].targetKind).toBe("announcement");
     expect(drawerRows[0].targetAnnouncementId).toBe(h.ids.announcementId);
-    expect(drawerRows[0].announcementExcerpt).toBe(
-      `${"A".repeat(80)}…`,
-    );
+    expect(drawerRows[0].announcementExcerpt).toBe(`${"A".repeat(80)}…`);
   });
 
   test("deleting an announcement cascades its notes", async () => {
     const h = await createHarness();
-    const noteId = await createAnnouncementNote(
-      h,
-      h.ids.gmId,
-      "Disposable",
-    );
+    const noteId = await createAnnouncementNote(h, h.ids.gmId, "Disposable");
 
     await h.t
       .withIdentity(asUser(h.ids.gmId))
