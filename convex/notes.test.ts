@@ -2625,3 +2625,277 @@ describe("notes on grants/goals: timer eligibility + timer-note projection", () 
     expect(goalRow!.playerDisplayName).toBeUndefined();
   });
 });
+
+describe("notes on notes", () => {
+  test("participants can reply to visible notes and nest replies", async () => {
+    const h = await createHarness();
+    const parentId = await createGameNote(
+      h,
+      h.ids.aId,
+      "Parent note",
+      "public",
+    );
+
+    const replyId = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "note",
+        targetNoteId: parentId,
+        body: "First reply",
+        visibility: "public",
+      });
+    await h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+      gameId: h.ids.gameId,
+      targetKind: "note",
+      targetNoteId: replyId,
+      body: "Nested reply",
+      visibility: "public",
+    });
+
+    const parentReplies = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "note",
+        targetNoteId: parentId,
+      });
+    expect(parentReplies).toHaveLength(1);
+    expect(parentReplies[0]).toMatchObject({
+      _id: replyId,
+      body: "First reply",
+      replyCount: 1,
+    });
+
+    const rootNotes = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "game",
+      });
+    expect(rootNotes[0]).toMatchObject({
+      _id: parentId,
+      replyCount: 1,
+    });
+
+    const counts = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.notes.getNoteCountsForGameView, { gameId: h.ids.gameId });
+    expect(counts.byNote[parentId]).toBe(1);
+    expect(counts.byNote[replyId]).toBe(1);
+  });
+
+  test("target must be a visible note in the same game", async () => {
+    const h = await createHarness();
+    const privateParentId = await createGameNote(
+      h,
+      h.ids.aId,
+      "Alice only",
+      "private",
+    );
+
+    await expect(
+      h.t.withIdentity(asUser(h.ids.bId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "note",
+        targetNoteId: privateParentId,
+        body: "Cannot see the parent",
+      }),
+    ).rejects.toThrow(/not visible/i);
+
+    const otherGameNoteId = await h.t.run(async (ctx) => {
+      const otherGameId = await ctx.db.insert("games", {
+        name: "Other game",
+        gmId: h.ids.gmId,
+        state: "ready",
+      });
+      return await ctx.db.insert("notes", {
+        gameId: otherGameId,
+        targetKind: "game",
+        authorUserId: h.ids.gmId,
+        visibility: "public",
+        body: "Elsewhere",
+        createdAt: Date.now(),
+      });
+    });
+
+    await expect(
+      h.t.withIdentity(asUser(h.ids.aId)).mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "note",
+        targetNoteId: otherGameNoteId,
+        body: "Cross-game reply",
+      }),
+    ).rejects.toThrow(/not in this game/i);
+  });
+
+  test("a public reply stays hidden when any ancestor is private", async () => {
+    const h = await createHarness();
+    const privateParentId = await createGameNote(
+      h,
+      h.ids.aId,
+      "Private parent",
+      "private",
+    );
+    const publicReplyId = await h.t
+      .withIdentity(asUser(h.ids.aId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "note",
+        targetNoteId: privateParentId,
+        body: "Nominally public reply",
+        visibility: "public",
+      });
+
+    const bobDrawer = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.notes.listGameNotes, { gameId: h.ids.gameId });
+    expect(bobDrawer.map((row) => row._id)).not.toContain(publicReplyId);
+
+    const bobCounts = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .query(api.notes.getNoteCountsForGameView, { gameId: h.ids.gameId });
+    expect(bobCounts.byNote[privateParentId]).toBeUndefined();
+
+    await expect(
+      h.t.withIdentity(asUser(h.ids.bId)).query(api.notes.listNotesForTarget, {
+        gameId: h.ids.gameId,
+        targetKind: "note",
+        targetNoteId: privateParentId,
+      }),
+    ).rejects.toThrow(/not visible/i);
+
+    const gmDrawer = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listGameNotes, { gameId: h.ids.gameId });
+    expect(gmDrawer.map((row) => row._id)).toContain(publicReplyId);
+  });
+
+  test("drawer projection identifies the parent note without leaking extra data", async () => {
+    const h = await createHarness();
+    const parentId = await createGameNote(
+      h,
+      h.ids.aId,
+      "P".repeat(100),
+      "public",
+    );
+    const replyId = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "note",
+        targetNoteId: parentId,
+        body: "Reply",
+        visibility: "public",
+      });
+
+    const rows = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.listGameNotes, { gameId: h.ids.gameId });
+    const reply = rows.find((row) => row._id === replyId);
+    expect(reply).toMatchObject({
+      targetKind: "note",
+      targetNoteId: parentId,
+      parentNoteAuthorDisplayName: "Alice",
+      parentNoteExcerpt: `${"P".repeat(80)}…`,
+      replyCount: 0,
+    });
+  });
+
+  test("a note with replies must be deleted leaf-first", async () => {
+    const h = await createHarness();
+    const parentId = await createGameNote(h, h.ids.aId, "Parent", "public");
+    const replyId = await h.t
+      .withIdentity(asUser(h.ids.bId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "note",
+        targetNoteId: parentId,
+        body: "Reply",
+        visibility: "public",
+      });
+
+    await expect(
+      h.t
+        .withIdentity(asUser(h.ids.gmId))
+        .mutation(api.notes.deleteNote, { noteId: parentId }),
+    ).rejects.toThrow(/replies first/i);
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.deleteNote, { noteId: replyId });
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.deleteNote, { noteId: parentId });
+
+    const surviving = await h.t.run(async (ctx) => {
+      return await ctx.db.get(parentId);
+    });
+    expect(surviving).toBeNull();
+  });
+
+  test("deleting an annotated entity cannot orphan reply notes", async () => {
+    const h = await createHarness();
+    const announcementId = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.announcements.createAnnouncement, {
+        gameId: h.ids.gameId,
+        body: "Parent announcement",
+      });
+    const parentNoteId = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "announcement",
+        targetAnnouncementId: announcementId,
+        body: "Parent note",
+        visibility: "public",
+      });
+    const replyId = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.createNote, {
+        gameId: h.ids.gameId,
+        targetKind: "note",
+        targetNoteId: parentNoteId,
+        body: "Reply",
+        visibility: "public",
+      });
+
+    await expect(
+      h.t
+        .withIdentity(asUser(h.ids.gmId))
+        .mutation(api.announcements.deleteAnnouncement, { announcementId }),
+    ).rejects.toThrow(/note replies/i);
+
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.notes.deleteNote, { noteId: replyId });
+    await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.announcements.deleteAnnouncement, { announcementId });
+
+    const rows = await h.t.run(async (ctx) => {
+      return {
+        announcement: await ctx.db.get(announcementId),
+        parentNote: await ctx.db.get(parentNoteId),
+      };
+    });
+    expect(rows).toEqual({ announcement: null, parentNote: null });
+  });
+
+  test("timer context accepts a note target without offering timer buttons", async () => {
+    const h = await createHarness();
+    const parentId = await createGameNote(h, h.ids.gmId, "Parent", "public");
+    const timerContext = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .query(api.notes.getTimerCreateContext, {
+        gameId: h.ids.gameId,
+        targetKind: "note",
+        targetNoteId: parentId,
+      });
+    expect(timerContext).toEqual({
+      viewerIsGm: true,
+      timerEligible: false,
+    });
+  });
+});

@@ -9,10 +9,11 @@ import {
   type RollSetView,
 } from "./lib/rolls";
 import { MAX_ANNOUNCEMENT_NOTES } from "./lib/announcements";
+import { assertNotesHaveNoReplies } from "./lib/notes";
 
 /**
  * Notes — per-game textual annotations on the game, a syndicate, a
- * minion, a treason grant, a goal, or an announcement.
+ * minion, a treason grant, a goal, an announcement, or another note.
  *
  * Design (see `plans/2026-04-20-notes-feature-v3.md` and
  * `plans/2026-05-17-notes-on-grants-and-goals-v1.md`):
@@ -55,6 +56,7 @@ import { MAX_ANNOUNCEMENT_NOTES } from "./lib/announcements";
 const BODY_MIN = 1;
 const BODY_MAX = 2000;
 const ANNOUNCEMENT_EXCERPT_MAX = 80;
+const NOTE_EXCERPT_MAX = 80;
 
 /**
  * Allowed durations for the GM-only note timer (in minutes). Single
@@ -90,6 +92,11 @@ export function excerptAnnouncement(body: string): string {
   return `${body.slice(0, ANNOUNCEMENT_EXCERPT_MAX).trimEnd()}…`;
 }
 
+function excerptNote(body: string): string {
+  if (body.length <= NOTE_EXCERPT_MAX) return body;
+  return `${body.slice(0, NOTE_EXCERPT_MAX).trimEnd()}…`;
+}
+
 /**
  * Visibility helper. Single source of truth for "can `viewer` see `note`?":
  *  - author always sees their own note,
@@ -115,12 +122,14 @@ export const createNote = mutation({
       v.literal("grant"),
       v.literal("goal"),
       v.literal("announcement"),
+      v.literal("note"),
     ),
     targetSyndicateId: v.optional(v.id("syndicates")),
     targetMinionId: v.optional(v.id("minions")),
     targetGrantId: v.optional(v.id("treasonGrants")),
     targetGoalId: v.optional(v.id("goals")),
     targetAnnouncementId: v.optional(v.id("announcements")),
+    targetNoteId: v.optional(v.id("notes")),
     body: v.string(),
     visibility: v.optional(v.union(v.literal("private"), v.literal("public"))),
     // Note Timers (broadened by GM Todo Drawer v1, Task 0b): GM-only.
@@ -145,7 +154,8 @@ export const createNote = mutation({
         args.targetMinionId !== undefined ||
         args.targetGrantId !== undefined ||
         args.targetGoalId !== undefined ||
-        args.targetAnnouncementId !== undefined
+        args.targetAnnouncementId !== undefined ||
+        args.targetNoteId !== undefined
       ) {
         throw new Error("Game-kind notes must not include another target id.");
       }
@@ -155,7 +165,8 @@ export const createNote = mutation({
         args.targetMinionId !== undefined ||
         args.targetGrantId !== undefined ||
         args.targetGoalId !== undefined ||
-        args.targetAnnouncementId !== undefined
+        args.targetAnnouncementId !== undefined ||
+        args.targetNoteId !== undefined
       ) {
         throw new Error(
           "Syndicate-kind notes require targetSyndicateId and no other target id.",
@@ -167,7 +178,8 @@ export const createNote = mutation({
         args.targetSyndicateId !== undefined ||
         args.targetGrantId !== undefined ||
         args.targetGoalId !== undefined ||
-        args.targetAnnouncementId !== undefined
+        args.targetAnnouncementId !== undefined ||
+        args.targetNoteId !== undefined
       ) {
         throw new Error(
           "Minion-kind notes require targetMinionId and no other target id.",
@@ -179,7 +191,8 @@ export const createNote = mutation({
         args.targetSyndicateId !== undefined ||
         args.targetMinionId !== undefined ||
         args.targetGoalId !== undefined ||
-        args.targetAnnouncementId !== undefined
+        args.targetAnnouncementId !== undefined ||
+        args.targetNoteId !== undefined
       ) {
         throw new Error(
           "Grant-kind notes require targetGrantId and no other target id.",
@@ -191,21 +204,36 @@ export const createNote = mutation({
         args.targetSyndicateId !== undefined ||
         args.targetMinionId !== undefined ||
         args.targetGrantId !== undefined ||
-        args.targetAnnouncementId !== undefined
+        args.targetAnnouncementId !== undefined ||
+        args.targetNoteId !== undefined
       ) {
         throw new Error(
           "Goal-kind notes require targetGoalId and no other target id.",
         );
       }
+    } else if (args.targetKind === "announcement") {
+      if (
+        !args.targetAnnouncementId ||
+        args.targetSyndicateId !== undefined ||
+        args.targetMinionId !== undefined ||
+        args.targetGrantId !== undefined ||
+        args.targetGoalId !== undefined ||
+        args.targetNoteId !== undefined
+      ) {
+        throw new Error(
+          "Announcement-kind notes require targetAnnouncementId and no other target id.",
+        );
+      }
     } else if (
-      !args.targetAnnouncementId ||
+      !args.targetNoteId ||
       args.targetSyndicateId !== undefined ||
       args.targetMinionId !== undefined ||
       args.targetGrantId !== undefined ||
-      args.targetGoalId !== undefined
+      args.targetGoalId !== undefined ||
+      args.targetAnnouncementId !== undefined
     ) {
       throw new Error(
-        "Announcement-kind notes require targetAnnouncementId and no other target id.",
+        "Note-kind notes require targetNoteId and no other target id.",
       );
     }
 
@@ -261,6 +289,17 @@ export const createNote = mutation({
           `An announcement may have at most ${MAX_ANNOUNCEMENT_NOTES} notes.`,
         );
       }
+    } else if (args.targetKind === "note") {
+      const targetNote = await ctx.db.get(args.targetNoteId!);
+      if (!targetNote) throw new Error("Target note not found.");
+      if (targetNote.gameId !== args.gameId) {
+        throw new Error("That note is not in this game.");
+      }
+      await assertNoteAndAncestorsVisible(ctx, targetNote, {
+        userId,
+        role,
+        gameState: game.state,
+      });
     }
     // `game`-kind: `game` has already been validated by requireGameParticipant.
 
@@ -337,6 +376,9 @@ export const createNote = mutation({
         : {}),
       ...(args.targetAnnouncementId !== undefined
         ? { targetAnnouncementId: args.targetAnnouncementId }
+        : {}),
+      ...(args.targetNoteId !== undefined
+        ? { targetNoteId: args.targetNoteId }
         : {}),
       authorUserId: userId,
       visibility,
@@ -416,11 +458,13 @@ export const getTimerCreateContext = query({
       v.literal("grant"),
       v.literal("goal"),
       v.literal("announcement"),
+      v.literal("note"),
     ),
     targetMinionId: v.optional(v.id("minions")),
     targetGrantId: v.optional(v.id("treasonGrants")),
     targetGoalId: v.optional(v.id("goals")),
     targetAnnouncementId: v.optional(v.id("announcements")),
+    targetNoteId: v.optional(v.id("notes")),
   },
   handler: async (
     ctx,
@@ -454,6 +498,7 @@ export const deleteNote = mutation({
     if (!note) throw new Error("Note not found.");
     // Throws unless the caller is the GM of the note's game.
     await requireGameGm(ctx, note.gameId);
+    await assertNotesHaveNoReplies(ctx, [note]);
     await ctx.db.delete(args.noteId);
   },
 });
@@ -467,6 +512,7 @@ type NoteListItem = {
   authorDisplayName: string;
   isMine: boolean;
   canDelete: boolean;
+  replyCount: number;
   // Dice rolls v1: present (and possibly null) only on GM payloads.
   // For non-GM viewers the key is omitted entirely so the wire format
   // never leaks the existence of attached rolls.
@@ -519,17 +565,22 @@ export type TimerNoteRow = {
     | "minion"
     | "grant"
     | "goal"
-    | "announcement";
+    | "announcement"
+    | "note";
   targetSyndicateId?: Id<"syndicates">;
   targetMinionId?: Id<"minions">;
   targetGrantId?: Id<"treasonGrants">;
   targetGoalId?: Id<"goals">;
   targetAnnouncementId?: Id<"announcements">;
+  targetNoteId?: Id<"notes">;
   minionName?: string;
   syndicateName?: string;
   grantKeyword?: string;
   goalKeyword?: string;
   announcementExcerpt?: string;
+  parentNoteExcerpt?: string;
+  parentNoteAuthorDisplayName?: string;
+  replyCount: number;
   playerId?: Id<"players">;
   playerDisplayName?: string;
 };
@@ -562,7 +613,11 @@ export type GameNoteRow = Omit<TimerNoteRow, "timer"> & {
 async function projectNoteRows(
   ctx: QueryCtx,
   notes: Doc<"notes">[],
-  opts: { gameId: Id<"games">; includeGmFields: boolean },
+  opts: {
+    gameId: Id<"games">;
+    includeGmFields: boolean;
+    replyCountByNoteId: Map<string, number>;
+  },
 ): Promise<GameNoteRow[]> {
   const timerNotes = notes;
 
@@ -626,6 +681,19 @@ async function projectNoteRows(
     if (row) announcementById.set(row._id as string, row);
   }
 
+  const parentNoteIds = Array.from(
+    new Set(
+      timerNotes
+        .map((n) => n.targetNoteId)
+        .filter((id): id is Id<"notes"> => id !== undefined),
+    ),
+  );
+  const parentNoteById = new Map<string, Doc<"notes">>();
+  for (const id of parentNoteIds) {
+    const row = await ctx.db.get(id);
+    if (row) parentNoteById.set(row._id as string, row);
+  }
+
   // Syndicates: union of `targetSyndicateId` (syndicate-target
   // rows) and the loaded minions' `syndicateId` (minion-target
   // rows project the parent syndicate too).
@@ -686,6 +754,9 @@ async function projectNoteRows(
   // player's user id. One bulk pass.
   const userIdSet = new Set<string>();
   for (const n of timerNotes) userIdSet.add(n.authorUserId as string);
+  for (const n of parentNoteById.values()) {
+    userIdSet.add(n.authorUserId as string);
+  }
   for (const p of playerBySyndicateId.values()) {
     userIdSet.add(p.userId as string);
   }
@@ -739,6 +810,7 @@ async function projectNoteRows(
       authorUserId: n.authorUserId,
       authorDisplayName: userDisplay(n.authorUserId),
       targetKind: n.targetKind,
+      replyCount: opts.replyCountByNoteId.get(n._id as string) ?? 0,
     };
     // GM-only: the clock never reaches non-GM viewers.
     if (opts.includeGmFields && n.timer) row.timer = n.timer;
@@ -788,6 +860,14 @@ async function projectNoteRows(
         row.announcementExcerpt = excerptAnnouncement(announcement.body);
       }
     }
+    if (n.targetKind === "note" && n.targetNoteId) {
+      row.targetNoteId = n.targetNoteId;
+      const parent = parentNoteById.get(n.targetNoteId as string);
+      if (parent) {
+        row.parentNoteExcerpt = excerptNote(parent.body);
+        row.parentNoteAuthorDisplayName = userDisplay(parent.authorUserId);
+      }
+    }
 
     if (syndId) {
       const s = syndicateById.get(syndId as string);
@@ -828,15 +908,25 @@ async function projectNoteRows(
 export const listGameTimerNotes = query({
   args: { gameId: v.id("games") },
   handler: async (ctx, args): Promise<TimerNoteRow[]> => {
-    await requireGameGm(ctx, args.gameId);
+    const game = await requireGameGm(ctx, args.gameId);
     const allNotes = await ctx.db
       .query("notes")
       .withIndex("by_game_kind_created", (q) => q.eq("gameId", args.gameId))
       .collect();
-    const timerNotes = allNotes.filter((n) => n.timer !== undefined);
+    const noteById = indexNotesById(allNotes);
+    const visible = allNotes.filter((note) =>
+      canViewNoteAndAncestors(
+        note,
+        noteById,
+        { userId: game.gmId, role: "gm" },
+        game.state,
+      ),
+    );
+    const timerNotes = visible.filter((n) => n.timer !== undefined);
     const rows = await projectNoteRows(ctx, timerNotes, {
       gameId: args.gameId,
       includeGmFields: true,
+      replyCountByNoteId: buildReplyCountMap(visible),
     });
     return rows as TimerNoteRow[];
   },
@@ -862,17 +952,18 @@ export const listGameNotes = query({
       .query("notes")
       .withIndex("by_game_kind_created", (q) => q.eq("gameId", args.gameId))
       .collect();
-    let visible = allNotes.filter(
-      (n) =>
-        canViewNote(n, { userId, role }) &&
-        canViewNoteTarget(n, game.state, role),
+    const noteById = indexNotesById(allNotes);
+    let visible = allNotes.filter((note) =>
+      canViewNoteAndAncestors(note, noteById, { userId, role }, game.state),
     );
+    const replyCountByNoteId = buildReplyCountMap(visible);
     if (args.clocksOnly && role === "gm") {
       visible = visible.filter((n) => n.timer !== undefined);
     }
     return await projectNoteRows(ctx, visible, {
       gameId: args.gameId,
       includeGmFields: role === "gm",
+      replyCountByNoteId,
     });
   },
 });
@@ -887,12 +978,14 @@ export const listNotesForTarget = query({
       v.literal("grant"),
       v.literal("goal"),
       v.literal("announcement"),
+      v.literal("note"),
     ),
     targetSyndicateId: v.optional(v.id("syndicates")),
     targetMinionId: v.optional(v.id("minions")),
     targetGrantId: v.optional(v.id("treasonGrants")),
     targetGoalId: v.optional(v.id("goals")),
     targetAnnouncementId: v.optional(v.id("announcements")),
+    targetNoteId: v.optional(v.id("notes")),
   },
   handler: async (ctx, args): Promise<NoteListItem[]> => {
     const { game, userId, role } = await requireGameParticipant(
@@ -900,6 +993,19 @@ export const listNotesForTarget = query({
       args.gameId,
     );
     assertNoteTargetVisibleInState(args.targetKind, game.state, role);
+
+    const allGameNotes = await ctx.db
+      .query("notes")
+      .withIndex("by_game_kind_created", (q) => q.eq("gameId", args.gameId))
+      .collect();
+    const noteById = indexNotesById(allGameNotes);
+    const visibleGameNotes = allGameNotes.filter((note) =>
+      canViewNoteAndAncestors(note, noteById, { userId, role }, game.state),
+    );
+    const visibleNoteIds = new Set(
+      visibleGameNotes.map((note) => note._id as string),
+    );
+    const replyCountByNoteId = buildReplyCountMap(visibleGameNotes);
 
     let rows: Doc<"notes">[];
     if (args.targetKind === "game") {
@@ -958,7 +1064,7 @@ export const listNotesForTarget = query({
         )
         .order("desc")
         .collect();
-    } else {
+    } else if (args.targetKind === "announcement") {
       if (!args.targetAnnouncementId) {
         throw new Error(
           "targetAnnouncementId is required for announcement notes.",
@@ -978,9 +1084,28 @@ export const listNotesForTarget = query({
         )
         .order("desc")
         .collect();
+    } else {
+      if (!args.targetNoteId) {
+        throw new Error("targetNoteId is required for note replies.");
+      }
+      const targetNote = await ctx.db.get(args.targetNoteId);
+      if (!targetNote) throw new Error("Target note not found.");
+      if (targetNote.gameId !== args.gameId) {
+        throw new Error("That note is not in this game.");
+      }
+      if (!visibleNoteIds.has(targetNote._id as string)) {
+        throw new Error("Target note not found or is not visible.");
+      }
+      rows = await ctx.db
+        .query("notes")
+        .withIndex("by_game_note_created", (q) =>
+          q.eq("gameId", args.gameId).eq("targetNoteId", args.targetNoteId!),
+        )
+        .order("desc")
+        .collect();
     }
 
-    const visible = rows.filter((n) => canViewNote(n, { userId, role }));
+    const visible = rows.filter((n) => visibleNoteIds.has(n._id as string));
 
     // Decorate with author display name.
     const authorIds = Array.from(new Set(visible.map((n) => n.authorUserId)));
@@ -1033,6 +1158,7 @@ export const listNotesForTarget = query({
         authorDisplayName: authorNames[n.authorUserId] ?? "Unknown",
         isMine: n.authorUserId === userId,
         canDelete,
+        replyCount: replyCountByNoteId.get(n._id as string) ?? 0,
       };
       if (role === "gm" && rollsByNoteId) {
         // Only attach the key when this note has an `attachedRollSetId`
@@ -1069,6 +1195,7 @@ export const getNoteCountsForGameView = query({
     byGrant: Record<string, number>;
     byGoal: Record<string, number>;
     byAnnouncement: Record<string, number>;
+    byNote: Record<string, number>;
   }> => {
     // Non-participants are rejected. Result is only meaningful inside the
     // game detail page, which already requires participation.
@@ -1090,9 +1217,12 @@ export const getNoteCountsForGameView = query({
     const byGrant: Record<string, number> = {};
     const byGoal: Record<string, number> = {};
     const byAnnouncement: Record<string, number> = {};
+    const byNote: Record<string, number> = {};
+    const noteById = indexNotesById(allGameNotes);
     for (const n of allGameNotes) {
-      if (!canViewNote(n, { userId, role })) continue;
-      if (!canViewNoteTarget(n, game.state, role)) continue;
+      if (!canViewNoteAndAncestors(n, noteById, { userId, role }, game.state)) {
+        continue;
+      }
       if (n.targetKind === "game") {
         gameNotes += 1;
       } else if (n.targetKind === "syndicate" && n.targetSyndicateId) {
@@ -1107,6 +1237,8 @@ export const getNoteCountsForGameView = query({
       } else if (n.targetKind === "announcement" && n.targetAnnouncementId) {
         byAnnouncement[n.targetAnnouncementId] =
           (byAnnouncement[n.targetAnnouncementId] ?? 0) + 1;
+      } else if (n.targetKind === "note" && n.targetNoteId) {
+        byNote[n.targetNoteId] = (byNote[n.targetNoteId] ?? 0) + 1;
       }
     }
     return {
@@ -1116,9 +1248,90 @@ export const getNoteCountsForGameView = query({
       byGrant,
       byGoal,
       byAnnouncement,
+      byNote,
     };
   },
 });
+
+type NoteViewer = {
+  userId: Id<"users">;
+  role: "gm" | "player";
+};
+
+function indexNotesById(notes: Doc<"notes">[]): Map<string, Doc<"notes">> {
+  return new Map(notes.map((note) => [note._id as string, note]));
+}
+
+function canViewNoteAndAncestors(
+  note: Doc<"notes">,
+  noteById: Map<string, Doc<"notes">>,
+  viewer: NoteViewer,
+  gameState: Doc<"games">["state"],
+): boolean {
+  const seen = new Set<string>();
+  let current: Doc<"notes"> | undefined = note;
+
+  while (current) {
+    const currentId = current._id as string;
+    if (seen.has(currentId)) return false;
+    seen.add(currentId);
+
+    if (!canViewNote(current, viewer)) return false;
+    if (!canViewNoteTarget(current, gameState, viewer.role)) return false;
+    if (current.targetKind !== "note") return true;
+    if (!current.targetNoteId) return false;
+
+    const parent = noteById.get(current.targetNoteId as string);
+    if (!parent || parent.gameId !== note.gameId) return false;
+    current = parent;
+  }
+
+  return false;
+}
+
+async function assertNoteAndAncestorsVisible(
+  ctx: QueryCtx | MutationCtx,
+  note: Doc<"notes">,
+  params: NoteViewer & { gameState: Doc<"games">["state"] },
+): Promise<void> {
+  const seen = new Set<string>();
+  let current: Doc<"notes"> | null = note;
+
+  while (current) {
+    const currentId = current._id as string;
+    if (seen.has(currentId)) {
+      throw new Error("Target note thread is invalid.");
+    }
+    seen.add(currentId);
+
+    if (
+      !canViewNote(current, params) ||
+      !canViewNoteTarget(current, params.gameState, params.role)
+    ) {
+      throw new Error("Target note not found or is not visible.");
+    }
+    if (current.targetKind !== "note") return;
+    if (!current.targetNoteId) {
+      throw new Error("Target note thread is invalid.");
+    }
+
+    const parent: Doc<"notes"> | null = await ctx.db.get(current.targetNoteId);
+    if (!parent || parent.gameId !== note.gameId) {
+      throw new Error("Target note thread is invalid.");
+    }
+    current = parent;
+  }
+}
+
+function buildReplyCountMap(visibleNotes: Doc<"notes">[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const note of visibleNotes) {
+    if (note.targetKind !== "note" || !note.targetNoteId) continue;
+    const targetId = note.targetNoteId as string;
+    counts.set(targetId, (counts.get(targetId) ?? 0) + 1);
+  }
+  return counts;
+}
 
 function canViewNoteTarget(
   note: Doc<"notes">,

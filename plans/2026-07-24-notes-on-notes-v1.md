@@ -24,6 +24,8 @@ GM-only timer, newest-first ordering, and GM-only deletion rules.
 - Deleting a note with direct replies is rejected. The GM must delete replies
   leaf-first, which avoids dangling targets and unbounded recursive deletion in
   one Convex mutation.
+- Deleting an entity that would cascade its direct notes is likewise rejected
+  while any of those notes has replies.
 - The Notes drawer describes reply targets with a short parent-note excerpt and
   author name.
 

@@ -37,6 +37,7 @@ function baseRow(extra: Partial<TimerNoteRow>): TimerNoteRow {
     authorDisplayName: "GM",
     timer: { kind: "done" },
     targetKind: "game",
+    replyCount: 0,
     ...extra,
   };
 }

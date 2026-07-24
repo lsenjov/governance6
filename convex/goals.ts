@@ -3,6 +3,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireGame, requireGameGm, requireGameParticipant } from "./lib/auth";
+import { assertNotesHaveNoReplies } from "./lib/notes";
 
 /**
  * Goals — Rule 28.
@@ -467,6 +468,7 @@ export const deleteGoal = mutation({
       .query("notes")
       .withIndex("by_goal", (q) => q.eq("targetGoalId", args.goalId))
       .collect();
+    await assertNotesHaveNoReplies(ctx, goalNotes);
     for (const n of goalNotes) await ctx.db.delete(n._id);
 
     await ctx.db.delete(goal._id);

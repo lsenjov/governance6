@@ -19,6 +19,7 @@ import type * as ledger from "../ledger.js";
 import type * as lib_announcements from "../lib/announcements.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_calls from "../lib/calls.js";
+import type * as lib_notes from "../lib/notes.js";
 import type * as lib_rolls from "../lib/rolls.js";
 import type * as minionBuys from "../minionBuys.js";
 import type * as minions from "../minions.js";
@@ -48,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   "lib/announcements": typeof lib_announcements;
   "lib/auth": typeof lib_auth;
   "lib/calls": typeof lib_calls;
+  "lib/notes": typeof lib_notes;
   "lib/rolls": typeof lib_rolls;
   minionBuys: typeof minionBuys;
   minions: typeof minions;

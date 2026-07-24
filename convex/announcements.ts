@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireGameGm, requireGameParticipant } from "./lib/auth";
 import { MAX_ANNOUNCEMENT_NOTES } from "./lib/announcements";
+import { assertNotesHaveNoReplies } from "./lib/notes";
 
 const BODY_MAX = 2000;
 
@@ -78,6 +79,7 @@ export const deleteAnnouncement = mutation({
         "Announcement has more notes than the supported deletion limit.",
       );
     }
+    await assertNotesHaveNoReplies(ctx, notes);
     for (const note of notes) await ctx.db.delete(note._id);
 
     await ctx.db.delete(announcement._id);

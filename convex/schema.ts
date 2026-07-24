@@ -278,7 +278,8 @@ export default defineSchema({
     .index("by_game_call", ["gameId", "callId"]),
 
   // Notes — per-game textual annotations on the game, a syndicate, a
-  // minion, a treason grant, or a goal. Author-immutable once created
+  // minion, a treason grant, a goal, an announcement, or another note.
+  // Author-immutable once created
   // (body, visibility, target, author, attachedRollSetId all frozen).
   // GM-only delete. Visibility: private (author + GM) or public (all
   // participants).
@@ -317,12 +318,14 @@ export default defineSchema({
       v.literal("grant"),
       v.literal("goal"),
       v.literal("announcement"),
+      v.literal("note"),
     ),
     targetSyndicateId: v.optional(v.id("syndicates")),
     targetMinionId: v.optional(v.id("minions")),
     targetGrantId: v.optional(v.id("treasonGrants")),
     targetGoalId: v.optional(v.id("goals")),
     targetAnnouncementId: v.optional(v.id("announcements")),
+    targetNoteId: v.optional(v.id("notes")),
     authorUserId: v.id("users"),
     visibility: v.union(v.literal("private"), v.literal("public")),
     body: v.string(),
@@ -353,11 +356,13 @@ export default defineSchema({
       "targetAnnouncementId",
       "createdAt",
     ])
+    .index("by_game_note_created", ["gameId", "targetNoteId", "createdAt"])
     .index("by_syndicate", ["targetSyndicateId"])
     .index("by_minion", ["targetMinionId"])
     .index("by_grant", ["targetGrantId"])
     .index("by_goal", ["targetGoalId"])
     .index("by_announcement", ["targetAnnouncementId"])
+    .index("by_note", ["targetNoteId"])
     .index("by_author_game", ["authorUserId", "gameId"]),
 
   // Rule 26: Treason Grants — per-game GM-authored bundles of

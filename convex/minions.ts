@@ -4,6 +4,7 @@ import {
   assertSyndicateEditableForAdminOrOwner,
   requireUserId,
 } from "./lib/auth";
+import { assertNotesHaveNoReplies } from "./lib/notes";
 
 /**
  * Minion CRUD — Rule 4.
@@ -196,6 +197,7 @@ export const remove = mutation({
       .query("notes")
       .withIndex("by_minion", (q) => q.eq("targetMinionId", args.minionId))
       .collect();
+    await assertNotesHaveNoReplies(ctx, minionNotes);
     for (const n of minionNotes) await ctx.db.delete(n._id);
 
     await ctx.db.delete(args.minionId);
