@@ -2488,6 +2488,7 @@ function CurrentCallSection({
               </h4>
               {noteErr && <div className="error-text">{noteErr}</div>}
               <NoteList
+                gameId={gameId}
                 notes={visibleNotes}
                 onDelete={handleDeleteNote}
                 onCycleTimer={handleCycleTimer}

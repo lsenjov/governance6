@@ -28,6 +28,7 @@ export function resolveNoteCount(
         byGrant: Record<string, number>;
         byGoal: Record<string, number>;
         byAnnouncement: Record<string, number>;
+        byNote: Record<string, number>;
       }
     | undefined,
   target:
@@ -36,7 +37,8 @@ export function resolveNoteCount(
     | { kind: "minion"; minionId: Id<"minions"> }
     | { kind: "grant"; grantId: Id<"treasonGrants"> }
     | { kind: "goal"; goalId: Id<"goals"> }
-    | { kind: "announcement"; announcementId: Id<"announcements"> },
+    | { kind: "announcement"; announcementId: Id<"announcements"> }
+    | { kind: "note"; noteId: Id<"notes"> },
 ): number {
   if (!counts) return 0;
   if (target.kind === "game") return counts.gameNotes;
@@ -51,6 +53,9 @@ export function resolveNoteCount(
   }
   if (target.kind === "goal") {
     return counts.byGoal[target.goalId] ?? 0;
+  }
+  if (target.kind === "note") {
+    return counts.byNote[target.noteId] ?? 0;
   }
   return counts.byAnnouncement[target.announcementId] ?? 0;
 }

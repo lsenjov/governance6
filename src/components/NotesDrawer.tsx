@@ -6,6 +6,7 @@ import type { GameNoteRow } from "../../convex/notes";
 import { Drawer } from "./Drawer";
 import { NoteTimerCell } from "./NoteTimerCell";
 import { RollSetDisplay } from "./RollSetDisplay";
+import { NoteIcon } from "./NoteIcon";
 
 /**
  * Notes drawer — at-a-glance list of every note in the current game
@@ -70,6 +71,7 @@ export function NotesDrawer({
         </label>
       )}
       <NotesDrawerBody
+        gameId={gameId}
         rows={rows}
         viewerIsGm={viewerIsGm}
         onCycle={handleCycle}
@@ -79,10 +81,12 @@ export function NotesDrawer({
 }
 
 function NotesDrawerBody({
+  gameId,
   rows,
   viewerIsGm,
   onCycle,
 }: {
+  gameId: Id<"games">;
   rows: GameNoteRow[] | undefined;
   viewerIsGm: boolean;
   onCycle: (noteId: Id<"notes">) => void | Promise<void>;
@@ -98,6 +102,7 @@ function NotesDrawerBody({
       {rows.map((r) => (
         <NotesDrawerRow
           key={r._id}
+          gameId={gameId}
           row={r}
           viewerIsGm={viewerIsGm}
           onCycle={onCycle}
@@ -108,10 +113,12 @@ function NotesDrawerBody({
 }
 
 function NotesDrawerRow({
+  gameId,
   row,
   viewerIsGm,
   onCycle,
 }: {
+  gameId: Id<"games">;
   row: GameNoteRow;
   viewerIsGm: boolean;
   onCycle: (noteId: Id<"notes">) => void | Promise<void>;
@@ -165,7 +172,14 @@ function NotesDrawerRow({
             minute: "2-digit",
           })}
         </span>
-        <span style={{ marginLeft: "auto" }}>{formatNoteTarget(row)}</span>
+        <span className="notes-drawer-target">{formatNoteTarget(row)}</span>
+        <NoteIcon
+          gameId={gameId}
+          target={{ kind: "note", noteId: row._id }}
+          count={row.replyCount}
+          label={`note by ${row.authorDisplayName}`}
+          variant="reply"
+        />
       </div>
       <div
         className="note-item-body"
@@ -190,6 +204,7 @@ function NotesDrawerRow({
  *   - syndicate-target: `Syndicate • Player`
  *   - grant-target: `Grant keyword • Owner player`
  *   - goal-target: `Goal keyword • From player`
+ *   - note-target: `Note: excerpt • Author`
  *   - game-target: `Game-wide`
  *
  * Missing player slot renders `(unassigned)` (muted) so the column
@@ -208,6 +223,8 @@ export function formatNoteTarget(
     | "grantKeyword"
     | "goalKeyword"
     | "announcementExcerpt"
+    | "parentNoteExcerpt"
+    | "parentNoteAuthorDisplayName"
     | "playerDisplayName"
   >,
 ): React.ReactNode {
@@ -258,6 +275,17 @@ export function formatNoteTarget(
       <>
         <span>Announcement:</span>{" "}
         <span>{row.announcementExcerpt ?? "(deleted announcement)"}</span>
+      </>
+    );
+  }
+
+  if (row.targetKind === "note") {
+    return (
+      <>
+        <span>Note:</span>{" "}
+        <span>{row.parentNoteExcerpt ?? "(deleted note)"}</span>
+        {sep}
+        <span>{row.parentNoteAuthorDisplayName ?? "Unknown"}</span>
       </>
     );
   }

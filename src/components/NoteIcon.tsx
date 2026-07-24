@@ -1,4 +1,12 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -18,7 +26,8 @@ export type NoteTarget =
   | { kind: "minion"; minionId: Id<"minions"> }
   | { kind: "grant"; grantId: Id<"treasonGrants"> }
   | { kind: "goal"; goalId: Id<"goals"> }
-  | { kind: "announcement"; announcementId: Id<"announcements"> };
+  | { kind: "announcement"; announcementId: Id<"announcements"> }
+  | { kind: "note"; noteId: Id<"notes"> };
 
 /**
  * Result-shape for a single note as returned by `api.notes.listNotesForTarget`.
@@ -33,6 +42,7 @@ export type NoteListItem = {
   authorDisplayName: string;
   isMine: boolean;
   canDelete: boolean;
+  replyCount: number;
   /**
    * Dice rolls v1: GM-only. Server-side `listNotesForTarget` only
    * sets this key on GM payloads, and only when the note was
@@ -63,7 +73,10 @@ type NoteIconProps = {
    * affordances. Defaults to `false`.
    */
   hideManagementControls?: boolean;
+  variant?: "default" | "reply";
 };
+
+const NotesPopoverContext = createContext<{ lineage: string[] } | null>(null);
 
 /**
  * Small speech-bubble button that toggles a NotesPopover for a given target.
@@ -75,9 +88,11 @@ export function NoteIcon({
   count,
   label,
   hideManagementControls = false,
+  variant = "default",
 }: NoteIconProps) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement | null>(null);
+  const parentPopover = useContext(NotesPopoverContext);
 
   return (
     <div
@@ -86,13 +101,14 @@ export function NoteIcon({
     >
       <button
         type="button"
-        className="note-icon-button"
+        className={`note-icon-button${variant === "reply" ? " note-reply-button" : ""}`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`Notes: ${label}${count > 0 ? ` (${count})` : ""}`}
+        aria-label={`${variant === "reply" ? "Replies" : "Notes"}: ${label}${count > 0 ? ` (${count})` : ""}`}
         onClick={() => setOpen((o) => !o)}
       >
         <NoteGlyph />
+        {variant === "reply" && <span>Reply</span>}
         {count > 0 && <span className="note-icon-badge">{count}</span>}
       </button>
       {open && (
@@ -103,6 +119,7 @@ export function NoteIcon({
           onClose={() => setOpen(false)}
           anchorRef={anchorRef}
           hideManagementControls={hideManagementControls}
+          ancestorPopoverIds={parentPopover?.lineage ?? []}
         />
       )}
     </div>
@@ -134,6 +151,7 @@ type PopoverProps = {
   onClose: () => void;
   anchorRef: React.RefObject<HTMLDivElement | null>;
   hideManagementControls?: boolean;
+  ancestorPopoverIds: string[];
 };
 
 function NotesPopover({
@@ -143,7 +161,10 @@ function NotesPopover({
   onClose,
   anchorRef,
   hideManagementControls = false,
+  ancestorPopoverIds,
 }: PopoverProps) {
+  const popoverId = useId();
+  const popoverLineage = [...ancestorPopoverIds, popoverId];
   const queryArgs = buildListArgs(gameId, target);
   const notes = useQuery(api.notes.listNotesForTarget, queryArgs);
   const remove = useMutation(api.notes.deleteNote);
@@ -159,7 +180,19 @@ function NotesPopover({
         ? { gameId, targetKind: "grant", targetGrantId: target.grantId }
         : target.kind === "goal"
           ? { gameId, targetKind: "goal", targetGoalId: target.goalId }
-          : { gameId, targetKind: target.kind },
+          : target.kind === "announcement"
+            ? {
+                gameId,
+                targetKind: "announcement",
+                targetAnnouncementId: target.announcementId,
+              }
+            : target.kind === "note"
+              ? {
+                  gameId,
+                  targetKind: "note",
+                  targetNoteId: target.noteId,
+                }
+              : { gameId, targetKind: target.kind },
   );
 
   const [err, setErr] = useState<string | null>(null);
@@ -250,6 +283,17 @@ function NotesPopover({
       const t = e.target as Node;
       if (anchorRef.current && anchorRef.current.contains(t)) return;
       if (popoverRef.current && popoverRef.current.contains(t)) return;
+      const element = t instanceof Element ? t : t.parentElement;
+      const clickedPopover = element?.closest<HTMLElement>(
+        "[data-notes-popover-lineage]",
+      );
+      if (
+        clickedPopover?.dataset.notesPopoverLineage
+          ?.split(" ")
+          .includes(popoverId)
+      ) {
+        return;
+      }
       onClose();
     }
     window.addEventListener("keydown", onKey);
@@ -258,7 +302,7 @@ function NotesPopover({
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("mousedown", onClick);
     };
-  }, [onClose, anchorRef]);
+  }, [onClose, anchorRef, popoverId]);
 
   async function handleDelete(noteId: Id<"notes">) {
     if (!window.confirm("Delete this note? This cannot be undone.")) return;
@@ -280,55 +324,59 @@ function NotesPopover({
   }
 
   return createPortal(
-    <div
-      ref={popoverRef}
-      role="dialog"
-      aria-label={`Notes for ${label}`}
-      className="notes-popover"
-      style={{
-        // Pre-measure: render off-screen so the popover can size itself
-        // before we know where to put it; the `useLayoutEffect` above
-        // runs synchronously before paint and replaces these with real
-        // coords, so users never see the off-screen frame.
-        top: pos ? pos.top : -9999,
-        left: pos ? pos.left : -9999,
-        visibility: pos ? "visible" : "hidden",
-      }}
-    >
-      <div className="notes-popover-header">
-        <strong>Notes</strong>
-        <span className="muted" style={{ fontSize: "0.8rem" }}>
-          {label}
-        </span>
-        <button
-          type="button"
-          className="secondary"
-          onClick={onClose}
-          aria-label="Close notes"
-          style={{ marginLeft: "auto", padding: "0.25rem 0.5rem" }}
-        >
-          ✕
-        </button>
-      </div>
+    <NotesPopoverContext.Provider value={{ lineage: popoverLineage }}>
+      <div
+        ref={popoverRef}
+        role="dialog"
+        aria-label={`Notes for ${label}`}
+        className="notes-popover"
+        data-notes-popover-lineage={popoverLineage.join(" ")}
+        style={{
+          // Pre-measure: render off-screen so the popover can size itself
+          // before we know where to put it; the `useLayoutEffect` above
+          // runs synchronously before paint and replaces these with real
+          // coords, so users never see the off-screen frame.
+          top: pos ? pos.top : -9999,
+          left: pos ? pos.left : -9999,
+          visibility: pos ? "visible" : "hidden",
+        }}
+      >
+        <div className="notes-popover-header">
+          <strong>Notes</strong>
+          <span className="muted" style={{ fontSize: "0.8rem" }}>
+            {label}
+          </span>
+          <button
+            type="button"
+            className="secondary"
+            onClick={onClose}
+            aria-label="Close notes"
+            style={{ marginLeft: "auto", padding: "0.25rem 0.5rem" }}
+          >
+            ✕
+          </button>
+        </div>
 
-      <div className="notes-popover-list">
-        <NoteList
-          notes={notes}
-          onDelete={handleDelete}
-          onCycleTimer={handleCycleTimer}
-          hideManagementControls={hideManagementControls}
+        <div className="notes-popover-list">
+          <NoteList
+            gameId={gameId}
+            notes={notes}
+            onDelete={handleDelete}
+            onCycleTimer={handleCycleTimer}
+            hideManagementControls={hideManagementControls}
+          />
+        </div>
+
+        {err && <div className="error-text">{err}</div>}
+
+        <NoteCreateForm
+          gameId={gameId}
+          target={target}
+          className="notes-popover-form"
+          timerEligible={timerCtx?.timerEligible ?? false}
         />
       </div>
-
-      {err && <div className="error-text">{err}</div>}
-
-      <NoteCreateForm
-        gameId={gameId}
-        target={target}
-        className="notes-popover-form"
-        timerEligible={timerCtx?.timerEligible ?? false}
-      />
-    </div>,
+    </NotesPopoverContext.Provider>,
     document.body,
   );
 }
@@ -349,11 +397,13 @@ function NotesPopover({
  * cell never renders for them regardless of this prop.
  */
 export function NoteList({
+  gameId,
   notes,
   onDelete,
   onCycleTimer,
   hideManagementControls = false,
 }: {
+  gameId: Id<"games">;
   notes: NoteListItem[] | undefined;
   onDelete: (noteId: Id<"notes">) => void | Promise<void>;
   onCycleTimer?: (noteId: Id<"notes">) => void | Promise<void>;
@@ -435,20 +485,29 @@ export function NoteList({
                   minute: "2-digit",
                 })}
               </span>
-              {n.canDelete && !hideManagementControls && (
-                <button
-                  type="button"
-                  className="danger"
-                  onClick={() => void onDelete(n._id)}
-                  style={{
-                    marginLeft: "auto",
-                    padding: "0.125rem 0.5rem",
-                    fontSize: "0.8rem",
-                  }}
-                >
-                  Delete
-                </button>
-              )}
+              <span className="note-item-actions">
+                <NoteIcon
+                  gameId={gameId}
+                  target={{ kind: "note", noteId: n._id }}
+                  count={n.replyCount}
+                  label={`note by ${n.authorDisplayName}`}
+                  hideManagementControls={hideManagementControls}
+                  variant="reply"
+                />
+                {n.canDelete && !hideManagementControls && (
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => void onDelete(n._id)}
+                    style={{
+                      padding: "0.125rem 0.5rem",
+                      fontSize: "0.8rem",
+                    }}
+                  >
+                    Delete
+                  </button>
+                )}
+              </span>
             </div>
             <div className="note-item-body">{n.body}</div>
           </div>
@@ -516,6 +575,7 @@ export function NoteCreateForm({
         targetGoalId: target.kind === "goal" ? target.goalId : undefined,
         targetAnnouncementId:
           target.kind === "announcement" ? target.announcementId : undefined,
+        targetNoteId: target.kind === "note" ? target.noteId : undefined,
         body: trimmed,
         visibility,
         ...(timerMinutes !== undefined ? { timerMinutes } : {}),
@@ -633,6 +693,13 @@ export function buildListArgs(gameId: Id<"games">, target: NoteTarget) {
       gameId,
       targetKind: "goal" as const,
       targetGoalId: target.goalId,
+    };
+  }
+  if (target.kind === "note") {
+    return {
+      gameId,
+      targetKind: "note" as const,
+      targetNoteId: target.noteId,
     };
   }
   return {

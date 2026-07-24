@@ -131,4 +131,16 @@ describe("formatNoteTarget", () => {
     );
     expect(extractText(node)).toBe("Announcement: The first decree");
   });
+
+  it("renders a parent note excerpt and author for reply rows", () => {
+    const node = formatNoteTarget(
+      baseRow({
+        targetKind: "note",
+        targetNoteId: "n0" as Id<"notes">,
+        parentNoteExcerpt: "Original thought",
+        parentNoteAuthorDisplayName: "Alice",
+      }),
+    );
+    expect(extractText(node)).toBe("Note: Original thought • Alice");
+  });
 });
