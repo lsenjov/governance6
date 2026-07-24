@@ -2679,6 +2679,16 @@ describe("notes on notes", () => {
       .query(api.notes.getNoteCountsForGameView, { gameId: h.ids.gameId });
     expect(counts.byNote[parentId]).toBe(1);
     expect(counts.byNote[replyId]).toBe(1);
+
+    const storedCounts = await h.t.run(async (ctx) => {
+      const parent = await ctx.db.get(parentId);
+      const reply = await ctx.db.get(replyId);
+      return {
+        parent: parent?.replyCount,
+        reply: reply?.replyCount,
+      };
+    });
+    expect(storedCounts).toEqual({ parent: 1, reply: 1 });
   });
 
   test("target must be a visible note in the same game", async () => {
@@ -2820,6 +2830,12 @@ describe("notes on notes", () => {
     await h.t
       .withIdentity(asUser(h.ids.gmId))
       .mutation(api.notes.deleteNote, { noteId: replyId });
+
+    const parentAfterReplyDelete = await h.t.run(async (ctx) => {
+      return await ctx.db.get(parentId);
+    });
+    expect(parentAfterReplyDelete?.replyCount).toBe(0);
+
     await h.t
       .withIdentity(asUser(h.ids.gmId))
       .mutation(api.notes.deleteNote, { noteId: parentId });

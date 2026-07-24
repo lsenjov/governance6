@@ -468,7 +468,7 @@ export const deleteGoal = mutation({
       .query("notes")
       .withIndex("by_goal", (q) => q.eq("targetGoalId", args.goalId))
       .collect();
-    await assertNotesHaveNoReplies(ctx, goalNotes);
+    assertNotesHaveNoReplies(goalNotes);
     for (const n of goalNotes) await ctx.db.delete(n._id);
 
     await ctx.db.delete(goal._id);

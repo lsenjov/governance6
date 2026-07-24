@@ -210,7 +210,7 @@ export const deleteGrant = mutation({
       .query("notes")
       .withIndex("by_grant", (q) => q.eq("targetGrantId", args.grantId))
       .collect();
-    await assertNotesHaveNoReplies(ctx, grantNotes);
+    assertNotesHaveNoReplies(grantNotes);
     for (const n of grantNotes) await ctx.db.delete(n._id);
 
     await ctx.db.delete(grant._id);

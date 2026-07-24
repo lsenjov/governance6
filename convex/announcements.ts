@@ -79,7 +79,7 @@ export const deleteAnnouncement = mutation({
         "Announcement has more notes than the supported deletion limit.",
       );
     }
-    await assertNotesHaveNoReplies(ctx, notes);
+    assertNotesHaveNoReplies(notes);
     for (const note of notes) await ctx.db.delete(note._id);
 
     await ctx.db.delete(announcement._id);

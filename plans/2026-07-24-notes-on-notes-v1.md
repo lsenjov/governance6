@@ -26,6 +26,8 @@ GM-only timer, newest-first ordering, and GM-only deletion rules.
   one Convex mutation.
 - Deleting an entity that would cascade its direct notes is likewise rejected
   while any of those notes has replies.
+- A system-maintained direct-reply counter keeps both deletion checks bounded.
+  It is optional so pre-feature notes safely read as zero without a backfill.
 - The Notes drawer describes reply targets with a short parent-note excerpt and
   author name.
 

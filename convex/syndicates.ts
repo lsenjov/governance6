@@ -150,7 +150,7 @@ export const remove = mutation({
         .query("notes")
         .withIndex("by_minion", (q) => q.eq("targetMinionId", m._id))
         .collect();
-      await assertNotesHaveNoReplies(ctx, minionNotes);
+      assertNotesHaveNoReplies(minionNotes);
       for (const n of minionNotes) await ctx.db.delete(n._id);
       await ctx.db.delete(m._id);
     }
@@ -162,7 +162,7 @@ export const remove = mutation({
         q.eq("targetSyndicateId", args.syndicateId),
       )
       .collect();
-    await assertNotesHaveNoReplies(ctx, syndicateNotes);
+    assertNotesHaveNoReplies(syndicateNotes);
     for (const n of syndicateNotes) await ctx.db.delete(n._id);
 
     // Unselect from every `ready`-game Player that had this Syndicate.

@@ -330,6 +330,7 @@ export default defineSchema({
     visibility: v.union(v.literal("private"), v.literal("public")),
     body: v.string(),
     createdAt: v.number(),
+    replyCount: v.optional(v.number()),
     attachedRollSetId: v.optional(v.id("callRollSets")),
     timer: v.optional(
       v.union(

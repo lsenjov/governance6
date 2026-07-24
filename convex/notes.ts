@@ -30,9 +30,9 @@ import { assertNoteHasNoReplies } from "./lib/notes";
  *  - Notes are AUTHOR-IMMUTABLE once created — there is no
  *    `updateNote` mutation. Body, visibility, target, author, and
  *    attachedRollSetId are frozen for the lifetime of the row. The
- *    SOLE EXCEPTION is the optional `timer` sub-object, which the GM
- *    may cycle via `cycleNoteTimer` (see Note Timers below). No other
- *    field of an existing row is ever mutated by any code path.
+ *    Exceptions are the optional `timer` sub-object, which the GM may
+ *    cycle via `cycleNoteTimer` (see Note Timers below), and the
+ *    system-maintained direct `replyCount`.
  *  - Only the GM of the owning game may delete a note (moderation).
  *  - Listings are ordered newest-first (`createdAt` descending).
  *
@@ -237,6 +237,8 @@ export const createNote = mutation({
       );
     }
 
+    let targetNoteForReply: Doc<"notes"> | undefined;
+
     // Target existence + in-game relevance.
     if (args.targetKind === "syndicate") {
       const syndicate = await ctx.db.get(args.targetSyndicateId!);
@@ -299,6 +301,7 @@ export const createNote = mutation({
         role,
         gameState: game.state,
       });
+      targetNoteForReply = targetNote;
     }
     // `game`-kind: `game` has already been validated by requireGameParticipant.
 
@@ -362,7 +365,7 @@ export const createNote = mutation({
       };
     }
 
-    return await ctx.db.insert("notes", {
+    const noteId = await ctx.db.insert("notes", {
       gameId: game._id,
       targetKind: args.targetKind,
       targetSyndicateId: args.targetSyndicateId,
@@ -383,9 +386,16 @@ export const createNote = mutation({
       visibility,
       body,
       createdAt: Date.now(),
+      replyCount: 0,
       ...(attachedRollSetId !== undefined ? { attachedRollSetId } : {}),
       ...(timer !== undefined ? { timer } : {}),
     });
+    if (targetNoteForReply) {
+      await ctx.db.patch(targetNoteForReply._id, {
+        replyCount: (targetNoteForReply.replyCount ?? 0) + 1,
+      });
+    }
+    return noteId;
   },
 });
 
@@ -504,7 +514,15 @@ export const deleteNote = mutation({
     if (!note) throw new Error("Note not found.");
     // Throws unless the caller is the GM of the note's game.
     await requireGameGm(ctx, note.gameId);
-    await assertNoteHasNoReplies(ctx, note);
+    assertNoteHasNoReplies(note);
+    if (note.targetKind === "note" && note.targetNoteId) {
+      const parent = await ctx.db.get(note.targetNoteId);
+      if (parent) {
+        await ctx.db.patch(parent._id, {
+          replyCount: Math.max(0, (parent.replyCount ?? 1) - 1),
+        });
+      }
+    }
     await ctx.db.delete(args.noteId);
   },
 });
