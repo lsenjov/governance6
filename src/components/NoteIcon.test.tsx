@@ -16,19 +16,29 @@ const GAME_ID = "game" as Id<"games">;
 const NOTE_ID = "note" as Id<"notes">;
 
 vi.mock("convex/react", () => ({
-  useQuery: () => [
-    {
-      _id: "child-note",
-      createdAt: 1,
-      body: "Child thought",
-      visibility: "public",
-      authorUserId: "child-user",
-      authorDisplayName: "Bob",
-      isMine: false,
-      canDelete: false,
-      replyCount: 0,
-    },
-  ],
+  useQuery: (_reference: unknown, args: Record<string, unknown>) =>
+    Object.keys(args).length === 1
+      ? {
+          gameNotes: 0,
+          bySyndicate: {},
+          byMinion: {},
+          byGrant: {},
+          byGoal: {},
+          byAnnouncement: {},
+          byNote: { note: 2 },
+        }
+      : [
+          {
+            _id: "child-note",
+            createdAt: 1,
+            body: "Child thought",
+            visibility: "public",
+            authorUserId: "child-user",
+            authorDisplayName: "Bob",
+            isMine: false,
+            canDelete: false,
+          },
+        ],
   useMutation: () => vi.fn(),
 }));
 
@@ -80,7 +90,6 @@ describe("note reply client integration", () => {
       authorDisplayName: "Alice",
       isMine: false,
       canDelete: false,
-      replyCount: 2,
     };
 
     render(
@@ -104,7 +113,6 @@ describe("note reply client integration", () => {
       authorDisplayName: "Alice",
       isMine: false,
       canDelete: false,
-      replyCount: 1,
     };
 
     render(
@@ -113,7 +121,7 @@ describe("note reply client integration", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Replies: note by Alice (1)",
+        name: "Replies: note by Alice (2)",
       }),
     );
     const parentDialog = screen.getByRole("dialog", {

@@ -12,6 +12,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { TIMER_PRESET_MINUTES } from "../../convex/notes";
+import { resolveNoteCount, useNotesCountMap } from "../hooks/useNotesCountMap";
 import { RollSetDisplay, type RollSet } from "./RollSetDisplay";
 import { NoteTimerCell, type NoteTimerState } from "./NoteTimerCell";
 
@@ -42,7 +43,6 @@ export type NoteListItem = {
   authorDisplayName: string;
   isMine: boolean;
   canDelete: boolean;
-  replyCount: number;
   /**
    * Dice rolls v1: GM-only. Server-side `listNotesForTarget` only
    * sets this key on GM payloads, and only when the note was
@@ -419,6 +419,7 @@ export function NoteList({
    */
   hideManagementControls?: boolean;
 }) {
+  const noteCounts = useNotesCountMap(gameId);
   if (notes === undefined) {
     return <div className="muted">Loading…</div>;
   }
@@ -489,7 +490,10 @@ export function NoteList({
                 <NoteIcon
                   gameId={gameId}
                   target={{ kind: "note", noteId: n._id }}
-                  count={n.replyCount}
+                  count={resolveNoteCount(noteCounts, {
+                    kind: "note",
+                    noteId: n._id,
+                  })}
                   label={`note by ${n.authorDisplayName}`}
                   hideManagementControls={hideManagementControls}
                   variant="reply"

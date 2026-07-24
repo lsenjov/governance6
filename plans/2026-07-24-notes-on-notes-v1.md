@@ -35,7 +35,8 @@ GM-only timer, newest-first ordering, and GM-only deletion rules.
   target projection with `targetNoteId`.
 - Enforce same-game target existence and full parent-chain visibility for
   create, target listing, whole-game listing, and counts.
-- Return direct visible-reply counts with list and drawer rows.
+- Expose direct visible-reply counts through the shared game count query and
+  drawer rows while keeping each target-list query on its target index.
 - Reject deletion while direct replies exist.
 - Cover creation, cross-game rejection, privacy-chain behavior, nesting,
   counts, drawer projection, and deletion safety with Convex tests.

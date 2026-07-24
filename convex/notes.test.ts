@@ -2664,7 +2664,6 @@ describe("notes on notes", () => {
     expect(parentReplies[0]).toMatchObject({
       _id: replyId,
       body: "First reply",
-      replyCount: 1,
     });
 
     const rootNotes = await h.t
@@ -2673,10 +2672,7 @@ describe("notes on notes", () => {
         gameId: h.ids.gameId,
         targetKind: "game",
       });
-    expect(rootNotes[0]).toMatchObject({
-      _id: parentId,
-      replyCount: 1,
-    });
+    expect(rootNotes[0]._id).toBe(parentId);
 
     const counts = await h.t
       .withIdentity(asUser(h.ids.bId))
@@ -2726,7 +2722,7 @@ describe("notes on notes", () => {
         targetNoteId: otherGameNoteId,
         body: "Cross-game reply",
       }),
-    ).rejects.toThrow(/not in this game/i);
+    ).rejects.toThrow(/not visible/i);
   });
 
   test("a public reply stays hidden when any ancestor is private", async () => {
@@ -2883,7 +2879,7 @@ describe("notes on notes", () => {
     expect(rows).toEqual({ announcement: null, parentNote: null });
   });
 
-  test("timer context accepts a note target without offering timer buttons", async () => {
+  test("timer context offers timer buttons for a GM replying to a note", async () => {
     const h = await createHarness();
     const parentId = await createGameNote(h, h.ids.gmId, "Parent", "public");
     const timerContext = await h.t
@@ -2895,7 +2891,7 @@ describe("notes on notes", () => {
       });
     expect(timerContext).toEqual({
       viewerIsGm: true,
-      timerEligible: false,
+      timerEligible: true,
     });
   });
 });

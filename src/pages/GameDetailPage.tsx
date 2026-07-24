@@ -349,6 +349,7 @@ function GameHud({
         <NotesDrawer
           gameId={gameId}
           viewerIsGm={viewerIsGm}
+          hideManagementControls={hideManagementControls}
           onClose={() => setNotesOpen(false)}
         />
       )}

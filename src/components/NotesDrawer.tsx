@@ -30,10 +30,12 @@ import { NoteIcon } from "./NoteIcon";
 export function NotesDrawer({
   gameId,
   viewerIsGm,
+  hideManagementControls,
   onClose,
 }: {
   gameId: Id<"games">;
   viewerIsGm: boolean;
+  hideManagementControls: boolean;
   onClose: () => void;
 }) {
   const [clocksOnly, setClocksOnly] = useState(false);
@@ -74,6 +76,7 @@ export function NotesDrawer({
         gameId={gameId}
         rows={rows}
         viewerIsGm={viewerIsGm}
+        hideManagementControls={hideManagementControls}
         onCycle={handleCycle}
       />
     </Drawer>
@@ -84,11 +87,13 @@ function NotesDrawerBody({
   gameId,
   rows,
   viewerIsGm,
+  hideManagementControls,
   onCycle,
 }: {
   gameId: Id<"games">;
   rows: GameNoteRow[] | undefined;
   viewerIsGm: boolean;
+  hideManagementControls: boolean;
   onCycle: (noteId: Id<"notes">) => void | Promise<void>;
 }) {
   if (rows === undefined) {
@@ -105,6 +110,7 @@ function NotesDrawerBody({
           gameId={gameId}
           row={r}
           viewerIsGm={viewerIsGm}
+          hideManagementControls={hideManagementControls}
           onCycle={onCycle}
         />
       ))}
@@ -116,11 +122,13 @@ function NotesDrawerRow({
   gameId,
   row,
   viewerIsGm,
+  hideManagementControls,
   onCycle,
 }: {
   gameId: Id<"games">;
   row: GameNoteRow;
   viewerIsGm: boolean;
+  hideManagementControls: boolean;
   onCycle: (noteId: Id<"notes">) => void | Promise<void>;
 }) {
   // Layout mirrors `<NoteList>`'s `.note-item` block so spacing,
@@ -178,6 +186,7 @@ function NotesDrawerRow({
           target={{ kind: "note", noteId: row._id }}
           count={row.replyCount}
           label={`note by ${row.authorDisplayName}`}
+          hideManagementControls={hideManagementControls}
           variant="reply"
         />
       </div>

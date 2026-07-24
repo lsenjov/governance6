@@ -9,7 +9,7 @@ import {
   type RollSetView,
 } from "./lib/rolls";
 import { MAX_ANNOUNCEMENT_NOTES } from "./lib/announcements";
-import { assertNotesHaveNoReplies } from "./lib/notes";
+import { assertNoteHasNoReplies } from "./lib/notes";
 
 /**
  * Notes — per-game textual annotations on the game, a syndicate, a
@@ -291,9 +291,8 @@ export const createNote = mutation({
       }
     } else if (args.targetKind === "note") {
       const targetNote = await ctx.db.get(args.targetNoteId!);
-      if (!targetNote) throw new Error("Target note not found.");
-      if (targetNote.gameId !== args.gameId) {
-        throw new Error("That note is not in this game.");
+      if (!targetNote || targetNote.gameId !== args.gameId) {
+        throw new Error("Target note not found or is not visible.");
       }
       await assertNoteAndAncestorsVisible(ctx, targetNote, {
         userId,
@@ -439,7 +438,8 @@ export const cycleNoteTimer = mutation({
  * duration buttons:
  *   - `viewerIsGm`: caller is the GM of `gameId`.
  *   - `timerEligible`: a note created NOW with this target would attach
- *     a roll set (i.e. minion-target + minion is the current head).
+ *     a timer control (a note reply, or a minion target that is the current
+ *     head and can pin a roll set).
  *
  * Returning two flags from one query keeps the form's render branches
  * stable (no race where one flag flips before the other) and avoids
@@ -472,7 +472,13 @@ export const getTimerCreateContext = query({
   ): Promise<{ viewerIsGm: boolean; timerEligible: boolean }> => {
     const { role } = await requireGameParticipant(ctx, args.gameId);
     const viewerIsGm = role === "gm";
-    if (!viewerIsGm || args.targetKind !== "minion" || !args.targetMinionId) {
+    if (!viewerIsGm) {
+      return { viewerIsGm, timerEligible: false };
+    }
+    if (args.targetKind === "note") {
+      return { viewerIsGm, timerEligible: true };
+    }
+    if (args.targetKind !== "minion" || !args.targetMinionId) {
       return { viewerIsGm, timerEligible: false };
     }
     const head = await ctx.db
@@ -498,7 +504,7 @@ export const deleteNote = mutation({
     if (!note) throw new Error("Note not found.");
     // Throws unless the caller is the GM of the note's game.
     await requireGameGm(ctx, note.gameId);
-    await assertNotesHaveNoReplies(ctx, [note]);
+    await assertNoteHasNoReplies(ctx, note);
     await ctx.db.delete(args.noteId);
   },
 });
@@ -512,7 +518,6 @@ type NoteListItem = {
   authorDisplayName: string;
   isMine: boolean;
   canDelete: boolean;
-  replyCount: number;
   // Dice rolls v1: present (and possibly null) only on GM payloads.
   // For non-GM viewers the key is omitted entirely so the wire format
   // never leaks the existence of attached rolls.
@@ -994,19 +999,6 @@ export const listNotesForTarget = query({
     );
     assertNoteTargetVisibleInState(args.targetKind, game.state, role);
 
-    const allGameNotes = await ctx.db
-      .query("notes")
-      .withIndex("by_game_kind_created", (q) => q.eq("gameId", args.gameId))
-      .collect();
-    const noteById = indexNotesById(allGameNotes);
-    const visibleGameNotes = allGameNotes.filter((note) =>
-      canViewNoteAndAncestors(note, noteById, { userId, role }, game.state),
-    );
-    const visibleNoteIds = new Set(
-      visibleGameNotes.map((note) => note._id as string),
-    );
-    const replyCountByNoteId = buildReplyCountMap(visibleGameNotes);
-
     let rows: Doc<"notes">[];
     if (args.targetKind === "game") {
       rows = await ctx.db
@@ -1089,13 +1081,14 @@ export const listNotesForTarget = query({
         throw new Error("targetNoteId is required for note replies.");
       }
       const targetNote = await ctx.db.get(args.targetNoteId);
-      if (!targetNote) throw new Error("Target note not found.");
-      if (targetNote.gameId !== args.gameId) {
-        throw new Error("That note is not in this game.");
-      }
-      if (!visibleNoteIds.has(targetNote._id as string)) {
+      if (!targetNote || targetNote.gameId !== args.gameId) {
         throw new Error("Target note not found or is not visible.");
       }
+      await assertNoteAndAncestorsVisible(ctx, targetNote, {
+        userId,
+        role,
+        gameState: game.state,
+      });
       rows = await ctx.db
         .query("notes")
         .withIndex("by_game_note_created", (q) =>
@@ -1105,7 +1098,7 @@ export const listNotesForTarget = query({
         .collect();
     }
 
-    const visible = rows.filter((n) => visibleNoteIds.has(n._id as string));
+    const visible = rows.filter((n) => canViewNote(n, { userId, role }));
 
     // Decorate with author display name.
     const authorIds = Array.from(new Set(visible.map((n) => n.authorUserId)));
@@ -1158,7 +1151,6 @@ export const listNotesForTarget = query({
         authorDisplayName: authorNames[n.authorUserId] ?? "Unknown",
         isMine: n.authorUserId === userId,
         canDelete,
-        replyCount: replyCountByNoteId.get(n._id as string) ?? 0,
       };
       if (role === "gm" && rollsByNoteId) {
         // Only attach the key when this note has an `attachedRollSetId`
