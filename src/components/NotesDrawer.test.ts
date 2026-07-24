@@ -119,4 +119,15 @@ describe("formatNoteTarget", () => {
     );
     expect(extractText(node)).toBe("Smiler • Crimson Cabal • (unassigned)");
   });
+
+  it("renders an announcement excerpt", () => {
+    const node = formatNoteTarget(
+      baseRow({
+        targetKind: "announcement",
+        targetAnnouncementId: "a1" as Id<"announcements">,
+        announcementExcerpt: "The first decree",
+      }),
+    );
+    expect(extractText(node)).toBe("Announcement: The first decree");
+  });
 });

@@ -207,6 +207,7 @@ export function formatNoteTarget(
     | "syndicateName"
     | "grantKeyword"
     | "goalKeyword"
+    | "announcementExcerpt"
     | "playerDisplayName"
   >,
 ): React.ReactNode {
@@ -248,6 +249,15 @@ export function formatNoteTarget(
         <span>{row.goalKeyword ?? "(unknown goal)"}</span>
         {sep}
         {playerSegment}
+      </>
+    );
+  }
+
+  if (row.targetKind === "announcement") {
+    return (
+      <>
+        <span>Announcement:</span>{" "}
+        <span>{row.announcementExcerpt ?? "(deleted announcement)"}</span>
       </>
     );
   }

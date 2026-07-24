@@ -65,6 +65,15 @@ export const deleteAnnouncement = mutation({
     const announcement = await ctx.db.get(args.announcementId);
     if (!announcement) throw new Error("Announcement not found.");
     await requireWritableGame(ctx, announcement.gameId);
+
+    const notes = await ctx.db
+      .query("notes")
+      .withIndex("by_announcement", (q) =>
+        q.eq("targetAnnouncementId", announcement._id),
+      )
+      .collect();
+    for (const note of notes) await ctx.db.delete(note._id);
+
     await ctx.db.delete(announcement._id);
   },
 });

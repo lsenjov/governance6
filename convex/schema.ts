@@ -316,11 +316,13 @@ export default defineSchema({
       v.literal("minion"),
       v.literal("grant"),
       v.literal("goal"),
+      v.literal("announcement"),
     ),
     targetSyndicateId: v.optional(v.id("syndicates")),
     targetMinionId: v.optional(v.id("minions")),
     targetGrantId: v.optional(v.id("treasonGrants")),
     targetGoalId: v.optional(v.id("goals")),
+    targetAnnouncementId: v.optional(v.id("announcements")),
     authorUserId: v.id("users"),
     visibility: v.union(v.literal("private"), v.literal("public")),
     body: v.string(),
@@ -346,10 +348,16 @@ export default defineSchema({
     .index("by_game_minion_created", ["gameId", "targetMinionId", "createdAt"])
     .index("by_game_grant_created", ["gameId", "targetGrantId", "createdAt"])
     .index("by_game_goal_created", ["gameId", "targetGoalId", "createdAt"])
+    .index("by_game_announcement_created", [
+      "gameId",
+      "targetAnnouncementId",
+      "createdAt",
+    ])
     .index("by_syndicate", ["targetSyndicateId"])
     .index("by_minion", ["targetMinionId"])
     .index("by_grant", ["targetGrantId"])
     .index("by_goal", ["targetGoalId"])
+    .index("by_announcement", ["targetAnnouncementId"])
     .index("by_author_game", ["authorUserId", "gameId"]),
 
   // Rule 26: Treason Grants — per-game GM-authored bundles of

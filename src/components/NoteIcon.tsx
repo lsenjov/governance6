@@ -17,7 +17,8 @@ export type NoteTarget =
   | { kind: "syndicate"; syndicateId: Id<"syndicates"> }
   | { kind: "minion"; minionId: Id<"minions"> }
   | { kind: "grant"; grantId: Id<"treasonGrants"> }
-  | { kind: "goal"; goalId: Id<"goals"> };
+  | { kind: "goal"; goalId: Id<"goals"> }
+  | { kind: "announcement"; announcementId: Id<"announcements"> };
 
 /**
  * Result-shape for a single note as returned by `api.notes.listNotesForTarget`.
@@ -514,6 +515,8 @@ export function NoteCreateForm({
         targetMinionId: target.kind === "minion" ? target.minionId : undefined,
         targetGrantId: target.kind === "grant" ? target.grantId : undefined,
         targetGoalId: target.kind === "goal" ? target.goalId : undefined,
+        targetAnnouncementId:
+          target.kind === "announcement" ? target.announcementId : undefined,
         body: trimmed,
         visibility,
         ...(timerMinutes !== undefined ? { timerMinutes } : {}),
@@ -626,9 +629,16 @@ export function buildListArgs(gameId: Id<"games">, target: NoteTarget) {
       targetGrantId: target.grantId,
     };
   }
+  if (target.kind === "goal") {
+    return {
+      gameId,
+      targetKind: "goal" as const,
+      targetGoalId: target.goalId,
+    };
+  }
   return {
     gameId,
-    targetKind: "goal" as const,
-    targetGoalId: target.goalId,
+    targetKind: "announcement" as const,
+    targetAnnouncementId: target.announcementId,
   };
 }
