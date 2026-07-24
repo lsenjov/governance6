@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as announcements from "../announcements.js";
 import type * as auth from "../auth.js";
 import type * as calls from "../calls.js";
 import type * as drawbacks from "../drawbacks.js";
@@ -35,6 +36,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  announcements: typeof announcements;
   auth: typeof auth;
   calls: typeof calls;
   drawbacks: typeof drawbacks;

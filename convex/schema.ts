@@ -127,6 +127,15 @@ export default defineSchema({
     .index("by_gm", ["gmId"])
     .index("by_state", ["state"]),
 
+  // Per-game GM bulletins. A separate table keeps the list unbounded and
+  // preserves creation order when a body is edited.
+  announcements: defineTable({
+    gameId: v.id("games"),
+    body: v.string(),
+    createdAt: v.number(),
+    createdByUserId: v.id("users"),
+  }).index("by_game_createdAt", ["gameId", "createdAt"]),
+
   // Rules 11, 12: Player (roster row).
   players: defineTable({
     gameId: v.id("games"),
