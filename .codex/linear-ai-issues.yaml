@@ -1,0 +1,16 @@
+version: 1
+project:
+  name: "bg-bidding"
+  id: "470d7598-4ebc-46aa-a252-10a673bf5bd5"
+  url: "https://linear.app/lsenjov-personal-projects/project/bg-bidding-edb555964c14"
+team:
+  name: "Personal Stuff"
+  id: "59f91d4f-0cc0-48b6-98b0-a39f7ffb75b9"
+ai_status:
+  group: "AI Status"
+  answer:
+    source: "AI Await Answer"
+    destination: "AI Answered"
+  implement:
+    source: "AI Await Implement"
+    destination: "AI Implemented"
