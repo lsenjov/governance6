@@ -505,6 +505,51 @@ describe("calls: dice rolls", () => {
     expect(stored[0].createdReason).toBe("became_head");
   });
 
+  test("GM repair creates a missing head roll set exactly once", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    const callId = await h.t.run((ctx) =>
+      ctx.db.insert("calls", {
+        gameId: h.ids.gameId,
+        playerId: h.ids.playerAId,
+        kind: "minion",
+        minionId: h.ids.minionRavenId,
+        createdAt: Date.now(),
+        isActive: true,
+      }),
+    );
+
+    const first = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.repairHeadRollSet, { gameId: h.ids.gameId });
+    const second = await h.t
+      .withIdentity(asUser(h.ids.gmId))
+      .mutation(api.calls.repairHeadRollSet, { gameId: h.ids.gameId });
+
+    expect(first).not.toBeNull();
+    expect(second).toBe(first);
+    const stored = await h.t.run((ctx) =>
+      ctx.db
+        .query("callRollSets")
+        .withIndex("by_call_created", (q) => q.eq("callId", callId))
+        .collect(),
+    );
+    expect(stored).toHaveLength(1);
+    expect(stored[0].createdReason).toBe("became_head");
+  });
+
+  test("head roll repair is GM-only", async () => {
+    const h = await createHarness();
+    await startGame(h);
+
+    await expect(
+      h.t
+        .withIdentity(asUser(h.ids.aId))
+        .mutation(api.calls.repairHeadRollSet, { gameId: h.ids.gameId }),
+    ).rejects.toThrow(/Game Master/i);
+  });
+
   test("a non-head call is added without rolling; rolls fire only when it advances", async () => {
     const h = await createHarness();
     await startGame(h);
@@ -1507,7 +1552,7 @@ describe("calls.activeCalls + recentlyRemovedCalls: kind discrimination", () => 
     expect(Object.prototype.hasOwnProperty.call(bob, "label")).toBe(false);
   });
 
-  test("legacy back-compat: rows without a `kind` field project as kind:'minion' and idempotent re-call is a no-op", async () => {
+  test("legacy back-compat: same-minion re-call repairs a missing roll set", async () => {
     const h = await createHarness();
     await startGame(h);
 
@@ -1534,8 +1579,7 @@ describe("calls.activeCalls + recentlyRemovedCalls: kind discrimination", () => 
       expect(active[0].minionName).toBe("Raven");
     }
 
-    // Idempotent re-call: same minionId on the same legacy row is a
-    // no-op even though `existing.kind === undefined` in the helper.
+    // Same-content re-call preserves the legacy row's queue position.
     const before = await h.t.run((ctx) => ctx.db.get(legacyCallId));
     await new Promise((r) => setTimeout(r, 5));
     const id2 = await addCall(h, h.ids.aId, h.ids.minionRavenId);
@@ -1543,16 +1587,15 @@ describe("calls.activeCalls + recentlyRemovedCalls: kind discrimination", () => 
     const after = await h.t.run((ctx) => ctx.db.get(legacyCallId));
     expect(after!.createdAt).toBe(before!.createdAt);
 
-    // No rolls were added for the legacy row by the no-op path.
-    // (The legacy row never went through a `became_head` event because
-    // it was inserted directly.)
+    // The no-op call write still repairs the missing head roll set.
     const rolls = await h.t.run((ctx) =>
       ctx.db
         .query("callRollSets")
         .withIndex("by_call_created", (q) => q.eq("callId", legacyCallId))
         .collect(),
     );
-    expect(rolls).toHaveLength(0);
+    expect(rolls).toHaveLength(1);
+    expect(rolls[0].createdReason).toBe("became_head");
 
     // Now soft-delete and verify recentlyRemovedCalls also projects
     // the legacy row as kind:'minion'.

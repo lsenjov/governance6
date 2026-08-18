@@ -11,14 +11,13 @@ import type { Doc, Id } from "../_generated/dataModel";
  * helper so a row can never end up with both `minionId` and `label`
  * populated, or neither.
  *
- * Roll-set generation is intentionally NOT performed here. The trigger
- * sites in `convex/calls.ts` decide whether to fire `generateRollSetForCall`
- * based on the helper's `prevKind`/`changed` return and the post-upsert
- * head id. Custom calls never roll dice; minion calls follow the
- * dice-rolls v3 rule:
+ * Roll-set generation is intentionally NOT performed here. Callers pass
+ * the helper's `prevKind`/`changed` result to the head-roll ensure path.
+ * Custom calls never roll dice; minion calls follow these rules:
  *   - `prevKind === null` (fresh insert into empty queue) → `became_head`
  *   - `prevKind === "custom"` (cross-kind upgrade)        → `became_head`
  *   - `prevKind === "minion"` with different `minionId`   → `minion_replaced`
+ *   - unchanged minion head with no roll set              → `became_head`
  * The rule-of-thumb: `minion_replaced` requires a prior minion roll set on
  * the *same* row; everything else is `became_head`.
  */

@@ -2212,6 +2212,7 @@ function CurrentCallSection({
     viewerIsGm ? { gameId } : "skip",
   );
   const removeCall = useMutation(api.calls.removeCall);
+  const repairHeadRollSet = useMutation(api.calls.repairHeadRollSet);
   const deleteNote = useMutation(api.notes.deleteNote);
   // Note timers v1: cycle the timer state on the GM-only timer cell.
   // The server enforces GM-only via `requireGameGm`, so this hook is
@@ -2219,6 +2220,33 @@ function CurrentCallSection({
   // (the early `if (!viewerIsGm) return null` below short-circuits
   // the JSX path before the mutation can ever fire).
   const cycleNoteTimer = useMutation(api.notes.cycleNoteTimer);
+  const repairAttemptedCallRef = useRef<Id<"calls"> | null>(null);
+  const [rollRepairFailure, setRollRepairFailure] = useState<{
+    callId: Id<"calls">;
+    message: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (
+      !viewerIsGm ||
+      !data ||
+      data.kind !== "minion" ||
+      data.rolls !== null ||
+      repairAttemptedCallRef.current === data.call._id
+    ) {
+      return;
+    }
+
+    const callId = data.call._id;
+    repairAttemptedCallRef.current = callId;
+    void repairHeadRollSet({ gameId }).catch((error: unknown) => {
+      setRollRepairFailure({
+        callId,
+        message:
+          error instanceof Error ? error.message : "Failed to repair rolls.",
+      });
+    });
+  }, [data, gameId, repairHeadRollSet, viewerIsGm]);
 
   // Notes only attach to a minion-kind head. Gate on `data.kind` so a
   // custom head doesn't subscribe `listNotesForTarget` against an
@@ -2241,6 +2269,19 @@ function CurrentCallSection({
       await removeCall({ callId });
     } catch (e) {
       setRemoveErr(e instanceof Error ? e.message : "Remove failed.");
+    }
+  }
+
+  async function handleRepairRolls(callId: Id<"calls">) {
+    setRollRepairFailure(null);
+    try {
+      await repairHeadRollSet({ gameId });
+    } catch (error) {
+      setRollRepairFailure({
+        callId,
+        message:
+          error instanceof Error ? error.message : "Failed to repair rolls.",
+      });
     }
   }
 
@@ -2339,6 +2380,10 @@ function CurrentCallSection({
   // so `data.minion`, `data.syndicate`, and `data.rolls` are all in scope.
   const visibleNotes = notes ? notes.slice(0, 5) : undefined;
   const olderCount = notes ? Math.max(0, notes.length - 5) : 0;
+  const rollRepairError =
+    data.rolls === null && rollRepairFailure?.callId === data.call._id
+      ? rollRepairFailure.message
+      : null;
 
   return (
     <section>
@@ -2347,6 +2392,18 @@ function CurrentCallSection({
       {/* Header row: caller → minion + time + dice + Remove button */}
       <div className="card tight" style={{ marginBottom: "0.75rem" }}>
         {removeErr && <div className="error-text">{removeErr}</div>}
+        {rollRepairError && (
+          <div className="error-text">
+            Rolls unavailable: {rollRepairError}{" "}
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => void handleRepairRolls(data.call._id)}
+            >
+              Retry rolls
+            </button>
+          </div>
+        )}
         <div
           className="row"
           style={{

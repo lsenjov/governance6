@@ -7,8 +7,7 @@ import {
   requireUserId,
 } from "./lib/auth";
 import {
-  generateRollSetForCall,
-  getDrawbackExtrasForCall,
+  ensureHeadRollSet,
   getHeadCallId,
   getLatestRollSetForCall,
   projectRollSet,
@@ -23,7 +22,8 @@ import type { Doc, Id } from "./_generated/dataModel";
  * FIFO by `createdAt` ascending. At most one active Call per Player.
  * Adding a new Call while one exists REPLACES the existing Call's content
  * in place via `upsertActiveCall`, preserving `createdAt` and document id
- * (queue position preserved). Same-content resubmits are no-ops.
+ * (queue position preserved). Same-content resubmits do not rewrite the
+ * Call; a minion head resubmit may repair a missing roll set.
  *
  * Two call kinds:
  *   - `"minion"` — bought-Minion calls. Generate dice rolls per the
@@ -73,38 +73,15 @@ export const addOrReplaceCall = mutation({
       content: { kind: "minion", minionId: args.minionId },
     });
 
-    // Roll-set generation per the dice-rolls v3 rule:
-    //   `minion_replaced` requires a prior minion roll set on the same row;
-    //   everything else is `became_head`.
-    if (result.changed) {
-      const headId = await getHeadCallId(ctx, args.gameId);
-      if (headId === result.id) {
-        // The upserted call is the head. Pick the reason:
-        //   - prevKind === "minion" → in-place minion-to-minion swap on
-        //     the head; the helper only returns `changed: true` here when
-        //     the minionId actually differs (same-minion is a no-op),
-        //     so this is always a genuine replace → "minion_replaced".
-        //   - prevKind === "custom" → cross-kind upgrade; the row had no
-        //     prior minion roll set to "replace" → "became_head".
-        //   - prevKind === null → fresh insert into an empty queue (or
-        //     into a position that became the head between insert and
-        //     re-read; treat the same way) → "became_head".
-        const reason: "became_head" | "minion_replaced" =
-          result.prevKind === "minion" ? "minion_replaced" : "became_head";
-        // Drawback extras: re-read the head call AFTER the queue
-        // mutation so any concurrent toggle of `isRolled` is reflected
-        // in the new roll set (drawback rolls v1).
-        const headCall = await ctx.db.get(result.id);
-        const extras = headCall
-          ? await getDrawbackExtrasForCall(ctx, headCall)
-          : [];
-        await generateRollSetForCall(ctx, {
-          callId: result.id,
-          reason,
-          extras,
-        });
-      }
-    }
+    const replacedHeadContent = result.changed && result.prevKind !== null;
+    await ensureHeadRollSet(ctx, {
+      callId: result.id,
+      reason:
+        replacedHeadContent && result.prevKind === "minion"
+          ? "minion_replaced"
+          : "became_head",
+      forceNew: replacedHeadContent,
+    });
 
     return result.id;
   },
@@ -222,27 +199,27 @@ export const removeCall = mutation({
     if (removedWasHead) {
       const newHeadId = await getHeadCallId(ctx, call.gameId);
       if (newHeadId !== null) {
-        // Gate roll generation on the new head's kind. Custom heads do
-        // not roll. Reason is unconditionally `became_head` here — a
-        // fresh roll on a *different* row is always `became_head`;
-        // `minion_replaced` is reserved for in-place edits to the
-        // *same* row (handled in `addOrReplaceCall`).
-        const newHead = await ctx.db.get(newHeadId);
-        const newHeadKind: "minion" | "custom" = newHead?.kind ?? "minion";
-        if (newHeadKind === "minion") {
-          // Drawback extras for the newly-promoted head (drawback
-          // rolls v1).
-          const extras = newHead
-            ? await getDrawbackExtrasForCall(ctx, newHead)
-            : [];
-          await generateRollSetForCall(ctx, {
-            callId: newHeadId,
-            reason: "became_head",
-            extras,
-          });
-        }
+        await ensureHeadRollSet(ctx, {
+          callId: newHeadId,
+          reason: "became_head",
+        });
       }
     }
+  },
+});
+
+/** Repair a missing roll set for the active minion head. */
+export const repairHeadRollSet = mutation({
+  args: { gameId: v.id("games") },
+  handler: async (ctx, args) => {
+    await requireGameGm(ctx, args.gameId);
+    const headId = await getHeadCallId(ctx, args.gameId);
+    if (headId === null) return null;
+
+    return await ensureHeadRollSet(ctx, {
+      callId: headId,
+      reason: "became_head",
+    });
   },
 });
 
@@ -376,9 +353,8 @@ export const activeCalls = query({
 
         if (isGm && rollsByCallId) {
           const row = rollsByCallId.get(c._id) ?? null;
-          // GM payload for minion rows: include `rolls` (possibly null
-          // while the helper is mid-flight in a race; the UI handles
-          // null).
+          // A null head roll is a persisted invariant failure. The GM
+          // current-call view attempts an idempotent repair.
           return {
             ...minionRow,
             rolls: row ? projectRollSet(row) : null,

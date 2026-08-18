@@ -175,22 +175,20 @@ export function RollSetDisplay({
   }
 
   // ---- Stacked variant (default). -----------------------------------
-  // Race-only branch: roll generation runs in the same mutation
-  // transaction as the call insert, so external readers should never
-  // observe `null`. We render a quiet pending state anyway so the
-  // presence of the component is well-defined.
+  // A null roll set is a persisted invariant failure. The GM page
+  // attempts an idempotent repair and reports any mutation failure.
   if (rolls === null) {
     return (
-      <div className="roll-set" aria-label="Rolls pending">
+      <div className="roll-set" aria-label="Rolls unavailable">
         <div className={cellClassName(size, "neutral")}>
           <span className="roll-cell-caption">Skill</span>
           <span className="roll-cell-value">—</span>
-          <span className="roll-cell-footer">Pending</span>
+          <span className="roll-cell-footer">Unavailable</span>
         </div>
         <div className={cellClassName(size, "neutral")}>
           <span className="roll-cell-caption">Chaos</span>
           <span className="roll-cell-value">—</span>
-          <span className="roll-cell-footer">Pending</span>
+          <span className="roll-cell-footer">Unavailable</span>
         </div>
         {trailing}
       </div>

@@ -4,12 +4,11 @@ import type { Doc, Id } from "../_generated/dataModel";
 /**
  * Dice roll generation — see `plans/2026-04-28-2026-04-28-dice-rolls-v3.md`.
  *
- * Every "becoming-the-head" event on the FIFO call queue must produce a
- * single immutable `callRollSets` row that bundles a skill roll + chaos
- * roll (and any future conditional `extras`). The same helper handles
- * both trigger paths in `convex/calls.ts` (empty-queue insert,
- * replace-in-place on the head, and head removal advancing the next
- * call) so the natural-1 rule and extras validation live in one place.
+ * Every minion at the FIFO head must have a single current
+ * `callRollSets` row that bundles a skill roll + chaos roll (and any
+ * future conditional `extras`). Head transitions use an idempotent
+ * ensure helper so a missing row can be repaired without rerolling a
+ * healthy call.
  *
  * This module is mutation-only — it relies on `Math.random()`, which
  * Convex queries cannot use deterministically.
@@ -195,10 +194,8 @@ export async function getDrawbackExtrasForCall(
 /**
  * Generate a fresh `callRollSets` row for the given call.
  *
- * Callers MUST only invoke this when the call is at the head of the
- * queue. Trigger sites (`addOrReplaceCall`, `removeCall`) handle the
- * head-detection guard themselves so this helper stays focused on the
- * roll math.
+ * This low-level writer assumes its caller has verified the call is the
+ * head. `ensureHeadRollSet` owns that guard for application call sites.
  *
  *  - Loads the call and minion. If the call is inactive or the minion
  *    has been deleted (a deletion race), returns `null` without
@@ -226,20 +223,15 @@ export async function generateRollSetForCall(
     return null;
   }
   if (!call.isActive) {
-    // Defensive: rolling for an inactive call would attach rolls to
-    // a queue position that is already gone. Trigger sites must call
-    // this helper before soft-deleting any call.
+    // Avoid attaching rolls to a queue position that is already gone.
     console.warn(
       `generateRollSetForCall: call ${args.callId} is inactive; skipping.`,
     );
     return null;
   }
 
-  // Defensive: custom calls (kind === "custom") have no minionId and
-  // do not roll dice. Trigger sites in `convex/calls.ts` already gate
-  // on kind, but we double-check here so a future caller that forgets
-  // the gate fails closed (no row written) rather than crashing on
-  // `ctx.db.get(undefined)`.
+  // `ensureHeadRollSet` normally excludes custom calls. Keep the
+  // low-level writer fail-closed for any future direct caller.
   if (!call.minionId) {
     console.warn(
       `generateRollSetForCall: call ${args.callId} has no minionId (custom call?); skipping.`,
@@ -277,6 +269,41 @@ export async function generateRollSetForCall(
     extras: normalisedExtras,
     createdAt: Date.now(),
     createdReason: args.reason,
+  });
+}
+
+/**
+ * Ensure an active minion head has a roll set.
+ *
+ * `forceNew` is reserved for an in-place head content change, where the
+ * previous immutable roll set belongs to the prior call content.
+ */
+export async function ensureHeadRollSet(
+  ctx: MutationCtx,
+  args: {
+    callId: Id<"calls">;
+    reason: "became_head" | "minion_replaced";
+    forceNew?: boolean;
+  },
+): Promise<Id<"callRollSets"> | null> {
+  const call = await ctx.db.get(args.callId);
+  if (!call?.isActive || call.kind === "custom" || !call.minionId) {
+    return null;
+  }
+
+  const headId = await getHeadCallId(ctx, call.gameId);
+  if (headId !== call._id) return null;
+
+  if (args.forceNew !== true) {
+    const existing = await getLatestRollSetForCall(ctx, call._id);
+    if (existing) return existing._id;
+  }
+
+  const extras = await getDrawbackExtrasForCall(ctx, call);
+  return await generateRollSetForCall(ctx, {
+    callId: call._id,
+    reason: args.reason,
+    extras,
   });
 }
 
